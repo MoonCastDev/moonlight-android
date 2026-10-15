@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="mc_void">#FF06070D</color>
+    <color name="mc_surface">#FF11141F</color>
+    <color name="mc_silver">#FFEEF2F9</color>
+    <color name="mc_dust">#FF9AA2B4</color>
+    <color name="mc_eclipse">#FFD2683A</color>
+    <color name="mc_eclipse_hi">#FFF5915B</color>
+    <color name="mc_moon">#FF7AA0FF</color>
+</resources>
