@@ -55,11 +55,18 @@ public class MoonCastReceiver extends Activity {
         if (status != null) runOnUiThread(() -> status.setText(s));
     }
 
+    // Pick the PC the phone should stream to. Prefer a PAIRED one (it has a stored server
+    // certificate - set only after a successful pairing), so a stray auto-discovered PC that was
+    // never paired (null cert) can't win the race. Fall back to the first PC if none is paired yet.
     private ComputerDetails firstComputer() {
         ComputerDatabaseManager db = new ComputerDatabaseManager(this);
         try {
             List<ComputerDetails> all = db.getAllComputers();
-            return all.isEmpty() ? null : all.get(0);
+            if (all.isEmpty()) return null;
+            for (ComputerDetails c : all) {
+                if (c.serverCert != null) return c;
+            }
+            return all.get(0);
         } finally {
             db.close();
         }
@@ -101,6 +108,12 @@ public class MoonCastReceiver extends Activity {
                 int n = clen > 0 ? in.read(body, 0, body.length) : 0;
                 String json = new String(body, 0, Math.max(0, n));
                 String appId = field(json, "appId"), appName = field(json, "appName");
+                // The phone is the controller: remember where it is (the address it POSTed from, or an explicit phoneIp).
+                String phoneIp = field(json, "phoneIp");
+                if (phoneIp == null || phoneIp.isEmpty()) {
+                    try { phoneIp = s.getInetAddress().getHostAddress(); } catch (Exception ignored) { }
+                }
+                PhoneGamepad.setPhoneHost(phoneIp);
                 if (appId != null && play(appId, appName)) send(s, 200, "{\"ok\":1}");
                 else send(s, 400, "{\"error\":\"no app id, or no paired PC\"}");
             } else {
