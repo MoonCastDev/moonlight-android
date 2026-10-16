@@ -32,10 +32,13 @@ object Ps5Pad {
 
     private fun push(st: ControllerState) = synchronized(lock) { active?.setControllerState(st) }
 
+    /** A controller attached to THIS device (Odin handheld, or a pad plugged into the TV): same lock as the relay. */
+    fun pushLocal(st: ControllerState) = push(st)
+
     fun start(session: Session) {
         stop()   // never leave a previous relay thread running
+        synchronized(lock) { active = session }   // local input works even without a phone relay
         val h = PhoneGamepad.phoneHost() ?: return
-        synchronized(lock) { active = session }
         running = true
         thread = Thread({ run(session, h) }, "ps5-pad").also { it.start() }
         startUdp(h)

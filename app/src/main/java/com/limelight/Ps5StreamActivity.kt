@@ -3,6 +3,9 @@ package com.limelight
 import android.app.Activity
 import android.os.Bundle
 import android.util.Log
+import android.view.InputDevice
+import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.WindowManager
@@ -266,6 +269,95 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
             }
             else -> {}
         }
+    }
+
+    // ---- the device's own controller (Odin handheld, or a pad plugged into the TV) ----
+    // Until now the player only took input relayed from a phone. Map this device's gamepad straight to a DualSense
+    // state; same combos as the relay (an Xbox-style pad has no PS / touchpad button): L2 + Start = PS,
+    // Select + Start = touchpad. Sent through Ps5Pad's lock so it can never reach a session being disposed.
+    private val held = HashSet<Int>()
+    private var lx = 0f; private var ly = 0f; private var rx = 0f; private var ry = 0f
+    private var lt = 0f; private var rt = 0f; private var hatX = 0f; private var hatY = 0f
+
+    private fun isPadKey(code: Int) = KeyEvent.isGamepadButton(code) || code == KeyEvent.KEYCODE_DPAD_UP ||
+            code == KeyEvent.KEYCODE_DPAD_DOWN || code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT
+
+    override fun dispatchKeyEvent(e: KeyEvent): Boolean {
+        val code = e.keyCode
+        val fromPad = (e.source and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD ||
+                (e.source and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
+        // the system Back (Odin's back key / a TV remote) leaves the stream; the pad's B button is Circle
+        if (code == KeyEvent.KEYCODE_BACK && !fromPad) {
+            if (e.action == KeyEvent.ACTION_UP) finish()
+            return true
+        }
+        if (isPadKey(code)) {
+            if (e.repeatCount == 0) {
+                if (e.action == KeyEvent.ACTION_DOWN) held.add(code) else if (e.action == KeyEvent.ACTION_UP) held.remove(code)
+                sendLocal()
+            }
+            return true
+        }
+        return super.dispatchKeyEvent(e)
+    }
+
+    override fun dispatchGenericMotionEvent(e: MotionEvent): Boolean {
+        if ((e.source and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK && e.action == MotionEvent.ACTION_MOVE) {
+            fun dz(v: Float) = if (Math.abs(v) < 0.08f) 0f else v
+            lx = dz(e.getAxisValue(MotionEvent.AXIS_X)); ly = dz(e.getAxisValue(MotionEvent.AXIS_Y))
+            rx = dz(e.getAxisValue(MotionEvent.AXIS_Z)); ry = dz(e.getAxisValue(MotionEvent.AXIS_RZ))
+            lt = maxOf(e.getAxisValue(MotionEvent.AXIS_LTRIGGER), e.getAxisValue(MotionEvent.AXIS_BRAKE))
+            rt = maxOf(e.getAxisValue(MotionEvent.AXIS_RTRIGGER), e.getAxisValue(MotionEvent.AXIS_GAS))
+            hatX = e.getAxisValue(MotionEvent.AXIS_HAT_X); hatY = e.getAxisValue(MotionEvent.AXIS_HAT_Y)
+            sendLocal()
+            return true
+        }
+        return super.dispatchGenericMotionEvent(e)
+    }
+
+    private fun sendLocal() {
+        fun h(k: Int) = held.contains(k)
+        val l2 = maxOf(lt, if (h(KeyEvent.KEYCODE_BUTTON_L2)) 1f else 0f)
+        val r2 = maxOf(rt, if (h(KeyEvent.KEYCODE_BUTTON_R2)) 1f else 0f)
+        val select = h(KeyEvent.KEYCODE_BUTTON_SELECT); val start = h(KeyEvent.KEYCODE_BUTTON_START)
+        val psCombo = l2 > .5f && start
+        val tpCombo = select && start && !psCombo
+        var f = 0u
+        if (h(KeyEvent.KEYCODE_BUTTON_A)) f = f or ControllerState.BUTTON_CROSS
+        if (h(KeyEvent.KEYCODE_BUTTON_B)) f = f or ControllerState.BUTTON_MOON
+        if (h(KeyEvent.KEYCODE_BUTTON_X)) f = f or ControllerState.BUTTON_BOX
+        if (h(KeyEvent.KEYCODE_BUTTON_Y)) f = f or ControllerState.BUTTON_PYRAMID
+        if (h(KeyEvent.KEYCODE_BUTTON_L1)) f = f or ControllerState.BUTTON_L1
+        if (h(KeyEvent.KEYCODE_BUTTON_R1)) f = f or ControllerState.BUTTON_R1
+        if (h(KeyEvent.KEYCODE_BUTTON_THUMBL)) f = f or ControllerState.BUTTON_L3
+        if (h(KeyEvent.KEYCODE_BUTTON_THUMBR)) f = f or ControllerState.BUTTON_R3
+        if (select && !tpCombo) f = f or ControllerState.BUTTON_SHARE
+        if (start && !psCombo && !tpCombo) f = f or ControllerState.BUTTON_OPTIONS
+        if (h(KeyEvent.KEYCODE_BUTTON_MODE) || psCombo) f = f or ControllerState.BUTTON_PS
+        if (tpCombo) f = f or ControllerState.BUTTON_TOUCHPAD
+        if (h(KeyEvent.KEYCODE_DPAD_UP) || hatY < -.5f) f = f or ControllerState.BUTTON_DPAD_UP
+        if (h(KeyEvent.KEYCODE_DPAD_DOWN) || hatY > .5f) f = f or ControllerState.BUTTON_DPAD_DOWN
+        if (h(KeyEvent.KEYCODE_DPAD_LEFT) || hatX < -.5f) f = f or ControllerState.BUTTON_DPAD_LEFT
+        if (h(KeyEvent.KEYCODE_DPAD_RIGHT) || hatX > .5f) f = f or ControllerState.BUTTON_DPAD_RIGHT
+        fun ax(v: Float): Short = (Math.round(v * 32767f).coerceIn(-32767, 32767)).toShort()
+        fun trig(v: Float) = (v.coerceIn(0f, 1f) * 255).toInt().toUByte()
+        Ps5Pad.pushLocal(ControllerState(
+            buttons = f,
+            l2State = trig(if (psCombo) 0f else l2), r2State = trig(r2),
+            leftX = ax(lx), leftY = ax(ly), rightX = ax(rx), rightY = ax(ry)))
+    }
+
+    private fun immersive() {
+        @Suppress("DEPRECATION")
+        window.decorView.systemUiVisibility = (android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                android.view.View.SYSTEM_UI_FLAG_FULLSCREEN or android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE or android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION)
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) immersive()   // full screen on a handheld (Odin): no status / nav bars over the game
     }
 
     override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, ht: Int) {}
