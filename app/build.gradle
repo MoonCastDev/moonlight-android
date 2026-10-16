@@ -85,6 +85,8 @@ android {
     buildTypes {
         debug {
             applicationIdSuffix ".debug"
+            // test builds: BUILD=testN ./gradlew ... puts the build name in the version (shown in Settings, About)
+            versionNameSuffix "-" + (System.getenv("BUILD") ?: "dev")
             resValue "string", "app_label", "MoonCast TV (Debug)"
             resValue "string", "app_label_root", "MoonCast TV (Root Debug)"
         }
