@@ -82,7 +82,11 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
         // Settings, PlayStation (TV home): 1080p or 720p at 60, H.265 or H.264. chiaki falls back if the console
         // or link can't hold it.
         val prefs = android.preference.PreferenceManager.getDefaultSharedPreferences(this)
-        val res720 = prefs.getString("ps5_resolution", "1080") == "720"
+        // A weak link can't carry 1080p: the picture queues on the Wi-Fi and every press shows up late (JAL TV: 2.4 GHz,
+        // 26-39 Mbps link, 15 Mbps asked over PSN -> dropped packets and a laggy feel). Keep 60 fps and step down pixels.
+        val link = linkMbps()
+        val weak = link in 1..59
+        val res720 = prefs.getString("ps5_resolution", "1080") == "720" || weak
         val h264 = !ps5 || prefs.getString("ps5_codec", "h265") == "h264"
         val preset = ConnectVideoProfile.preset(
             if (res720) VideoResolutionPreset.RES_720P else VideoResolutionPreset.RES_1080P, VideoFPSPreset.FPS_60,
@@ -90,8 +94,11 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
         )
         // Home network: Auto = 30 or 20 Mbps from this device's own link (chiaki's 1080p preset is 15), or the
         // number picked in Settings. Over the internet keep the preset - the PS5 backs off by itself.
-        val homeKbps = prefs.getString("ps5_bitrate_home", "auto")?.toIntOrNull()?.times(1000) ?: lanBitrateKbps()
-        val profile = if (remote) preset else preset.copy(bitrate = homeKbps)
+        // ~30 % of the link is what a busy 2.4 GHz channel really delivers without queueing
+        val linkCap = if (link > 0) (link * 300).coerceIn(5000, 30000) else 30000
+        val homeKbps = prefs.getString("ps5_bitrate_home", "auto")?.toIntOrNull()?.times(1000) ?: minOf(lanBitrateKbps(), linkCap)
+        val profile = if (remote) preset.copy(bitrate = minOf(preset.bitrate, linkCap)) else preset.copy(bitrate = homeKbps)
+        Log.i(TAG, "stream ${if (res720) "720p" else "1080p"}60 at ${profile.bitrate / 1000} Mbps (${if (remote) "PSN" else "home"}, link ${if (link > 0) "$link Mbps" else "cable/unknown"})")
         streamInfo = Triple(if (res720) "720p" else "1080p", if (h264) "H.264" else "H.265", profile.bitrate / 1000)
         streamRemote = remote
         if (!remote) return ConnectInfo(ps5, host, registKey, morning, profile)
@@ -126,6 +133,15 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
     // Home-network bitrate from this device's own link: 30 Mbps on Ethernet or fast 5/6 GHz Wi-Fi, 20 on 2.4 GHz /
     // slow / unknown links. Measured 2026-10-16: the home Mi stick (2.4 GHz, 87 Mbps link) got ~25 Mbps at a 30 Mbps
     // ask but lost 6-9 % of packets (a glitch every ~7 s), the PS5 not backing off enough.
+    /** Wi-Fi link speed in Mbps, or 0 for Ethernet / unknown (no cap). */
+    private fun linkMbps(): Int = try {
+        val cm = getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork)
+        if (caps != null && caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET)) 0
+        else @Suppress("DEPRECATION") (applicationContext.getSystemService(android.content.Context.WIFI_SERVICE) as android.net.wifi.WifiManager)
+                .connectionInfo?.linkSpeed?.coerceAtLeast(0) ?: 0
+    } catch (e: Exception) { 0 }
+
     private fun lanBitrateKbps(): Int {
         try {
             val cm = getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
