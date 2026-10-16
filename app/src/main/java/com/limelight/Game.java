@@ -1523,6 +1523,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             if (quickMenu == null) quickMenu = new com.limelight.home.QuickMenu(Game.this);
             java.util.List<com.limelight.home.QuickMenu.Item> items = new java.util.ArrayList<>();
             items.add(new com.limelight.home.QuickMenu.Item("⌨", "Keyboard", "On-screen", false, this::toggleKeyboard));
+            items.add(new com.limelight.home.QuickMenu.Item("✚", "Controllers", com.limelight.home.QuickMenu.pads().size() + " connected", false, this::showControllers));
             items.add(new com.limelight.home.QuickMenu.Item("←", "Disconnect", "The game keeps running", false, this::finish));
             items.add(new com.limelight.home.QuickMenu.Item("✕", "Quit game", null, true, this::quitOnHostAndFinish));
             quickMenu.show(appName != null ? appName : "Your game",
@@ -1534,6 +1535,20 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                             com.limelight.home.QuickMenu.stat(String.format(java.util.Locale.US, "%.1f%%", com.limelight.home.StreamStats.INSTANCE.getLossPct()), "Lost frames")),
                     items);
         });
+    }
+
+    // Quick menu, Controllers: on a PC every pad is its own player (in the order they were first used).
+    private void showControllers() {
+        java.util.List<com.limelight.home.QuickMenu.Item> items = new java.util.ArrayList<>();
+        int n = 1;
+        for (android.view.InputDevice d : com.limelight.home.QuickMenu.pads()) {
+            String b = com.limelight.home.QuickMenu.battery(d);
+            items.add(new com.limelight.home.QuickMenu.Item(String.valueOf(n++), d.getName(), b, false, this::showControllers));
+        }
+        items.add(new com.limelight.home.QuickMenu.Item("+", "Pair a controller", "Bluetooth settings", false,
+                () -> com.limelight.home.QuickMenu.pairController(Game.this)));
+        quickMenu.show("Controllers", prefConfig.multiController ? "Each pad is its own player on the PC." : "All pads control player 1 (Settings, Controllers).",
+                java.util.Collections::emptyList, items);
     }
 
     // Quit the game on the PC (not just this stream), then leave.

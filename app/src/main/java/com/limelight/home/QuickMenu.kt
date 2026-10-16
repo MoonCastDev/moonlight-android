@@ -158,6 +158,22 @@ class QuickMenu(private val act: Activity) {
     }
 
     companion object {
+        /** Physical game pads connected now (not the TV remote). */
+        @JvmStatic fun pads(): List<InputDevice> = InputDevice.getDeviceIds().toList().mapNotNull { InputDevice.getDevice(it) }.filter { d ->
+            !d.isVirtual && ((d.sources and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD ||
+                    (d.sources and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK)
+        }
+
+        /** "80 %" where Android knows the pad's battery (Android 12+), else null. */
+        @JvmStatic fun battery(d: InputDevice): String? = try {
+            if (android.os.Build.VERSION.SDK_INT >= 31 && d.batteryState.isPresent) "${Math.round(d.batteryState.capacity * 100)} %" else null
+        } catch (e: Exception) { null }
+
+        @JvmStatic fun pairController(a: Activity) {
+            for (action in listOf(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS, android.provider.Settings.ACTION_SETTINGS))
+                try { a.startActivity(android.content.Intent(action)); return } catch (e: Exception) { }
+        }
+
         @JvmStatic fun stat(value: String, label: String) = Pair(value, label)
 
         /** The combo that opens the menu in both players. */

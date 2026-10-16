@@ -172,6 +172,10 @@ class HomeActivity : Activity(), PhoneLink.Listener {
             probeConsoles()
             if (tv.oled && overlayKind == null && System.currentTimeMillis() - lastInput > 120_000) showIdle()
             if (overlayKind == "idle") moveIdle()
+            if (prefs.getBoolean("hide_hints", tv.oled) && System.currentTimeMillis() - lastInput > 10_000) hintsBar.animate().alpha(0f).setDuration(400).start()
+            if (prefs.getBoolean("pixel_shift", tv.oled) && ++shiftTick % 30 == 0) {   // every ~3 minutes
+                main.translationX = tv.pxf((-4..4).random()); main.translationY = tv.pxf((-4..4).random())
+            }
             ui.postDelayed(this, 6_000)
         }
     }
@@ -480,7 +484,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
     // ---------------------------------------------------------------- Library
 
     private fun libraryPage(): View {
-        hints("A" to "Play on this TV", "LB" to "Previous tab", "RB" to "Next tab", "|" to "", "B" to "Back")
+        hints("A" to "Play on this TV", "X" to "Game menu", "Y" to "Search", "|" to "", "B" to "Back")
         val col = tv.col()
         val chips = tv.row()
         fun chip(label: String, key: String?) = tv.text(label, 20, tv.p.moon, tv.ui(600)).apply {
@@ -497,10 +501,21 @@ class HomeActivity : Activity(), PhoneLink.Listener {
             setOnClickListener { filter = key; render(force = true) }
         }
         val sources = pcs.values.filter { paired(it) }
-        if (sources.size + (if (consoles.isEmpty()) 0 else 1) > 1) {
+        val anyHidden = sources.any { hiddenIds(it).isNotEmpty() }
+        val q = libraryQuery
+        if (q.isNotEmpty()) chips.addView(tv.text("Search: “$q”   ✕", 20, tv.p.night, tv.ui(700)).apply {
+            gravity = Gravity.CENTER; setPadding(tv.px(18), 0, tv.px(18), 0); tag = "chip:search"
+            background = android.graphics.drawable.StateListDrawable().apply {
+                addState(intArrayOf(android.R.attr.state_focused), tv.round(Tv.CORONA, 22, Tv.CORONA, 3))
+                addState(intArrayOf(), tv.round(Tv.CORONA, 22))
+            }
+            tv.focusableView(this); setOnClickListener { libraryQuery = ""; render(force = true) }
+        }, tv.lp(-2, 44).apply { rightMargin = tv.px(20) })
+        if (sources.size + (if (consoles.isEmpty()) 0 else 1) > 1 || anyHidden || q.isNotEmpty()) {
             chips.addView(chip("All", null), tv.lp(-2, 44).apply { rightMargin = tv.px(12) })
-            sources.forEach { chips.addView(chip(it.name, it.uuid), tv.lp(-2, 44).apply { rightMargin = tv.px(12) }) }
+            if (sources.size > 1) sources.forEach { chips.addView(chip(it.name, it.uuid), tv.lp(-2, 44).apply { rightMargin = tv.px(12) }) }
             if (consoles.isNotEmpty()) chips.addView(chip("PlayStation", "ps"), tv.lp(-2, 44).apply { rightMargin = tv.px(12) })
+            if (anyHidden) chips.addView(chip("Hidden", "hidden"), tv.lp(-2, 44).apply { rightMargin = tv.px(12) })
             col.addView(chips, tv.lp(-1, -2).apply { bottomMargin = tv.px(28) })
         }
 
@@ -512,10 +527,23 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                 rightMargin = if (n % 7 == 6) 0 else tv.px(24); bottomMargin = tv.px(28)
             }); n++
         }
-        if (filter == null || filter == "ps") consoles.forEach { c -> add(psCover(c)) }
-        sources.filter { filter == null || filter == it.uuid }.forEach { pc ->
-            (apps[pc.uuid] ?: emptyList()).sortedWith(compareByDescending<NvApp> { it.appId == pc.runningGameId }.thenBy { it.appName.lowercase() })
+        fun matches(name: String) = q.isEmpty() || name.contains(q, ignoreCase = true)
+        if ((filter == null || filter == "ps") && matches("PlayStation 5")) consoles.forEach { c -> add(psCover(c)) }
+        sources.filter { filter == null || filter == "hidden" || filter == it.uuid }.forEach { pc ->
+            val hidden = hiddenIds(pc)
+            (apps[pc.uuid] ?: emptyList())
+                    .filter { if (filter == "hidden") it.appId in hidden else it.appId !in hidden }
+                    .filter { matches(it.appName) }
+                    .sortedWith(compareByDescending<NvApp> { it.appId == pc.runningGameId }.thenBy { it.appName.lowercase() })
                     .forEach { add(appCover(pc, it)) }
+        }
+        if (n == 0 && q.isNotEmpty()) {
+            col.addView(tv.text("Nothing called “$q”", 40, tv.p.moon, tv.display(600)))
+            col.addView(tv.row().apply {
+                addView(tv.pill("Search again", "Y", true) { openSearch() }.apply { tag = "primary" })
+                addView(tv.pill("Show all games", null, false) { libraryQuery = ""; render(force = true) })
+            }, tv.lp(-2, -2).apply { topMargin = tv.px(32) })
+            return col
         }
         if (n == 0) {
             col.addView(tv.text(if (sources.isEmpty() && consoles.isEmpty()) "No games yet" else "Loading games…", 40, tv.p.moon, tv.display(600)))
@@ -546,6 +574,10 @@ class HomeActivity : Activity(), PhoneLink.Listener {
 
     private fun appCover(pc: ComputerDetails, app: NvApp): View {
         val f = coverFrame("app:${pc.uuid}:${app.appId}", app.appName) { start(pc, app) }
+        f.setOnLongClickListener { gameMenu(pc, app); true }
+        f.setOnKeyListener { _, code, e ->
+            if (code == KeyEvent.KEYCODE_BUTTON_X || code == KeyEvent.KEYCODE_MENU) { if (e.action == KeyEvent.ACTION_UP) gameMenu(pc, app); true } else false
+        }
         val title = tv.text(app.appName, 23, 0xFFFFFFFF.toInt(), tv.display(700), 3).apply {
             gravity = Gravity.BOTTOM; setPadding(tv.px(18), 0, tv.px(18), tv.px(18))
         }
@@ -555,6 +587,77 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         loader(pc).populateImageView(app, img, title)
         if (app.appId == pc.runningGameId) f.addView(tv.status("Running", "live"), tv.flp(-2, 34).apply { leftMargin = tv.px(14); topMargin = tv.px(14) })
         return f
+    }
+
+    // ---- hidden games (Moonlight's own store, so AppView agrees), search, game menu ----
+    private var libraryQuery = ""
+    private fun hiddenIds(pc: ComputerDetails): Set<Int> =
+        getSharedPreferences(AppView.HIDDEN_APPS_PREF_FILENAME, MODE_PRIVATE).getStringSet(pc.uuid, emptySet())!!
+                .mapNotNull { it.toIntOrNull() }.toSet()
+
+    private fun setHidden(pc: ComputerDetails, app: NvApp, hide: Boolean) {
+        val p = getSharedPreferences(AppView.HIDDEN_APPS_PREF_FILENAME, MODE_PRIVATE)
+        val set = HashSet(p.getStringSet(pc.uuid, emptySet())!!)
+        if (hide) set.add(app.appId.toString()) else set.remove(app.appId.toString())
+        p.edit().putStringSet(pc.uuid, set).apply()
+    }
+
+    private fun openSearch() {
+        val card = dialogCard()
+        card.addView(tv.text("Search your games", 40, tv.p.moon, tv.display(700)))
+        val field = textField("A few letters of the name", libraryQuery)
+        card.addView(field, tv.lp(-1, 84).apply { topMargin = tv.px(24) })
+        fun search() { libraryQuery = field.text.toString().trim(); hideOverlay(); go(Tab.LIBRARY) }
+        field.setOnEditorActionListener { _, _, _ -> search(); true }
+        card.addView(tv.row().apply {
+            addView(tv.pill("Search", "A", true) { search() })
+            if (libraryQuery.isNotEmpty()) addView(tv.pill("Clear", null, false) { field.setText(""); search() })
+        }, tv.lp(-2, -2).apply { topMargin = tv.px(28) })
+        showOverlay("search", FrameLayout(this).apply { addView(card, tv.flp(1000, -2, Gravity.CENTER)) })
+        field.requestFocus()
+    }
+
+    /** A TV-sized text box (the TV's own keyboard types into it). */
+    private fun textField(hint: String, value: String) = android.widget.EditText(this).apply {
+        setText(value); setSelection(value.length)
+        this.hint = hint
+        setTextColor(tv.p.moon); setHintTextColor(tv.p.dust)
+        setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, tv.pxf(30)); typeface = tv.ui(600)
+        setSingleLine(true)
+        inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+        imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE
+        background = tv.focusable(tv.p.night, 16)
+        setPadding(tv.px(24), 0, tv.px(24), 0)
+        tag = "primary"
+    }
+
+    private fun gameMenu(pc: ComputerDetails, app: NvApp) {
+        val hidden = app.appId in hiddenIds(pc)
+        val card = dialogCard()
+        card.addView(tv.text(app.appName, 40, tv.p.moon, tv.display(700), 2))
+        card.addView(tv.text("On ${pc.name}" + (if (app.appId == pc.runningGameId) ". Running now." else "."), 22, tv.p.dust, tv.ui(500)),
+                tv.lp(-1, -2).apply { topMargin = tv.px(10); bottomMargin = tv.px(20) })
+        fun item(label: String, sub: String?, primary: Boolean = false, onClick: () -> Unit) {
+            card.addView(tv.row().apply {
+                if (primary) tag = "primary"
+                background = tv.focusable(0, 16, outline = false)
+                setPadding(tv.px(20), 0, tv.px(20), 0)
+                addView(tv.text(label, 24, tv.p.moon, tv.ui(700)), LinearLayout.LayoutParams(0, -2, 1f))
+                if (sub != null) addView(tv.text(sub, 19, tv.p.dust, tv.ui(600)))
+                tv.focusableView(this)
+                setOnClickListener { hideOverlay(); onClick() }
+            }, tv.lp(-1, 80))
+        }
+        item(if (app.appId == pc.runningGameId) "Resume on this TV" else "Play on this TV", null, true) { start(pc, app) }
+        if (app.appId == pc.runningGameId) item("Quit game", "Closes it on the PC") { quit(pc, app) }
+        item(if (hidden) "Show in Library" else "Hide from Library", if (hidden) null else "Still under the Hidden filter") {
+            setHidden(pc, app, !hidden); render(force = true); toast(if (hidden) "${app.appName} is back in your Library" else "${app.appName} hidden") }
+        item("Add to the TV's home screen", "A row of your games there") {
+            try { com.limelight.utils.TvChannelHelper(this).addGameToHomeScreen(pc, app); toast("Added. Look for the ${pc.name} row on the TV's home screen.") }
+            catch (e: Exception) { toast("This TV doesn't allow adding games to its home screen.") } }
+        card.addView(tv.text("App ${app.appId}" + (if (app.isHdrSupported) ". Supports HDR." else "."), 19, tv.p.dust, tv.ui(600)),
+                tv.lp(-1, -2).apply { topMargin = tv.px(16) })
+        showOverlay("gamemenu", FrameLayout(this).apply { addView(card, tv.flp(900, -2, Gravity.CENTER)) })
     }
 
     private fun psCover(c: Ps5Store.Console): View {
@@ -652,6 +755,8 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                 }.apply { if (running == null) tag = "primary" }
             }
         }
+        if (online(d) && paired(d)) actions += tv.pill("Unpair", null, false) { confirmUnpair(d) }.apply { tag = "unpair" }
+        actions += tv.pill("Test network", null, false) { ServerHelper.doNetworkTest(this) }.apply { tag = "nettest" }
         actions += tv.pill("Remove", null, false) { confirmRemovePc(d) }.apply { tag = "remove" }
         val facts = listOf(
                 "Address" to (d.activeAddress?.address ?: d.localAddress?.address ?: "Unknown"),
@@ -693,7 +798,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
     private fun settingsPage(): View {
         hints("A" to "Change", "LB" to "Previous tab", "RB" to "Next tab", "|" to "", "B" to "Back")
         val groups = listOf("video" to "Video", "audio" to "Audio", "pads" to "Controllers", "ps" to "PlayStation",
-                "screen" to "Screen", "about" to "About and help")
+                "mk" to "Mouse and keyboard", "screen" to "Screen", "about" to "About and help")
         val row = tv.row(Gravity.TOP)
         val nav = tv.col()
         groups.forEachIndexed { i, (k, label) ->
@@ -762,13 +867,29 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                 choice(list, "ps5_on_disconnect", "When I disconnect", "What happens to the PS5 after you leave a game",
                         listOf("Ask" to "ask", "Rest mode" to "rest", "Keep it on" to "keep"), "ask")
                 toggle(list, "ps5_swap_cross_circle", "Swap Cross and Circle", "For the Japanese layout", false)
+                choice(list, "ps5_away_quality", "Quality away from home", "Auto follows this TV's Wi-Fi: 1080p on a strong link, 720p on a weak one",
+                        listOf("Auto" to "auto", "540p" to "540", "720p" to "720", "1080p" to "1080"), "auto")
+                val pin = prefs.getString("ps5_login_pin", "") ?: ""
+                action(list, "set:pspin", "Console PIN", "Signs in for you when the PS5 asks for its 4-digit login PIN",
+                        if (pin.isEmpty()) "Not set" else "••••") { enterLoginPin() }
+                toggle(list, "ps5_dpad_touchpad", "D-pad as touchpad", "Hold Select and use the D-pad to swipe on the PS5's touchpad", false)
                 info(list, "PS button", "L2 + Start")
                 info(list, "Touchpad", "Select + Start")
+            }
+            "mk" -> {
+                toggle(list, "checkbox_absolute_mouse_mode", "Remote-desktop mouse", "The pointer goes exactly where your mouse is, for desktop use", false)
+                toggle(list, "checkbox_mouse_nav_buttons", "Mouse back and forward buttons", "Send them to the PC instead of using them here", false)
+                toggle(list, "checkbox_gamepad_touchpad_as_mouse", "DualSense touchpad as a mouse", "Move the PC's pointer with the pad's touchpad", false)
+                info(list, "Leave the game", "Ctrl + Alt + Shift + Q")
+                info(list, "Show stats", "Ctrl + Alt + Shift + S")
+                info(list, "Release the mouse", "Ctrl + Alt + Shift + Z")
             }
             "screen" -> {
                 action(list, "set:oled", "OLED screen", "True black, quieter menus, and a dim screen saver that moves", if (tv.oled) "On" else "Off") {
                     prefs.edit().putBoolean("oled", !tv.oled).apply(); recreate() }
                 toggle(list, "checkbox_enable_perf_overlay", "Stats while playing", "Frame rate, delay and lost frames in a corner of the game", false)
+                tvToggle(list, "hide_hints", "Hide button hints", "They fade after 10 seconds and come back when you press a button", tv.oled)
+                tvToggle(list, "pixel_shift", "Move the menus slightly", "Shifts everything by a few pixels every few minutes, so nothing burns in", tv.oled)
             }
             "about" -> {
                 val ver = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (e: Exception) { "" }
@@ -860,6 +981,41 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         settingRow(list, key, title, sub, true, sw) { stream.edit().putBoolean(key, !on).apply(); render(force = true) }
     }
 
+    /** A switch stored with this app's own settings (mc_tv), not Moonlight's stream settings. */
+    private fun tvToggle(list: LinearLayout, key: String, title: String, sub: String, def: Boolean) {
+        val on = prefs.getBoolean(key, def)
+        val sw = FrameLayout(this).apply {
+            background = tv.round(if (on) Tv.BEAM else tv.p.line, 19)
+            addView(View(this@HomeActivity).apply { background = tv.round(if (on) tv.p.night else tv.p.dust, 14) },
+                    tv.flp(28, 28, Gravity.CENTER_VERTICAL or (if (on) Gravity.END else Gravity.START)).apply { leftMargin = tv.px(5); rightMargin = tv.px(5) })
+            layoutParams = tv.lp(68, 38)
+        }
+        settingRow(list, key, title, sub, true, sw) { prefs.edit().putBoolean(key, !on).apply(); render(force = true) }
+    }
+
+    /** The PS5's own 4-digit login PIN, so the player can answer it (PlayStation settings). */
+    private fun enterLoginPin() {
+        val card = dialogCard()
+        card.addView(tv.text("Console PIN", 40, tv.p.moon, tv.display(700)))
+        card.addView(tv.text("The 4-digit PIN your PS5 asks for when it starts (if you set one). Leave empty to turn it off.",
+                22, tv.p.dust, tv.ui(500), 3), tv.lp(-1, -2).apply { topMargin = tv.px(12) })
+        val field = textField("4 digits", prefs.getString("ps5_login_pin", "") ?: "").apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
+            filters = arrayOf(android.text.InputFilter.LengthFilter(4))
+        }
+        card.addView(field, tv.lp(480, 84).apply { topMargin = tv.px(24) })
+        fun save() {
+            val v = field.text.toString()
+            if (v.isNotEmpty() && v.length != 4) { toast("The PIN has 4 digits"); return }
+            prefs.edit().putString("ps5_login_pin", v).apply(); hideOverlay(); render(force = true)
+        }
+        field.setOnEditorActionListener { _, _, _ -> save(); true }
+        card.addView(tv.row().apply { addView(tv.pill("Save", "A", true) { save() }); addView(tv.pill("Cancel", "B", false) { hideOverlay() }) },
+                tv.lp(-2, -2).apply { topMargin = tv.px(24) })
+        showOverlay("pspin", FrameLayout(this).apply { addView(card, tv.flp(900, -2, Gravity.CENTER)) })
+        field.requestFocus()
+    }
+
     private fun action(list: LinearLayout, key: String, title: String, sub: String, value: String?, onClick: () -> Unit) =
         settingRow(list, key.removePrefix("set:"), title, sub, true, value?.let { tv.text(it, 23, tv.p.moon, tv.ui(700)) }, onClick)
 
@@ -939,6 +1095,18 @@ class HomeActivity : Activity(), PhoneLink.Listener {
             }
         }.start()
     }
+
+    private fun confirmUnpair(d: ComputerDetails) =
+        confirm("Unpair ${d.name}?", "It stays on this TV, but you'll pair it again with a PIN before you can play its games.", "Unpair", danger = true) {
+            val b = binder ?: return@confirm
+            Thread {
+                val ok = try {
+                    NvHTTP(ServerHelper.getCurrentAddressFromComputer(d), d.httpsPort, b.uniqueId, d.serverCert,
+                            PlatformBinding.getCryptoProvider(this)).unpair(); true
+                } catch (e: Exception) { false }
+                runOnUiThread { toast(if (ok) "Unpaired ${d.name}" else "Couldn't reach ${d.name} to unpair it"); b.invalidateStateForComputer(d.uuid) }
+            }.start()
+        }
 
     private fun confirmRemovePc(d: ComputerDetails) =
         confirm("Remove ${d.name}?", "It disappears from this TV and is unpaired. To add it back, you'll pair it again with a PIN.",
@@ -1189,7 +1357,42 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         open("ps:$host")
     }
 
-    private fun addPcByAddress() = startActivity(Intent(this, AddComputerManually::class.java))
+    private fun addPcByAddress() {
+        val card = dialogCard()
+        card.addView(tv.text("Add a PC by its address", 40, tv.p.moon, tv.display(700)))
+        card.addView(tv.text("The PC's IP address or name, the one Sunshine runs on. Add :port only if it isn't the usual one.",
+                22, tv.p.dust, tv.ui(500), 3), tv.lp(-1, -2).apply { topMargin = tv.px(12) })
+        val field = textField("For example 192.168.100.3", "")
+        card.addView(field, tv.lp(-1, 84).apply { topMargin = tv.px(24) })
+        val status = tv.text("", 21, tv.p.dust, tv.ui(600), 2)
+        card.addView(status, tv.lp(-1, -2).apply { topMargin = tv.px(16) })
+        fun submit() {
+            val raw = field.text.toString().trim()
+            if (raw.isEmpty()) { status.text = "Type the PC's address first."; return }
+            val b = binder ?: return
+            status.text = "Looking for a PC at $raw…"
+            Thread {
+                val ok = try {
+                    val uri = try { java.net.URI("moonlight://$raw") } catch (e: Exception) { java.net.URI("moonlight://[$raw]") }
+                    val host = uri.host ?: throw IllegalArgumentException()
+                    val d = ComputerDetails()
+                    d.manualAddress = ComputerDetails.AddressTuple(host, if (uri.port == -1) NvHTTP.DEFAULT_HTTP_PORT else uri.port)
+                    b.addComputerBlocking(d)
+                } catch (e: Exception) { false }
+                runOnUiThread {
+                    if (ok) { hideOverlay(); toast("Added. Pair it from its page."); go(Tab.CONSOLES) }
+                    else status.text = "No PC answered at $raw. Check it's on, Sunshine is running, and the address is right."
+                }
+            }.start()
+        }
+        field.setOnEditorActionListener { _, _, _ -> submit(); true }
+        card.addView(tv.row().apply {
+            addView(tv.pill("Add", "A", true) { submit() })
+            addView(tv.pill("Cancel", "B", false) { hideOverlay() })
+        }, tv.lp(-2, -2).apply { topMargin = tv.px(24) })
+        showOverlay("addpc", FrameLayout(this).apply { addView(card, tv.flp(1000, -2, Gravity.CENTER)) })
+        field.requestFocus()
+    }
 
     private fun pairController() {
         for (a in listOf(Settings.ACTION_BLUETOOTH_SETTINGS, Settings.ACTION_SETTINGS)) {
@@ -1323,8 +1526,10 @@ class HomeActivity : Activity(), PhoneLink.Listener {
 
     // ---------------------------------------------------------------- input
 
+    private var shiftTick = 0
     override fun dispatchKeyEvent(e: KeyEvent): Boolean {
         lastInput = System.currentTimeMillis()
+        if (hintsBar.alpha < (if (tv.oled) 0.72f else 1f)) hintsBar.animate().alpha(if (tv.oled) 0.72f else 1f).setDuration(150).start()
         if (overlayKind == "idle") { if (e.action == KeyEvent.ACTION_UP) hideOverlay(); return true }
         if (overlayKind == "code" && e.action == KeyEvent.ACTION_DOWN) {
             when (e.keyCode) {
@@ -1335,6 +1540,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         if (e.action == KeyEvent.ACTION_DOWN && overlayKind == null && detail == null) {
             val i = Tab.values().indexOf(tab)
             when (e.keyCode) {
+                KeyEvent.KEYCODE_BUTTON_Y, KeyEvent.KEYCODE_SEARCH -> if (tab == Tab.LIBRARY) { openSearch(); return true }
                 KeyEvent.KEYCODE_BUTTON_L1 -> { go(Tab.values()[(i + 3) % 4]); return true }
                 KeyEvent.KEYCODE_BUTTON_R1 -> { go(Tab.values()[(i + 1) % 4]); return true }
             }
