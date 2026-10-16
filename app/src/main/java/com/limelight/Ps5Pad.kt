@@ -57,7 +57,9 @@ object Ps5Pad {
         val out = s.getOutputStream()
         val inp = s.getInputStream()
         val key = Base64.encodeToString(ByteArray(16).also { SecureRandom().nextBytes(it) }, Base64.NO_WRAP)
-        out.write(("GET /pad HTTP/1.1\r\nHost: $h:$PAD_PORT\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" +
+        val pk = PhoneGamepad.phoneHost()?.let { PhoneGamepad.padKey() }   // present the phone's pad key so it authorizes us
+        val path = if (!pk.isNullOrEmpty()) "/pad?k=$pk" else "/pad"
+        out.write(("GET $path HTTP/1.1\r\nHost: $h:$PAD_PORT\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" +
                 "Sec-WebSocket-Key: $key\r\nSec-WebSocket-Version: 13\r\n\r\n").toByteArray(StandardCharsets.UTF_8))
         out.flush()
         if (!readHeaders(inp)) throw Exception("handshake refused")

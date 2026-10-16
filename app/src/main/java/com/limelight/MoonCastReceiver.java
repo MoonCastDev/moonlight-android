@@ -114,6 +114,7 @@ public class MoonCastReceiver extends Activity {
                     try { phoneIp = s.getInetAddress().getHostAddress(); } catch (Exception ignored) { }
                 }
                 PhoneGamepad.setPhoneHost(phoneIp);
+                PhoneGamepad.setPadKey(field(json, "padKey"));   // key to authorize with the phone's pad server
                 // PS5 Remote Play (native chiaki): the phone sends the console's host + registration keys.
                 String ps5host = field(json, "ps5host");
                 if (ps5host != null && !ps5host.isEmpty()) {

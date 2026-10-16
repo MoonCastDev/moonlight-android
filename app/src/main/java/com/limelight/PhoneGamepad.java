@@ -28,6 +28,7 @@ class PhoneGamepad {
 
     private static volatile PhoneGamepad current;
     private static volatile String phoneHost;         // set from the /play socket's remote address
+    private static volatile String padKey;            // the phone's pad-server session key (for /pad?k=...)
 
     private final NvConnection conn;
     private final String host;
@@ -41,6 +42,10 @@ class PhoneGamepad {
 
     /** The last phone address that drove a /play (used by the PS5 pad relay too). */
     static String phoneHost() { return phoneHost; }
+
+    /** The phone's pad-server session key, passed in /play; the relay presents it so the pad server authorizes us. */
+    static void setPadKey(String k) { padKey = k; }
+    static String padKey() { return padKey; }
 
     /** Start feeding this connection from the phone's pad (uses the last known phone address, or an override). */
     static synchronized void start(NvConnection conn, String overrideHost) {
@@ -73,10 +78,11 @@ class PhoneGamepad {
         OutputStream out = s.getOutputStream();
         InputStream in = s.getInputStream();
 
-        // WebSocket handshake
+        // WebSocket handshake (present the phone's pad-server key so it authorizes us: /pad?k=<key>)
         byte[] keyBytes = new byte[16]; new SecureRandom().nextBytes(keyBytes);
         String key = android.util.Base64.encodeToString(keyBytes, android.util.Base64.NO_WRAP);
-        out.write(("GET /pad HTTP/1.1\r\nHost: " + host + ":" + PAD_PORT + "\r\nUpgrade: websocket\r\n"
+        String path = padKey != null && !padKey.isEmpty() ? "/pad?k=" + padKey : "/pad";
+        out.write(("GET " + path + " HTTP/1.1\r\nHost: " + host + ":" + PAD_PORT + "\r\nUpgrade: websocket\r\n"
                 + "Connection: Upgrade\r\nSec-WebSocket-Key: " + key + "\r\nSec-WebSocket-Version: 13\r\n\r\n")
                 .getBytes(StandardCharsets.UTF_8));
         out.flush();
