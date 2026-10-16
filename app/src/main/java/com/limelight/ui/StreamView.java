@@ -8,6 +8,11 @@ import android.view.SurfaceView;
 
 public class StreamView extends SurfaceView {
     private double desiredAspectRatio;
+    private boolean fill;   // MoonCast: Fill keeps the shape but covers the screen; the parent crops the overflow
+
+    public void setFill(boolean fill) {
+        this.fill = fill;
+    }
     private InputCallbacks inputCallbacks;
 
     public void setDesiredAspectRatio(double aspectRatio) {
@@ -47,7 +52,13 @@ public class StreamView extends SurfaceView {
         int heightSize = MeasureSpec.getSize(heightMeasureSpec);
 
         int measuredHeight, measuredWidth;
-        if (widthSize > heightSize * desiredAspectRatio) {
+        if (fill == (widthSize > heightSize * desiredAspectRatio)) {
+            measuredWidth = widthSize;
+            measuredHeight = (int)(measuredWidth / desiredAspectRatio);
+        } else if (fill) {
+            measuredHeight = heightSize;
+            measuredWidth = (int)(measuredHeight * desiredAspectRatio);
+        } else if (widthSize > heightSize * desiredAspectRatio) {
             measuredHeight = heightSize;
             measuredWidth = (int)(measuredHeight * desiredAspectRatio);
         } else {

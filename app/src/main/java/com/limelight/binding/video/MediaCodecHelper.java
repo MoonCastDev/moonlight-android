@@ -43,6 +43,25 @@ public class MediaCodecHelper {
     private static final List<String> kirinDecoderPrefixes;
     private static final List<String> exynosDecoderPrefixes;
     private static final List<String> amlogicDecoderPrefixes;
+    private static final List<String> mtkDecoderPrefixes;      // MoonCast, from Artemis
+    private static final List<String> tegraDecoderPrefixes;    // MoonCast, from Artemis
+
+    static {
+        mtkDecoderPrefixes = new LinkedList<>();
+        mtkDecoderPrefixes.add("omx.mtk");
+        mtkDecoderPrefixes.add("c2.mtk");
+        tegraDecoderPrefixes = new LinkedList<>();
+        tegraDecoderPrefixes.add("omx.nvidia");
+        tegraDecoderPrefixes.add("c2.nvidia");
+    }
+
+    /** Set a vendor key without failing on decoders that reject it (Artemis). */
+    private static void safeSet(MediaFormat format, String key, int value) {
+        try {
+            format.setInteger(key, value);
+        } catch (Throwable ignored) {
+        }
+    }
     private static final List<String> knownVendorLowLatencyOptions;
 
     public static final boolean SHOULD_BYPASS_SOFTWARE_BLOCK =
@@ -492,7 +511,12 @@ public class MediaCodecHelper {
                 !isAdreno620;
     }
 
-    public static boolean setDecoderLowLatencyOptions(MediaFormat videoFormat, MediaCodecInfo decoderInfo, int tryNumber) {
+    /**
+     * @param ultraLowLatency MoonCast: Settings, Video, "Ultra low latency" (from Artemis, github.com/ClassicOldSong/moonlight-android,
+     *                        GPL-3.0). Adds output fencing on Snapdragon 8 Gen 2 / 8 Gen 3 / 8 Elite, a low-latency preset on
+     *                        MediaTek and output-reorder off on NVIDIA Tegra. Off by default: experimental.
+     */
+    public static boolean setDecoderLowLatencyOptions(MediaFormat videoFormat, MediaCodecInfo decoderInfo, boolean ultraLowLatency, int tryNumber) {
         // Options here should be tried in the order of most to least risky. The decoder will use
         // the first MediaFormat that doesn't fail in configure().
 
@@ -505,7 +529,8 @@ public class MediaCodecHelper {
 
             // If this decoder officially supports FEATURE_LowLatency, we will just use that alone
             // for try 0. Otherwise, we'll include it as best effort with other options.
-            if (decoderSupportsAndroidRLowLatency(decoderInfo, videoFormat.getString(MediaFormat.KEY_MIME))) {
+            // With ultra low latency, keep going: the vendor keys below matter more than the standard one (Artemis)
+            if (!ultraLowLatency && decoderSupportsAndroidRLowLatency(decoderInfo, videoFormat.getString(MediaFormat.KEY_MIME))) {
                 return true;
             }
         }
@@ -557,11 +582,58 @@ public class MediaCodecHelper {
                 //
                 // We will first try both, then try vendor.qti-ext-dec-low-latency.enable alone if that fails
                 if (tryNumber < 4) {
-                    videoFormat.setInteger("vendor.qti-ext-dec-picture-order.enable", 1);
+                    if (ultraLowLatency) {
+                        // Artemis: picture order off for OMX.qcom, on for c2.qcom; software output fencing is what
+                        // cuts latency on Snapdragon 8 Gen 2, 8s Gen 3 and 8 Elite (confirmed there by its authors)
+                        boolean omxQcom = decoderInfo.getName().toLowerCase(java.util.Locale.US).startsWith("omx.qcom");
+                        safeSet(videoFormat, "vendor.qti-ext-dec-picture-order.enable", omxQcom ? 0 : 1);
+                        safeSet(videoFormat, "vendor.qti-ext-output-sw-fence-enable.value", 1);   // 8 Gen 2
+                        safeSet(videoFormat, "vendor.qti-ext-output-fence.enable", 1);            // 8s Gen 3, 8 Elite
+                        safeSet(videoFormat, "vendor.qti-ext-output-fence.fence_type", 1);        // 1 = software
+                    }
+                    else {
+                        videoFormat.setInteger("vendor.qti-ext-dec-picture-order.enable", 1);
+                    }
                     setNewOption = true;
                 }
                 if (tryNumber < 5) {
                     videoFormat.setInteger("vendor.qti-ext-dec-low-latency.enable", 1);
+                    setNewOption = true;
+                }
+            }
+            else if (ultraLowLatency && isDecoderInList(mtkDecoderPrefixes, decoderInfo.getName())) {
+                if (tryNumber < 4) {
+                    // Artemis' MediaTek preset: low-latency decode path, no idle clock-down, shallow queues
+                    safeSet(videoFormat, "vdec-lowlatency", 1);
+                    safeSet(videoFormat, "vendor.mtk.vdec.cpu.boost.mode", 1);
+                    safeSet(videoFormat, "vendor.mtk.vdec.cpu.boost.mode.value", 1);
+                    safeSet(videoFormat, "vendor.mtk.vdec.dvfs.mode", 1);
+                    safeSet(videoFormat, "vendor.mtk.vdec.dvfs.level", 1);
+                    safeSet(videoFormat, "vendor.mtk.vdec.low-latency.mode", 1);
+                    safeSet(videoFormat, "vendor.mtk.vdec.ultra-low-latency", 0);   // off for stability (Artemis)
+                    safeSet(videoFormat, "vendor.mtk.vdec.disable-idle", 1);
+                    safeSet(videoFormat, "vendor.mtk.vdec.preload.frame.count", 1);
+                    safeSet(videoFormat, "vendor.mtk.vdec.buffer.fetch.timeout.ms", 4);
+                    safeSet(videoFormat, "vendor.mtk.vdec.bq.guard.interval.time", 4);
+                    safeSet(videoFormat, "vendor.mtk.vdec.input.max.queue.depth", 3);
+                    safeSet(videoFormat, "vendor.mtk.vdec.output.max.queue.depth", 3);
+                    safeSet(videoFormat, "vendor.mtk.vdec.vsync.adjust.enable", 0);
+                    safeSet(videoFormat, "vendor.mtk.vdec.nvop.skip", 1);
+                    safeSet(videoFormat, "vendor.mtk.vdec.skip.mode", 0);
+                    safeSet(videoFormat, "vendor.mtk.vdec.drop.nonref.frame", 0);
+                    safeSet(videoFormat, "vendor.mtk.vdec.frame-drop.policy", 0);
+                    safeSet(videoFormat, MediaFormat.KEY_OPERATING_RATE, (int) Short.MAX_VALUE);
+                    safeSet(videoFormat, MediaFormat.KEY_PRIORITY, 0);
+                    setNewOption = true;
+                }
+            }
+            else if (ultraLowLatency && isDecoderInList(tegraDecoderPrefixes, decoderInfo.getName())) {
+                if (tryNumber < 4) {
+                    // Artemis: NVIDIA Tegra (Shield) low latency, no output reordering
+                    safeSet(videoFormat, "media.low-latency.enable", 1);
+                    safeSet(videoFormat, "vendor.low-latency.enable", 1);
+                    safeSet(videoFormat, "disable-output-reorder", 1);
+                    safeSet(videoFormat, "vendor.nvidia.disable-output-reorder", 1);
                     setNewOption = true;
                 }
             }

@@ -160,8 +160,11 @@ class QuickMenu(private val act: Activity) {
     companion object {
         /** Physical game pads connected now (not the TV remote). */
         @JvmStatic fun pads(): List<InputDevice> = InputDevice.getDeviceIds().toList().mapNotNull { InputDevice.getDevice(it) }.filter { d ->
-            !d.isVirtual && d.controllerNumber > 0 && ((d.sources and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD ||
-                    (d.sources and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK)
+            // A real pad has sticks (joystick source) or at least a maker id; the TV's "virtual-search" input claims
+            // to be a numbered gamepad on some sticks (Mi stick, Android 9) but has neither.
+            val joystick = (d.sources and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
+            val gamepad = (d.sources and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD
+            !d.isVirtual && d.controllerNumber > 0 && (joystick || (gamepad && d.vendorId != 0))
         }
 
         /** "80 %" where Android knows the pad's battery (Android 12+), else null. */

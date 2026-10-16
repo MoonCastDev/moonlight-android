@@ -31,6 +31,10 @@ public class PreferenceConfiguration {
     static final String BITRATE_PREF_STRING = "seekbar_bitrate_kbps";
     private static final String BITRATE_PREF_OLD_STRING = "seekbar_bitrate";
     private static final String STRETCH_PREF_STRING = "checkbox_stretch_video";
+    // MoonCast, from Artemis: ultra low latency decoding, picture scale mode (fit / fill / stretch) and zoom
+    private static final String ULTRA_LOW_LATENCY_PREF_STRING = "checkbox_ultra_low_latency";
+    private static final String SCALE_MODE_PREF_STRING = "list_video_scale_mode";
+    private static final String ZOOM_PREF_STRING = "seekbar_video_zoom";
     private static final String SOPS_PREF_STRING = "checkbox_enable_sops";
     private static final String DISABLE_TOASTS_PREF_STRING = "checkbox_disable_warnings";
     private static final String HOST_AUDIO_PREF_STRING = "checkbox_host_audio";
@@ -128,6 +132,8 @@ public class PreferenceConfiguration {
     public int deadzonePercentage;
     public int oscOpacity;
     public boolean stretchVideo, enableSops, playHostAudio, disableWarnings;
+    public boolean ultraLowLatency, fillVideo;
+    public int videoZoomPercent;
     public String language;
     public boolean smallIconMode, multiController, usbDriver, flipFaceButtons;
     public boolean onscreenController;
@@ -574,6 +580,11 @@ public class PreferenceConfiguration {
         config.disableWarnings = prefs.getBoolean(DISABLE_TOASTS_PREF_STRING, DEFAULT_DISABLE_TOASTS);
         config.enableSops = prefs.getBoolean(SOPS_PREF_STRING, DEFAULT_SOPS);
         config.stretchVideo = prefs.getBoolean(STRETCH_PREF_STRING, DEFAULT_STRETCH);
+        config.ultraLowLatency = prefs.getBoolean(ULTRA_LOW_LATENCY_PREF_STRING, false);
+        String scaleMode = prefs.getString(SCALE_MODE_PREF_STRING, config.stretchVideo ? "stretch" : "fit");
+        config.stretchVideo = "stretch".equals(scaleMode);
+        config.fillVideo = "fill".equals(scaleMode);
+        config.videoZoomPercent = prefs.getInt(ZOOM_PREF_STRING, 100);
         config.playHostAudio = prefs.getBoolean(HOST_AUDIO_PREF_STRING, DEFAULT_HOST_AUDIO);
         config.smallIconMode = prefs.getBoolean(SMALL_ICONS_PREF_STRING, getDefaultSmallMode(context));
         config.multiController = prefs.getBoolean(MULTI_CONTROLLER_PREF_STRING, DEFAULT_MULTI_CONTROLLER);
