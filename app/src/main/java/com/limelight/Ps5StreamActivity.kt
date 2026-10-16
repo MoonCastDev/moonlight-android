@@ -47,8 +47,23 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
         super.onCreate(b)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         val sv = SurfaceView(this)
-        setContentView(sv)
+        // Status over the (black) video surface until the first frame: waking a console over the internet takes up to a minute
+        status = android.widget.TextView(this).apply {
+            setTextColor(0xFFE8ECFF.toInt()); textSize = 22f
+            gravity = android.view.Gravity.CENTER
+            text = "Connecting to your PlayStation…"
+        }
+        setContentView(android.widget.FrameLayout(this).apply {
+            setBackgroundColor(0xFF000000.toInt())
+            addView(sv, android.widget.FrameLayout.LayoutParams(-1, -1))
+            addView(status, android.widget.FrameLayout.LayoutParams(-1, -1))
+        })
         sv.holder.addCallback(this)
+    }
+
+    private var status: android.widget.TextView? = null
+    private fun showStatus(t: String?) = runOnUiThread {
+        status?.let { if (t == null) it.visibility = android.view.View.GONE else { it.text = t; it.visibility = android.view.View.VISIBLE } }
     }
 
     private fun connectInfo(remote: Boolean): ConnectInfo {
@@ -121,6 +136,8 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
         val remote = !lanConsoleAnswers(host, ps5) && canGoRemote()
         Log.i(TAG, if (remote) "console not on this LAN -> Remote Play via PSN" else "console on LAN ($host)")
         if (remote) ensureCaBundle()
+        showStatus(if (remote) "Waking your PlayStation over the internet…\nThis can take up to a minute."
+                   else "Connecting to your PlayStation…")
         if (!remote) try {
             val cred = wakeCredential(hex(intent.getStringExtra(EXTRA_REGIST_KEY) ?: ""))
             if (cred != null) {
@@ -150,7 +167,12 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
             attempt++
             try { Thread.sleep(3000) } catch (e: InterruptedException) { break }  // console still waking
         }
-        if (session == null && !closed) { Log.e(TAG, "PS5 did not connect"); runOnUiThread { finish() } }
+        if (session == null && !closed) {
+            Log.e(TAG, "PS5 did not connect")
+            showStatus("Couldn't reach your PlayStation.\nCheck it's in rest mode (not off) and try again.")
+            try { Thread.sleep(4000) } catch (e: InterruptedException) { }
+            runOnUiThread { finish() }
+        }
     }
 
     // chiaki's wake credential = the registration key's ASCII (up to the null pad) parsed as a hex ULong.
@@ -162,7 +184,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
 
     private fun onEvent(ev: Event) {
         when (ev) {
-            is ConnectedEvent -> Log.i(TAG, "PS5 connected")
+            is ConnectedEvent -> { Log.i(TAG, "PS5 connected"); showStatus(null) }
             is QuitEvent -> {
                 // Don't dispose here: this runs on chiaki's own callback thread, and dispose()/join would deadlock.
                 // Just close the screen; onDestroy tears the session down on a separate thread.
