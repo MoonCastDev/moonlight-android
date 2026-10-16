@@ -17,6 +17,7 @@ import com.metallic.chiaki.lib.ControllerState
 import com.metallic.chiaki.lib.DiscoveryService
 import com.metallic.chiaki.lib.Event
 import com.metallic.chiaki.lib.QuitEvent
+import com.metallic.chiaki.lib.RumbleEvent
 import com.metallic.chiaki.lib.Session
 import com.metallic.chiaki.lib.VideoFPSPreset
 import com.metallic.chiaki.lib.VideoResolutionPreset
@@ -332,8 +333,26 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
                 }
                 runOnUiThread { finish() }
             }
+            is RumbleEvent -> rumble(ev.left.toInt(), ev.right.toInt())
             else -> {}
         }
+    }
+
+    // The PS5's rumble goes to the pad you're holding (the last one that sent input). Each event renews a short
+    // buzz at the stronger motor's level; 0 stops it, and it stops by itself if the stop never arrives.
+    @Volatile private var padDeviceId = -1
+    private fun rumble(left: Int, right: Int) {
+        try {
+            val dev = InputDevice.getDevice(padDeviceId) ?: return
+            val vib = if (android.os.Build.VERSION.SDK_INT >= 31) dev.vibratorManager.defaultVibrator
+                      else @Suppress("DEPRECATION") dev.vibrator
+            if (!vib.hasVibrator()) return
+            val strength = maxOf(left, right)
+            if (strength == 0) { vib.cancel(); return }
+            if (android.os.Build.VERSION.SDK_INT >= 26)
+                vib.vibrate(android.os.VibrationEffect.createOneShot(1000, strength.coerceIn(1, 255)))
+            else @Suppress("DEPRECATION") vib.vibrate(1000)
+        } catch (e: Exception) { Log.w(TAG, "rumble: $e") }
     }
 
     // ---- the device's own controller (Odin handheld, or a pad plugged into the TV) ----
@@ -352,6 +371,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
         val fromPad = (e.source and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD ||
                 (e.source and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
         if (menu.isShowing) return menu.onKey(e)
+        if (fromPad) padDeviceId = e.deviceId
         // the system Back (Odin's back key / a TV remote) opens the Quick menu; the pad's B button is Circle
         if (code == KeyEvent.KEYCODE_BACK && !fromPad) {
             if (e.action == KeyEvent.ACTION_UP) openMenu()
@@ -373,6 +393,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
     override fun dispatchGenericMotionEvent(e: MotionEvent): Boolean {
         if (menu.isShowing) return menu.onMotion(e)
         if ((e.source and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK && e.action == MotionEvent.ACTION_MOVE) {
+            padDeviceId = e.deviceId
             fun dz(v: Float) = if (Math.abs(v) < 0.08f) 0f else v
             lx = dz(e.getAxisValue(MotionEvent.AXIS_X)); ly = dz(e.getAxisValue(MotionEvent.AXIS_Y))
             rx = dz(e.getAxisValue(MotionEvent.AXIS_Z)); ry = dz(e.getAxisValue(MotionEvent.AXIS_RZ))

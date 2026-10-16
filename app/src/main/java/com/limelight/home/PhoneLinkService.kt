@@ -39,6 +39,8 @@ class PhoneLinkService : Service(), PhoneLink.Listener {
 
     override fun onIncoming(title: String, from: String) { listener?.onIncoming(title, from) }
     override fun onConsolesChanged() { listener?.onConsolesChanged() }
+    override fun onRegistering(host: String) { listener?.onRegistering(host) }
+    override fun onRegistered(host: String, name: String?) { listener?.onRegistered(host, name) }
 
     private fun goForeground() {
         val nm = getSystemService(NotificationManager::class.java)
