@@ -1372,6 +1372,15 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
         // Flip stats windows roughly every second
         if (SystemClock.uptimeMillis() >= activeWindowVideoStats.measurementStartTimestamp + 1000) {
+            {
+                // MoonCast Quick menu: keep the headline numbers even when the overlay is off
+                VideoStats q = new VideoStats();
+                q.add(lastWindowVideoStats);
+                q.add(activeWindowVideoStats);
+                long rtt = MoonBridge.getEstimatedRttInfo();
+                com.limelight.home.StreamStats.update(q.getFps().renderedFps, (int)(rtt >> 32),
+                        q.totalFrames > 0 ? (float)q.framesLost / q.totalFrames * 100 : 0f, initialWidth + "x" + initialHeight);
+            }
             if (prefs.enablePerfOverlay) {
                 VideoStats lastTwo = new VideoStats();
                 lastTwo.add(lastWindowVideoStats);

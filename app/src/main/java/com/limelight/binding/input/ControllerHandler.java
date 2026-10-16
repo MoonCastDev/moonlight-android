@@ -2552,8 +2552,9 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
         sendControllerInputPacket(context);
 
         if (context.pendingExit && context.inputMap == 0) {
-            // All buttons from the quit combo are lifted. Finish the activity now.
-            activityContext.finish();
+            // All buttons from the combo are lifted. MoonCast: open the Quick menu (it has Disconnect and Quit).
+            context.pendingExit = false;
+            gestures.openQuickMenu();
         }
 
         return true;
