@@ -34,6 +34,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
         const val EXTRA_REGIST_KEY = "ps5_regist_key"   // hex, 16 bytes
         const val EXTRA_MORNING = "ps5_morning"          // hex, 16 bytes
         const val EXTRA_PS5 = "ps5_is_ps5"
+        private const val LAN_BITRATE_KBPS = 30000
         private const val QUIT_RP_IN_USE = 4   // CHIAKI_QUIT_REASON_SESSION_REQUEST_RP_IN_USE ("Remote is already in use")
         // Remote Play over the internet (PSN hole-punch): sent by the phone, used when the console isn't on this LAN
         const val EXTRA_PSN_TOKEN = "ps5_psn_token"
@@ -76,10 +77,13 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
         val morning = hex(intent.getStringExtra(EXTRA_MORNING) ?: "")
         val ps5 = intent.getBooleanExtra(EXTRA_PS5, true)
         // 1080p60 HEVC; chiaki falls back if the console/link can't hold it
-        val profile = ConnectVideoProfile.preset(
+        val preset = ConnectVideoProfile.preset(
             VideoResolutionPreset.RES_1080P, VideoFPSPreset.FPS_60,
             if (ps5) Codec.CODEC_H265 else Codec.CODEC_H264
         )
+        // Home network: 30 Mbps (chiaki's 1080p preset is 15) for a sharper picture in fast scenes. Over the internet
+        // keep 15 - the PS5 also backs off by itself now that real packet loss is reported.
+        val profile = if (remote) preset else preset.copy(bitrate = LAN_BITRATE_KBPS)
         if (!remote) return ConnectInfo(ps5, host, registKey, morning, profile)
         val account = intent.getStringExtra(EXTRA_ACCOUNT_ID)?.let {
             try { android.util.Base64.decode(it, android.util.Base64.DEFAULT) } catch (e: Exception) { null }
