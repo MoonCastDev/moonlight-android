@@ -180,15 +180,11 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
         Log.i(TAG, if (remote) "console not on this LAN -> Remote Play via PSN" else "console on LAN ($host)")
         if (remote) { ensureCaBundle(); startProgressWatch() }
         showStatus(if (remote) "Reaching PlayStation Network…" else "Connecting to your PlayStation…")
-        if (!remote) try {
-            val cred = wakeCredential(hex(intent.getStringExtra(EXTRA_REGIST_KEY) ?: ""))
-            if (cred != null) {
-                Log.i(TAG, "waking $host")
-                DiscoveryService.wakeup(null, host, cred, ps5)
-            }
-        } catch (e: Exception) { Log.w(TAG, "wake: $e") }
+        if (!remote) wakeLan(host, ps5)
         var attempt = 0
-        val maxAttempts = if (remote) 4 else 8   // remote: a missed PSN start request is only fixed by a fresh attempt
+        // remote: a missed PSN start request is only fixed by a fresh attempt. Home network: a console still waking
+        // from rest mode refuses the session at once, so keep trying for about a minute.
+        val maxAttempts = if (remote) 4 else 20
         while (!closed && attempt < maxAttempts) {
             try {
                 val s = Session(connectInfo(remote), null, false)
@@ -199,23 +195,26 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
                 if (err.isSuccess) {
                     session = s
                     Ps5Pad.start(s)   // phone drives the controller
-                    if (!remote) return
-                    // Remote: the data-channel hole-punch happens after start(), and the PS5 may give up on it.
                     // Only the first picture counts as success; a quit before that is a failed attempt -> retry.
+                    // Remote: the data-channel hole-punch may fail. Home: the console may still be waking up.
                     val latch = java.util.concurrent.CountDownLatch(1)
                     attemptLatch = latch
                     attemptQuit = false
                     latch.await(120, java.util.concurrent.TimeUnit.SECONDS)
                     attemptLatch = null
                     if (connected || closed) return
-                    Log.w(TAG, "attempt ${attempt + 1}: PS5 dropped the session before the picture - retrying")
+                    Log.w(TAG, "attempt ${attempt + 1}: PS5 ended the session before the picture - retrying")
                     Ps5Pad.stop()
                     session = null
                     try { s.stop(); s.dispose() } catch (e: Exception) {}
                     attempt++
                     if (attempt < maxAttempts) {
                         progressStage = 0
-                        showStatus("Your PS5 dropped the connection.\nRetrying (attempt ${attempt + 1} of $maxAttempts)…")
+                        if (remote) showStatus("Your PS5 dropped the connection.\nRetrying (attempt ${attempt + 1} of $maxAttempts)…")
+                        else {
+                            showStatus("Waking your PlayStation…\nThis takes up to a minute from rest mode.")
+                            if (attempt % 4 == 0) wakeLan(host, ps5)   // in case the first wake was missed
+                        }
                         try { Thread.sleep(3000) } catch (e: InterruptedException) { break }
                     }
                     continue
@@ -277,6 +276,14 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
     private fun stopProgressWatch() {
         val p = progressProc; progressProc = null
         try { p?.destroy() } catch (e: Exception) { }
+    }
+
+    private fun wakeLan(host: String, ps5: Boolean) {
+        try {
+            val cred = wakeCredential(hex(intent.getStringExtra(EXTRA_REGIST_KEY) ?: "")) ?: return
+            Log.i(TAG, "waking $host")
+            DiscoveryService.wakeup(null, host, cred, ps5)
+        } catch (e: Exception) { Log.w(TAG, "wake: $e") }
     }
 
     // chiaki's wake credential = the registration key's ASCII (up to the null pad) parsed as a hex ULong.
