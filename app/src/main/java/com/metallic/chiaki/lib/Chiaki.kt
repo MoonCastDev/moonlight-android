@@ -94,6 +94,7 @@ private class ChiakiNative
 		@JvmStatic external fun sessionSetSurface(ptr: Long, surface: Surface?)
 		@JvmStatic external fun sessionSetControllerState(ptr: Long, controllerState: ControllerState)
 		@JvmStatic external fun sessionSetLoginPin(ptr: Long, pin: String)
+		@JvmStatic external fun sessionGotoBed(ptr: Long): Int
 		@JvmStatic external fun discoveryServiceCreate(result: CreateResult, options: DiscoveryServiceOptions, javaService: DiscoveryService)
 		@JvmStatic external fun discoveryServiceFree(ptr: Long)
 		@JvmStatic external fun discoveryServiceWakeup(ptr: Long, host: String, userCredential: Long, ps5: Boolean)
@@ -343,6 +344,8 @@ class Session(connectInfo: ConnectInfo, logFile: String?, logVerbose: Boolean)
 
 	fun start() = ErrorCode(ChiakiNative.sessionStart(nativePtr))
 	fun stop() = ErrorCode(ChiakiNative.sessionStop(nativePtr))
+	/** Put the console into rest mode (it ends the session). Needs a libchiaki-jni.so with sessionGotoBed. */
+	fun gotoBed() = ErrorCode(ChiakiNative.sessionGotoBed(nativePtr))
 
 	fun dispose()
 	{
