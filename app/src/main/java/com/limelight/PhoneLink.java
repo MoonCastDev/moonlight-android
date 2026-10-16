@@ -1,16 +1,12 @@
 package com.limelight;
 
-import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
-import android.net.Uri;
-import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.view.View;
-import android.view.WindowManager;
-import android.widget.TextView;
 
 import com.limelight.computers.ComputerDatabaseManager;
+import com.limelight.home.Ps5Store;
 import com.limelight.nvstream.http.ComputerDetails;
 
 import java.io.BufferedReader;
@@ -23,52 +19,43 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 /**
- * MoonCast TV receiver: the simple "Ready to play - waiting for your phone" screen. The phone drives everything (it
- * picks the game and presses Play); this TV just waits, then streams with NATIVE Moonlight (hardware MediaCodec +
- * Sunshine's own protocol - low latency), not a browser. The phone POSTs the game to :8099 /play; we launch the stream
- * through ShortcutTrampoline (which handles the paired PC + connection), so there is no remote navigation on the TV.
+ * The phone's channel to this TV: a tiny HTTP server on :8099. The phone (or Odin) POSTs a game to /play and this TV
+ * starts it with native Moonlight or native chiaki; /register links a PlayStation through this TV; /mc-native lets the
+ * phone find us. Moved out of the old receiver screen so the Big Picture home can keep listening while you browse.
+ *
+ * PS5 keys that arrive here are saved to {@link Ps5Store}, so the console also appears on the TV's own shelf.
  */
-public class MoonCastReceiver extends Activity {
-    static final int PORT = 8099;
+public class PhoneLink {
+    public static final int PORT = 8099;
+
+    /** What the home screen shows while a sent game starts. Called on the main thread. */
+    public interface Listener {
+        void onIncoming(String title, String from);
+        void onConsolesChanged();
+    }
+
+    private final Context ctx;
+    private final Listener listener;
+    private final Handler main = new Handler(Looper.getMainLooper());
     private volatile boolean running = true;
     private ServerSocket server;
-    private TextView status;
 
-    @Override protected void onCreate(Bundle b) {
-        super.onCreate(b);
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        setContentView(R.layout.activity_receiver);
-        status = findViewById(R.id.mc_status);
-        new Thread(this::serve, "mc-native-http").start();
+    public PhoneLink(Context ctx, Listener listener) {
+        this.ctx = ctx.getApplicationContext();
+        this.listener = listener;
     }
 
-    @Override protected void onResume() {
-        super.onResume();
-        // Stay on the branded "waiting for your phone" screen even with no PC paired: the phone drives everything
-        // (incl. PS5, which needs no PC pairing at all), and bouncing to Moonlight's add-PC screen both looked like
-        // plain old Moonlight and tore down this receiver's pad server so casts couldn't connect. To pair a PC for
-        // Moonlight games, open it from the phone (Add PC) or press MENU here.
-        setStatus("Waiting for your phone");
+    public void start() { new Thread(this::serve, "mc-phone-link").start(); }
+
+    public void stop() {
+        running = false;
+        try { if (server != null) server.close(); } catch (Exception ignored) { }
     }
 
-    // MENU opens the Moonlight add-PC screen, for the rare case someone wants to pair a game PC on the TV itself.
-    @Override public boolean onKeyDown(int keyCode, android.view.KeyEvent e) {
-        if (keyCode == android.view.KeyEvent.KEYCODE_MENU) {
-            startActivity(new Intent(this, PcView.class));
-            return true;
-        }
-        return super.onKeyDown(keyCode, e);
-    }
-
-    private void setStatus(String s) {
-        if (status != null) runOnUiThread(() -> status.setText(s));
-    }
-
-    // Pick the PC the phone should stream to. Prefer a PAIRED one (it has a stored server
-    // certificate - set only after a successful pairing), so a stray auto-discovered PC that was
-    // never paired (null cert) can't win the race. Fall back to the first PC if none is paired yet.
+    // Prefer a PAIRED PC (it has a stored server certificate - set only after a successful pairing), so a stray
+    // auto-discovered PC that was never paired can't win. Fall back to the first PC if none is paired yet.
     private ComputerDetails firstComputer() {
-        ComputerDatabaseManager db = new ComputerDatabaseManager(this);
+        ComputerDatabaseManager db = new ComputerDatabaseManager(ctx);
         try {
             List<ComputerDetails> all = db.getAllComputers();
             if (all.isEmpty()) return null;
@@ -81,7 +68,6 @@ public class MoonCastReceiver extends Activity {
         }
     }
 
-    // ---- the phone's channel ----
     private void serve() {
         try {
             server = new ServerSocket();
@@ -108,16 +94,16 @@ public class MoonCastReceiver extends Activity {
                 if (c > 0 && l.substring(0, c).trim().equalsIgnoreCase("Content-Length"))
                     try { clen = Integer.parseInt(l.substring(c + 1).trim()); } catch (Exception ignored) { }
             }
+            String from = "your phone";
             if ("GET".equals(method) && path.startsWith("/mc-native")) {
                 ComputerDetails pc = firstComputer();
                 send(s, 200, "{\"mooncast_native\":1,\"name\":" + quote(android.os.Build.MODEL)
                         + ",\"pc\":" + quote(pc == null ? "" : pc.name) + "}");
             } else if ("POST".equals(method) && path.startsWith("/play")) {
-                char[] body = new char[Math.max(0, Math.min(clen, 16384))];
-                int n = 0;   // read the whole body (a PSN token makes it bigger than one read)
-                while (n < body.length) { int r = in.read(body, n, body.length - n); if (r < 0) break; n += r; }
-                String json = new String(body, 0, Math.max(0, n));
+                String json = readBody(in, clen, 16384);   // read it all: a PSN token makes it bigger than one read
                 String appId = field(json, "appId"), appName = field(json, "appName");
+                String sender = field(json, "deviceName");
+                if (sender != null && !sender.isEmpty()) from = sender;
                 // The phone is the controller: remember where it is (the address it POSTed from, or an explicit phoneIp).
                 String phoneIp = field(json, "phoneIp");
                 if (phoneIp == null || phoneIp.isEmpty()) {
@@ -129,25 +115,27 @@ public class MoonCastReceiver extends Activity {
                 String ps5host = field(json, "ps5host");
                 if (ps5host != null && !ps5host.isEmpty()) {
                     if (playPs5(ps5host, field(json, "registKey"), field(json, "morning"), field(json, "ps5"),
-                            field(json, "psnToken"), field(json, "duid"), field(json, "accountId")))
+                            field(json, "psnToken"), field(json, "duid"), field(json, "accountId"), from))
                         send(s, 200, "{\"ok\":1}");
                     else send(s, 400, "{\"error\":\"ps5 launch failed\"}");
-                } else if (appId != null && play(appId, appName)) send(s, 200, "{\"ok\":1}");
+                } else if (appId != null && play(appId, appName, from)) send(s, 200, "{\"ok\":1}");
                 else send(s, 400, "{\"error\":\"no app id, or no paired PC\"}");
             } else if ("POST".equals(method) && path.startsWith("/register")) {
                 // Register a PlayStation (the PIN "Link Device" flow): host + PSN account id (base64) + 8-digit pin.
-                char[] body = new char[Math.max(0, Math.min(clen, 2048))];
-                int n = clen > 0 ? in.read(body, 0, body.length) : 0;
-                String json = new String(body, 0, Math.max(0, n));
+                String json = readBody(in, clen, 2048);
                 try {
                     String host = field(json, "host");
                     byte[] accountId = android.util.Base64.decode(field(json, "accountId"), android.util.Base64.DEFAULT);
                     int pin = Integer.parseInt(field(json, "pin").trim());
                     boolean isPs5 = !"false".equalsIgnoreCase(field(json, "ps5"));
                     Ps5Register.Result r = Ps5Register.INSTANCE.register(host, accountId, pin, isPs5, 30000L);
-                    if (r != null)
+                    if (r != null) {
+                        Ps5Store.INSTANCE.save(ctx, new Ps5Store.Console(host, r.getNickname() == null ? "PS5" : r.getNickname(),
+                                r.getRegistKeyHex(), r.getMorningHex(), isPs5));
+                        main.post(listener::onConsolesChanged);
                         send(s, 200, "{\"ok\":1,\"registKey\":\"" + r.getRegistKeyHex() + "\",\"morning\":\""
                                 + r.getMorningHex() + "\",\"nickname\":" + quote(r.getNickname()) + "}");
+                    }
                     else send(s, 400, "{\"error\":\"registration failed - check the 8-digit code and that the console is on\"}");
                 } catch (Exception e) {
                     send(s, 400, "{\"error\":\"bad register request\"}");
@@ -159,43 +147,54 @@ public class MoonCastReceiver extends Activity {
         } catch (Exception ignored) { try { s.close(); } catch (Exception e) { } }
     }
 
-    // launch a native stream for the given app id on the paired PC, via the trampoline
-    private boolean play(String appId, String appName) {
+    private static String readBody(BufferedReader in, int clen, int max) throws java.io.IOException {
+        char[] body = new char[Math.max(0, Math.min(clen, max))];
+        int n = 0;
+        while (n < body.length) { int r = in.read(body, n, body.length - n); if (r < 0) break; n += r; }
+        return new String(body, 0, Math.max(0, n));
+    }
+
+    // Show "sent from" on the TV for a moment, then start the stream through the trampoline (it handles the paired
+    // PC and the connection).
+    private boolean play(String appId, String appName, String from) {
         final ComputerDetails pc = firstComputer();
         if (pc == null) return false;
-        setStatus("Starting " + (appName == null ? "the game" : appName) + "…");
-        new Handler(Looper.getMainLooper()).post(() -> {
-            Intent i = new Intent(MoonCastReceiver.this, ShortcutTrampoline.class);
+        main.post(() -> listener.onIncoming(appName == null ? "Your game" : appName, from));
+        main.postDelayed(() -> {
+            Intent i = new Intent(ctx, ShortcutTrampoline.class);
             i.putExtra(AppView.UUID_EXTRA, pc.uuid);
             i.putExtra(AppView.NAME_EXTRA, pc.name);
             i.putExtra(Game.EXTRA_APP_ID, appId);
             if (appName != null) i.putExtra(Game.EXTRA_APP_NAME, appName);
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            getApplicationContext().startActivity(i);
-        });
+            ctx.startActivity(i);
+        }, 700);
         return true;
     }
 
-    // Launch a NATIVE PS5 Remote Play session (chiaki) for the given console + registration keys.
     private boolean playPs5(String host, String registKey, String morning, String ps5,
-                            String psnToken, String duid, String accountId) {
+                            String psnToken, String duid, String accountId, String from) {
         if (registKey == null || morning == null) return false;
-        setStatus("Starting PlayStation…");
         final boolean isPs5 = ps5 == null || !"false".equalsIgnoreCase(ps5);
-        new Handler(Looper.getMainLooper()).post(() -> {
-            Intent i = new Intent(MoonCastReceiver.this, Ps5StreamActivity.class);
-            i.putExtra(Ps5StreamActivity.EXTRA_HOST, host);
-            i.putExtra(Ps5StreamActivity.EXTRA_REGIST_KEY, registKey);
-            i.putExtra(Ps5StreamActivity.EXTRA_MORNING, morning);
-            i.putExtra(Ps5StreamActivity.EXTRA_PS5, isPs5);
-            // Remote Play over the internet: used when the console isn't on this TV's LAN
-            if (psnToken != null && !psnToken.isEmpty()) i.putExtra(Ps5StreamActivity.EXTRA_PSN_TOKEN, psnToken);
-            if (duid != null && !duid.isEmpty()) i.putExtra(Ps5StreamActivity.EXTRA_DUID, duid);
-            if (accountId != null && !accountId.isEmpty()) i.putExtra(Ps5StreamActivity.EXTRA_ACCOUNT_ID, accountId);
-            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            getApplicationContext().startActivity(i);
-        });
+        Ps5Store.INSTANCE.save(ctx, new Ps5Store.Console(host, "PS5", registKey, morning, isPs5));
+        main.post(() -> { listener.onConsolesChanged(); listener.onIncoming("PlayStation 5", from); });
+        main.postDelayed(() -> ctx.startActivity(ps5Intent(ctx, host, registKey, morning, isPs5, psnToken, duid, accountId)), 700);
         return true;
+    }
+
+    /** The intent that starts a native PS5 Remote Play session. The PSN fields are only for play away from home. */
+    public static Intent ps5Intent(Context ctx, String host, String registKey, String morning, boolean isPs5,
+                                   String psnToken, String duid, String accountId) {
+        Intent i = new Intent(ctx, Ps5StreamActivity.class);
+        i.putExtra(Ps5StreamActivity.EXTRA_HOST, host);
+        i.putExtra(Ps5StreamActivity.EXTRA_REGIST_KEY, registKey);
+        i.putExtra(Ps5StreamActivity.EXTRA_MORNING, morning);
+        i.putExtra(Ps5StreamActivity.EXTRA_PS5, isPs5);
+        if (psnToken != null && !psnToken.isEmpty()) i.putExtra(Ps5StreamActivity.EXTRA_PSN_TOKEN, psnToken);
+        if (duid != null && !duid.isEmpty()) i.putExtra(Ps5StreamActivity.EXTRA_DUID, duid);
+        if (accountId != null && !accountId.isEmpty()) i.putExtra(Ps5StreamActivity.EXTRA_ACCOUNT_ID, accountId);
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        return i;
     }
 
     private static String field(String json, String key) {
@@ -228,11 +227,5 @@ public class MoonCastReceiver extends Activity {
         o.write(("HTTP/1.1 " + code + " OK\r\nContent-Type: application/json\r\nContent-Length: " + by.length
                 + "\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.UTF_8));
         o.write(by); o.flush();
-    }
-
-    @Override protected void onDestroy() {
-        running = false;
-        try { if (server != null) server.close(); } catch (Exception ignored) { }
-        super.onDestroy();
     }
 }

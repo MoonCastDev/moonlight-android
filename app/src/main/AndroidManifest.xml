@@ -86,11 +86,13 @@
         <!-- Samsung DeX support requires explicit placement of android:resizeableActivity="true"
              in each activity even though it is implied by targeting API 24+ -->
 
-                <activity
-            android:name=".MoonCastReceiver"
+        <!-- MoonCast TV home (Big Picture style). It also listens for the phone on :8099. -->
+        <activity
+            android:name=".home.HomeActivity"
             android:exported="true"
             android:screenOrientation="landscape"
             android:launchMode="singleTask"
+            android:theme="@style/StreamTheme"
             android:configChanges="orientation|screenSize|keyboardHidden|navigation|uiMode|density|smallestScreenSize|screenLayout">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -98,6 +100,11 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- The old receiver screen's name, kept so existing launch commands still open the home -->
+        <activity-alias
+            android:name=".MoonCastReceiver"
+            android:exported="true"
+            android:targetActivity=".home.HomeActivity" />
         <activity
             android:name=".PcView"
             android:exported="true"
