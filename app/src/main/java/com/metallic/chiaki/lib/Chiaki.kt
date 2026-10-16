@@ -95,6 +95,7 @@ private class ChiakiNative
 		@JvmStatic external fun sessionSetControllerState(ptr: Long, controllerState: ControllerState)
 		@JvmStatic external fun sessionSetLoginPin(ptr: Long, pin: String)
 		@JvmStatic external fun sessionGotoBed(ptr: Long): Int
+		@JvmStatic external fun sessionStats(ptr: Long): DoubleArray?
 		@JvmStatic external fun discoveryServiceCreate(result: CreateResult, options: DiscoveryServiceOptions, javaService: DiscoveryService)
 		@JvmStatic external fun discoveryServiceFree(ptr: Long)
 		@JvmStatic external fun discoveryServiceWakeup(ptr: Long, host: String, userCredential: Long, ps5: Boolean)
@@ -347,13 +348,26 @@ class Session(connectInfo: ConnectInfo, logFile: String?, logVerbose: Boolean)
 	/** Put the console into rest mode (it ends the session). Needs a libchiaki-jni.so with sessionGotoBed. */
 	fun gotoBed() = ErrorCode(ChiakiNative.sessionGotoBed(nativePtr))
 
+	private val statsLock = Any()
+
+	/**
+	 * Live numbers for the Quick menu: [measured Mbps, packet loss 0..1, PS5-reported rtt, rtt at connect (ms),
+	 * frames shown, frames lost], or null once the session is gone. Needs a libchiaki-jni.so with sessionStats.
+	 */
+	fun stats(): DoubleArray? = synchronized(statsLock) {
+		if(nativePtr == 0L) null else try { ChiakiNative.sessionStats(nativePtr) } catch(e: UnsatisfiedLinkError) { null }
+	}
+
 	fun dispose()
 	{
 		if(nativePtr == 0L)
 			return
 		ChiakiNative.sessionJoin(nativePtr)
-		ChiakiNative.sessionFree(nativePtr)
-		nativePtr = 0L
+		// stats() may be reading the session from the UI thread; free it only between reads
+		synchronized(statsLock) {
+			ChiakiNative.sessionFree(nativePtr)
+			nativePtr = 0L
+		}
 	}
 
 	private fun event(event: Event)

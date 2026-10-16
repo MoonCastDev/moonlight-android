@@ -582,15 +582,41 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
         android.preference.PreferenceManager.getDefaultSharedPreferences(this).getBoolean("ps5_swap_cross_circle", false)
     }
 
+    // Frame counters at the previous Quick menu poll, to turn chiaki's running totals into a rate.
+    private var lastShown = -1.0
+    private var lastLost = 0.0
+    private var lastAt = 0L
+    private var lastLossPct = 0.0
+
+    /** The Quick menu's four numbers, polled every second while it's open: frame rate, delay, bitrate, lost packets. */
+    private fun liveStats(): List<Pair<String, String>> {
+        val v = session?.stats()
+        if (v == null || v.size < 6) {
+            val min = (System.currentTimeMillis() - startedAt) / 60000
+            return listOf(streamInfo.first to "Picture", streamInfo.second to "Video",
+                (if (streamInfo.third > 0) "${streamInfo.third} Mbps" else "Auto") to "Quality", "$min min" to "Playing for")
+        }
+        val now = System.currentTimeMillis()
+        val fps = if (lastShown >= 0 && now > lastAt) (v[4] - lastShown) * 1000.0 / (now - lastAt) else -1.0
+        if (lastShown >= 0 && v[4] + v[5] > lastShown + lastLost)
+            lastLossPct = 100.0 * (v[5] - lastLost) / (v[4] + v[5] - lastShown - lastLost)
+        lastShown = v[4]; lastLost = v[5]; lastAt = now
+        Log.d(TAG, "stats mbps=${v[0]} loss=${v[1]} rtt=${v[2]} rtt0=${v[3]} shown=${v[4]} lost=${v[5]}")
+        val loss = maxOf(v[1] * 100.0, lastLossPct)
+        val rtt = if (v[3] > 1.0) v[3] else 0.0   // chiaki uses 1 ms when it couldn't measure
+        return listOf(
+            (if (fps < 0) "…" else "%.0f".format(java.util.Locale.US, minOf(fps, 60.0))) to "Frames per second",
+            (if (rtt > 0) "%.0f ms".format(java.util.Locale.US, rtt) else "…") to "Network delay",
+            (if (v[0] > 0) "%.1f Mbps".format(java.util.Locale.US, v[0]) else "…") to "Picture quality",
+            "%.1f%%".format(java.util.Locale.US, loss) to "Lost packets")
+    }
+
     private fun openMenu() {
+        lastShown = -1.0; lastLossPct = 0.0
         if (isFinishing) return
         menu.show("PlayStation 5",
             (if (streamRemote) "Over PlayStation Network. " else "On your home network. ") + com.limelight.home.QuickMenu.COMBO_LABEL + " opens this menu",
-            {
-                val min = (System.currentTimeMillis() - startedAt) / 60000
-                listOf(streamInfo.first to "Picture", streamInfo.second to "Video",
-                    (if (streamInfo.third > 0) "${streamInfo.third} Mbps" else "Auto") to "Quality", "$min min" to "Playing for")
-            },
+            { liveStats() },
             listOf(
                 com.limelight.home.QuickMenu.Item("PS", "PS button", "L2 + Start", false) { tap(ControllerState.BUTTON_PS) },
                 com.limelight.home.QuickMenu.Item("▢", "Touchpad", "Select + Start", false) { tap(ControllerState.BUTTON_TOUCHPAD) },
