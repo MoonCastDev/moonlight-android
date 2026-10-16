@@ -145,7 +145,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
             }
         } catch (e: Exception) { Log.w(TAG, "wake: $e") }
         var attempt = 0
-        val maxAttempts = if (remote) 3 else 8   // a hole-punch attempt already takes several seconds
+        val maxAttempts = if (remote) 4 else 8   // remote: a missed PSN start request is only fixed by a fresh attempt
         while (!closed && attempt < maxAttempts) {
             try {
                 val s = Session(connectInfo(remote), null, false)
