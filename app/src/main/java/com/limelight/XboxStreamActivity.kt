@@ -7,23 +7,24 @@ import android.view.Gravity
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
-import android.view.SurfaceHolder
-import android.view.SurfaceView
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.TextView
 import com.limelight.home.QuickMenu
 import com.limelight.home.Xbox
-import com.xstreaming.nano.NanoRustBridge
+import com.limelight.xbox.XboxRtc
+import org.webrtc.EglBase
+import org.webrtc.RendererCommon
+import org.webrtc.SurfaceViewRenderer
 
 /**
- * Xbox Remote Play on this TV, natively: XStreaming's nano-rs engine (Rust WebRTC + the Xbox streaming protocol)
- * negotiates the session and hands frames and audio to MediaCodec through [NanoRustBridge]. This activity signs
- * the session in ([Xbox.streamAuth]), wakes the console, and turns this device's controller into an Xbox pad.
+ * Xbox Remote Play on this TV over Google's WebRTC ([XboxRtc]): hardware decoding, Google's jitter buffer and
+ * congestion control, the same stack XStreaming's player uses. This activity signs the session in
+ * ([Xbox.streamAuth]), wakes the console, draws the picture and turns this device's controllers into Xbox pads.
  *   EXTRA_CONSOLE_ID: the console's id from Xbox.consoles(); EXTRA_NAME: its name, for the screen.
  */
-class XboxStreamActivity : Activity(), SurfaceHolder.Callback {
+class XboxStreamActivity : Activity() {
     companion object {
         private const val TAG = "MoonCast-Xbox"
         const val EXTRA_CONSOLE_ID = "xbox_console_id"
@@ -32,12 +33,13 @@ class XboxStreamActivity : Activity(), SurfaceHolder.Callback {
             KeyEvent.KEYCODE_BUTTON_L1, KeyEvent.KEYCODE_BUTTON_R1)
     }
 
-    private val bridge = NanoRustBridge()
+    private val egl by lazy { EglBase.create() }
+    private var renderer: SurfaceViewRenderer? = null
+    private var rtc: XboxRtc? = null
     private var status: TextView? = null
     @Volatile private var closed = false
-    @Volatile private var ready = false        // stream info handed to the engine
-    private var surfaceUp = false
-    private var started = false
+    private var started = false               // the stream is up: pad input goes to the Xbox
+    @Volatile private var firstFrame = false
     private val startedAt = System.currentTimeMillis()
     private val consoleId by lazy { intent.getStringExtra(EXTRA_CONSOLE_ID) ?: "" }
     private val consoleName by lazy { intent.getStringExtra(EXTRA_NAME) ?: "Xbox" }
@@ -45,28 +47,30 @@ class XboxStreamActivity : Activity(), SurfaceHolder.Callback {
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        val sv = SurfaceView(this)
+        val r = SurfaceViewRenderer(this).also { renderer = it }
+        r.init(egl.eglBaseContext, object : RendererCommon.RendererEvents {
+            override fun onFirstFrameRendered() { firstFrame = true; showStatus(null) }
+            override fun onFrameResolutionChanged(w: Int, h: Int, rotation: Int) { Log.i(TAG, "picture ${w}x$h") }
+        })
+        r.setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT)
+        r.setEnableHardwareScaler(true)
         status = TextView(this).apply {
             setTextColor(0xFFE8ECFF.toInt()); textSize = 22f; gravity = Gravity.CENTER
             text = "Connecting to $consoleName…"
         }
         setContentView(FrameLayout(this).apply {
             setBackgroundColor(0xFF000000.toInt())
-            addView(sv, FrameLayout.LayoutParams(-1, -1))
+            addView(r, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
             addView(status, FrameLayout.LayoutParams(-1, -1))
         })
-        sv.holder.addCallback(this)
-        if (!bridge.isNativeAvailable) { showStatus("This build of MoonCast doesn't include the Xbox player."); return }
-        bridge.setRumbleListener { _, duration, _, _, weak, strong, _, _ -> rumble(duration, weak, strong) }
         Thread { connect() }.start()
-        watchStatus()
     }
 
     private fun showStatus(t: String?) = runOnUiThread {
         status?.let { if (t == null) it.visibility = View.GONE else { it.text = t; it.visibility = View.VISIBLE } }
     }
 
-    /** Sign in, wake the console, and hand the session to the engine. Runs off the UI thread. */
+    /** Sign in, wake the console, and start the WebRTC session. Runs off the UI thread. */
     private fun connect() {
         try {
             showStatus("Waking $consoleName…")
@@ -75,16 +79,23 @@ class XboxStreamActivity : Activity(), SurfaceHolder.Callback {
             showStatus("Signing in…")
             val auth = Xbox.streamAuth(this)
             if (closed) return
-            // Settings, Xbox, Picture. The engine sends no bitrate; the Xbox picks quality from the device type this
-            // implies: 720 = Android, 1080 = Windows, 1081 = Tizen (XStreaming's "1080P (HQ)"). Auto: 1080, or 720 on
-            // a weak link, the same rule as the PS5.
-            val pick = android.preference.PreferenceManager.getDefaultSharedPreferences(this).getString("xbox_resolution", "auto")
+            // Settings, Xbox, Picture. No bitrate is sent; the Xbox picks quality from the device type this implies:
+            // 720 = Android, 1080 = Windows, 1081 = Tizen. Auto: 1080, or 720 on a weak link, like the PS5.
+            val pick = prefs.getString("xbox_resolution", "auto")
             val res = when (pick) { "720" -> 720; "1080" -> 1080; "1081" -> 1081; else -> if (linkMbps() in 1..59) 720 else 1080 }
             Log.i(TAG, "stream $consoleName at ${res}p via ${auth.baseUri}")
-            bridge.updateStreamInfo(consoleId, "home", "nano", auth.baseUri, auth.gsToken, auth.connectToken, res,
-                    prefs.getString("xbox_language", "en-US"), null, null, null, true, coop, true, true, true)
-            ready = true
-            runOnUiThread { maybeStart() }
+            val session = XboxRtc(this, egl, consoleId, auth.baseUri, auth.gsToken, auth.connectToken, res,
+                    prefs.getString("xbox_language", "en-US") ?: "en-US", coop, renderer!!, object : XboxRtc.Listener {
+                override fun onStatus(text: String) { if (!firstFrame) showStatus(text) }
+                override fun onConnected() { runOnUiThread { if (!started) { started = true; send(); pollStats() } } }
+                override fun onFailed(reason: String) { showStatus("The Xbox stream stopped.\n$reason") }
+                override fun onRumble(gamepad: Int, weak: Double, strong: Double, durationMs: Int) {
+                    runOnUiThread { rumble(gamepad, durationMs, weak, strong) }
+                }
+            })
+            rtc = session
+            if (closed) { session.stop(); return }
+            session.start()
         } catch (e: Exception) {
             Log.w(TAG, "connect failed", e)
             showStatus(if (!Xbox.signedIn(this)) "Sign in to Xbox first: Settings, Xbox."
@@ -92,61 +103,18 @@ class XboxStreamActivity : Activity(), SurfaceHolder.Callback {
         }
     }
 
-    private fun maybeStart() {
-        if (started || !ready || !surfaceUp || closed) return
-        started = true
-        bridge.start()
-        pollPad()
-    }
-
-    // The Xbox only takes a pad that reports all the time: XStreaming re-sends the whole state 60 times a second
-    // (its polling_rate), and a pad that only reports changes is ignored.
-    private fun pollPad() {
-        val h = android.os.Handler(mainLooper)
-        h.post(object : Runnable {
-            override fun run() {
-                if (closed) return
-                if (!menu.isShowing && !comboPending) send()
-                h.postDelayed(this, 16)
-            }
-        })
-    }
-
-    /** The engine reports its stage; show it until the first frame, and explain a failure. */
-    private fun watchStatus() {
-        val h = android.os.Handler(mainLooper)
-        h.postDelayed(object : Runnable {
-            override fun run() {
-                if (closed) return
-                if (bridge.renderedVideoFrameCount > 0) showStatus(null)
-                else if (started && bridge.sessionStatusText.isNotBlank()) showStatus(bridge.sessionStatusText)
-                if (bridge.hasTerminalSessionError()) {
-                    showStatus("The Xbox ended the stream.\n${bridge.sessionStatusText}"); return
-                }
-                h.postDelayed(this, 500)
-            }
-        }, 500)
-    }
-
     private fun linkMbps(): Int = try {
         val wm = applicationContext.getSystemService(WIFI_SERVICE) as android.net.wifi.WifiManager
         @Suppress("DEPRECATION") wm.connectionInfo?.linkSpeed ?: 0
     } catch (e: Exception) { 0 }
 
-    override fun surfaceCreated(h: SurfaceHolder) {}
-    override fun surfaceChanged(h: SurfaceHolder, format: Int, w: Int, hgt: Int) {
-        bridge.bindSurface(h.surface, w, hgt)
-        surfaceUp = true
-        maybeStart()
-    }
-    override fun surfaceDestroyed(h: SurfaceHolder) { surfaceUp = false; bridge.releaseSurface() }
-
     override fun onStop() { super.onStop(); if (!isChangingConfigurations) finish() }
 
     override fun onDestroy() {
         closed = true
-        try { bridge.stop() } catch (e: Throwable) { }
-        try { bridge.release() } catch (e: Throwable) { }
+        try { rtc?.stop() } catch (e: Throwable) { }
+        try { renderer?.release() } catch (e: Throwable) { }
+        try { egl.release() } catch (e: Throwable) { }
         super.onDestroy()
     }
 
@@ -267,36 +235,45 @@ class XboxStreamActivity : Activity(), SurfaceHolder.Callback {
         return super.dispatchGenericMotionEvent(e)
     }
 
-    /** Every pad's state; at least player 1 (neutral) so the Xbox always sees a controller. */
+    /** Hand every pad's latest state to the session; it sends them 62.5 times a second. */
     private fun send() {
-        if (pads.isEmpty()) send(Pad(0)) else pads.values.forEach { send(it) }
+        val r = rtc ?: return
+        r.pads = if (pads.isEmpty()) listOf(XboxRtc.PadFrame(0)) else pads.values.groupBy { it.index }.map { (idx, ps) -> frame(idx, ps) }
     }
 
-    private fun send(p: Pad) {
-        if (!started) return
-        fun h(k: Int) = if (p.held.contains(k)) 1 else 0
+    private fun send(@Suppress("UNUSED_PARAMETER") p: Pad) = send()
+
+    /** One Xbox pad slot from the pads that drive it (the TV remote shares player 1). */
+    private fun frame(index: Int, ps: List<Pad>): XboxRtc.PadFrame {
+        fun h(k: Int) = ps.any { it.held.contains(k) }
         fun trig(v: Float) = if (shortTriggers) (if (v > 0.1f) 1f else 0f) else v
+        val main = ps.firstOrNull { it.lx != 0f || it.ly != 0f || it.rx != 0f || it.ry != 0f || it.lt > 0f || it.rt > 0f } ?: ps.first()
         val a = h(KeyEvent.KEYCODE_BUTTON_A); val b = h(KeyEvent.KEYCODE_BUTTON_B)
         val x = h(KeyEvent.KEYCODE_BUTTON_X); val y = h(KeyEvent.KEYCODE_BUTTON_Y)
-        // Raw Android axes, as XStreaming's SdlGamepadManager sends them; the engine flips Y for the Xbox.
-        bridge.sendGamepadState(p.index, h(KeyEvent.KEYCODE_BUTTON_MODE), h(KeyEvent.KEYCODE_BUTTON_START), h(KeyEvent.KEYCODE_BUTTON_SELECT),
-                if (swapAB) b else a, if (swapAB) a else b, if (swapXY) y else x, if (swapXY) x else y,
-                maxOf(h(KeyEvent.KEYCODE_DPAD_UP), if (p.hatY < -.5f) 1 else 0), maxOf(h(KeyEvent.KEYCODE_DPAD_DOWN), if (p.hatY > .5f) 1 else 0),
-                maxOf(h(KeyEvent.KEYCODE_DPAD_LEFT), if (p.hatX < -.5f) 1 else 0), maxOf(h(KeyEvent.KEYCODE_DPAD_RIGHT), if (p.hatX > .5f) 1 else 0),
-                h(KeyEvent.KEYCODE_BUTTON_L1), h(KeyEvent.KEYCODE_BUTTON_R1), h(KeyEvent.KEYCODE_BUTTON_THUMBL), h(KeyEvent.KEYCODE_BUTTON_THUMBR),
-                p.lx, p.ly, p.rx, p.ry,
-                trig(maxOf(p.lt, h(KeyEvent.KEYCODE_BUTTON_L2).toFloat())), trig(maxOf(p.rt, h(KeyEvent.KEYCODE_BUTTON_R2).toFloat())))
+        return XboxRtc.PadFrame(index).apply {
+            nexus = h(KeyEvent.KEYCODE_BUTTON_MODE); menu = h(KeyEvent.KEYCODE_BUTTON_START); view = h(KeyEvent.KEYCODE_BUTTON_SELECT)
+            this.a = if (swapAB) b else a; this.b = if (swapAB) a else b
+            this.x = if (swapXY) y else x; this.y = if (swapXY) x else y
+            up = h(KeyEvent.KEYCODE_DPAD_UP) || ps.any { it.hatY < -.5f }; down = h(KeyEvent.KEYCODE_DPAD_DOWN) || ps.any { it.hatY > .5f }
+            left = h(KeyEvent.KEYCODE_DPAD_LEFT) || ps.any { it.hatX < -.5f }; right = h(KeyEvent.KEYCODE_DPAD_RIGHT) || ps.any { it.hatX > .5f }
+            lb = h(KeyEvent.KEYCODE_BUTTON_L1); rb = h(KeyEvent.KEYCODE_BUTTON_R1)
+            ls = h(KeyEvent.KEYCODE_BUTTON_THUMBL); rs = h(KeyEvent.KEYCODE_BUTTON_THUMBR)
+            lx = main.lx; ly = main.ly; rx = main.rx; ry = main.ry
+            lt = trig(maxOf(main.lt, if (h(KeyEvent.KEYCODE_BUTTON_L2)) 1f else 0f))
+            rt = trig(maxOf(main.rt, if (h(KeyEvent.KEYCODE_BUTTON_R2)) 1f else 0f))
+        }
     }
 
     private fun sendNeutral() {
-        if (!started) return
+        val r = rtc ?: return
         val slots = if (pads.isEmpty()) listOf(0) else pads.values.map { it.index }.distinct()
-        slots.forEach { bridge.sendGamepadState(it, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0f, 0f, 0f, 0f, 0f, 0f) }
+        r.pads = slots.map { XboxRtc.PadFrame(it) }
     }
 
-    /** Rumble on the pad that played last, like the PS5 player. */
-    private fun rumble(durationMs: Int, weak: Double, strong: Double) {
-        val d = InputDevice.getDevice(padDeviceId) ?: return
+    /** Rumble on the pad playing that slot (player 1: the pad that played last), like the PS5 player. */
+    private fun rumble(slot: Int, durationMs: Int, weak: Double, strong: Double) {
+        val dev = if (slot == 0) padDeviceId else pads.entries.firstOrNull { it.value.index == slot }?.key ?: return
+        val d = InputDevice.getDevice(dev) ?: return
         // Settings, Xbox, Rumble: Off / Weak / Medium / Strong, like XStreaming's vibration intensity
         val scale = when (prefs.getString("xbox_rumble", "strong")) { "off" -> 0.0; "weak" -> 0.35; "medium" -> 0.65; else -> 1.0 }
         if (scale == 0.0) return
@@ -314,17 +291,35 @@ class XboxStreamActivity : Activity(), SurfaceHolder.Callback {
     // ---- Quick menu ----
     private val menu by lazy { QuickMenu(this) }
 
+    // Live numbers from WebRTC's own stats, refreshed every second (and logged every 5 s for diagnosis)
+    @Volatile private var last: XboxRtc.Stats? = null
+    private var statTicks = 0
+    private fun pollStats() {
+        val h = android.os.Handler(mainLooper)
+        h.post(object : Runnable {
+            override fun run() {
+                if (closed) return
+                rtc?.stats { st ->
+                    last = st
+                    if (statTicks++ % 5 == 0) Log.i(TAG, "stats ${st.width}x${st.height} fps=${st.fps} mbps=${"%.2f".format(java.util.Locale.US, st.mbps)} loss=${"%.2f".format(java.util.Locale.US, st.lossPct)}% rtt=${st.rttMs}")
+                }
+                h.postDelayed(this, 1000)
+            }
+        })
+    }
+
     private fun liveStats(): List<Pair<String, String>> {
         fun f(v: Double, fmt: String) = if (v < 0) "…" else fmt.format(java.util.Locale.US, v)
-        if (bridge.renderedVideoFrameCount <= 0) {
+        val st = last
+        if (st == null || !firstFrame) {
             val min = (System.currentTimeMillis() - startedAt) / 60000
-            return listOf(bridge.sessionStage.ifBlank { "Starting" } to "Stage", "$min min" to "Waiting for")
+            return listOf((if (started) "Connected" else "Starting") to "Stage", "$min min" to "Waiting for")
         }
         return listOf(
-            f(minOf(bridge.webRtcFps, 60.0), "%.0f") to "Frames per second",
-            f(bridge.webRtcRttMs, "%.0f ms") to "Network delay",
-            f(bridge.webRtcBitrateMbps, "%.1f Mbps") to "Picture quality",
-            f(bridge.webRtcPacketLossPercent, "%.1f%%") to "Lost packets")
+            f(minOf(st.fps, 60.0), "%.0f") to "Frames per second",
+            f(st.rttMs, "%.0f ms") to "Network delay",
+            f(st.mbps, "%.1f Mbps") to "Picture quality",
+            f(st.lossPct, "%.1f%%") to "Lost packets")
     }
 
     private fun openMenu() {
