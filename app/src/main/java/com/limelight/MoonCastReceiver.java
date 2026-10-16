@@ -44,11 +44,20 @@ public class MoonCastReceiver extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
-        // If this device isn't paired yet, send the user to the normal setup screen once.
-        if (firstComputer() == null) {
-            startActivity(new Intent(this, PcView.class));
-        }
+        // Stay on the branded "waiting for your phone" screen even with no PC paired: the phone drives everything
+        // (incl. PS5, which needs no PC pairing at all), and bouncing to Moonlight's add-PC screen both looked like
+        // plain old Moonlight and tore down this receiver's pad server so casts couldn't connect. To pair a PC for
+        // Moonlight games, open it from the phone (Add PC) or press MENU here.
         setStatus("Waiting for your phone");
+    }
+
+    // MENU opens the Moonlight add-PC screen, for the rare case someone wants to pair a game PC on the TV itself.
+    @Override public boolean onKeyDown(int keyCode, android.view.KeyEvent e) {
+        if (keyCode == android.view.KeyEvent.KEYCODE_MENU) {
+            startActivity(new Intent(this, PcView.class));
+            return true;
+        }
+        return super.onKeyDown(keyCode, e);
     }
 
     private void setStatus(String s) {

@@ -74,6 +74,9 @@ class PhoneGamepad {
         Socket s = new Socket();
         s.connect(new InetSocketAddress(host, PAD_PORT), 2000);
         s.setTcpNoDelay(true);
+        // The phone pings every ~8s; if neither a frame nor a ping arrives in the window the link died silently
+        // (WiFi power-save / NAT) - time out the blocked read so run() reconnects instead of freezing the controller.
+        s.setSoTimeout(25000);
         sock = s;
         OutputStream out = s.getOutputStream();
         InputStream in = s.getInputStream();
@@ -92,14 +95,18 @@ class PhoneGamepad {
         // introduce ourselves so the phone sends pad states here (not expecting a web gamepad page)
         sendText(out, "{\"hello\":{\"id\":\"mctv-native\",\"kind\":\"mctv-native\"}}");
 
-        while (running) {
-            String msg = readTextFrame(in);
-            if (msg == null) break;
-            apply(msg);
+        try {
+            while (running) {
+                String msg = readTextFrame(in);
+                if (msg == null) break;
+                if (msg.isEmpty()) continue;   // ping/pong keep-alive: nothing to apply
+                apply(msg);
+            }
+        } finally {
+            try { s.close(); } catch (Exception ignored) { }
+            // release every button on ANY exit (incl. a read timeout), so nothing sticks while we reconnect
+            conn.sendControllerInput((short) 0, (short) 0x1, 0, (byte) 0, (byte) 0, (short) 0, (short) 0, (short) 0, (short) 0);
         }
-        try { s.close(); } catch (Exception ignored) { }
-        // release every button when the link ends, so nothing sticks
-        conn.sendControllerInput((short) 0, (short) 0x1, 0, (byte) 0, (byte) 0, (short) 0, (short) 0, (short) 0, (short) 0);
     }
 
     // {"pads":[{"b":[..17..],"a":[..4..]}, ...]} -> pad 0 into the stream
