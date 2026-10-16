@@ -103,6 +103,13 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- Sony's PSN sign-in, once, so this TV can register a PS5 and reach it away from home -->
+        <activity
+            android:name=".home.PsnSignInActivity"
+            android:exported="false"
+            android:theme="@style/StreamTheme"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|keyboardHidden|keyboard|navigation|uiMode|density|smallestScreenSize|screenLayout" />
         <!-- Keeps :8099 open for the phone from boot, whether or not MoonCast is on screen -->
         <service
             android:name=".home.PhoneLinkService"
