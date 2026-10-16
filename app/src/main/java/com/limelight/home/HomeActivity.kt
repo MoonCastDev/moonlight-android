@@ -844,19 +844,35 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                 toggle(list, "checkbox_stretch_video", "Stretch to fill", "Fills the screen when the shape doesn't match", false)
                 choice(list, "frame_pacing", "Frame pacing", "Trade a little delay for smoother motion",
                         listOf("Lowest delay" to "latency", "Balanced" to "balanced", "Smoothest" to "smoothness"), "latency")
+                toggle(list, "checkbox_enable_sops", "Let the PC tune game settings", "Changes a game's graphics settings to suit the stream, on PCs that support it", true)
+                toggle(list, "checkbox_unlock_fps", "Unlock frame rate", "Allows rates above what this TV shows, like 120 on a 60 Hz screen. May tear", false)
+                toggle(list, "checkbox_reduce_refresh_rate", "Let the TV lower its refresh rate", "Saves power, adds a little delay", false)
             }
             "audio" -> {
                 choice(list, "list_audio_config", "Speakers", "Match what's connected to this TV",
                         listOf("Stereo" to "2", "5.1" to "51", "7.1" to "71"), "2")
                 toggle(list, "checkbox_host_audio", "Also play sound on the PC", "Useful when someone's in the room with it", false)
+                toggle(list, "checkbox_enable_audiofx", "Allow the TV's sound effects", "Lets this TV's equalizer and sound modes work while playing. Adds a little sound delay", false)
             }
             "pads" -> {
                 action(list, "set:pad", "Pair a controller", "Opens this TV's Bluetooth settings. Put the pad in pairing mode first", null) { pairController() }
+                toggle(list, "checkbox_usb_driver", "USB pad driver", "Makes Xbox pads plugged in by USB work, even where this TV doesn't support them", true)
+                if (stream.getBoolean("checkbox_usb_driver", true))
+                    toggle(list, "checkbox_usb_bind_all", "Use it for every USB pad", "Even Xbox pads this TV already supports. Try it if one misbehaves", false)
                 toggle(list, "checkbox_multi_controller", "More than one player", "On a PC each pad is its own player. On the PS5, every pad is player 1", true)
                 intChoice(list, "seekbar_deadzone", "Stick deadzone", "Raise it if a character drifts on its own", listOf(3, 5, 7, 10, 15), 7) { "$it%" }
                 toggle(list, "checkbox_flip_face_buttons", "Swap A and B", "For Nintendo-style layouts", false)
                 toggle(list, "checkbox_gamepad_motion_sensors", "Motion", "Send the pad's gyro to games that use it", true)
                 toggle(list, "checkbox_mouse_emulation", "Use the pad as a mouse", "Hold Start to switch", true)
+                if (stream.getBoolean("checkbox_mouse_emulation", true))
+                    choice(list, "analog_scrolling", "Scroll with a stick", "While the pad is a mouse",
+                            listOf("Off" to "none", "Right" to "right", "Left" to "left"), "right")
+                // Only offer the fallbacks when this device has the hardware; most TVs and sticks have neither.
+                val sensors = getSystemService(Context.SENSOR_SERVICE) as android.hardware.SensorManager
+                if (sensors.getDefaultSensor(android.hardware.Sensor.TYPE_GYROSCOPE) != null)
+                    toggle(list, "checkbox_gamepad_motion_fallback", "Motion from this device", "For pads without a gyro, use this device's own sensors", false)
+                if ((getSystemService(Context.VIBRATOR_SERVICE) as? android.os.Vibrator)?.hasVibrator() == true)
+                    toggle(list, "checkbox_vibrate_fallback", "Rumble on this device", "When a pad can't rumble", false)
                 info(list, "Quick menu", QuickMenu.COMBO_LABEL + ", or Back on the TV remote")
             }
             "ps" -> {
@@ -898,6 +914,13 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                 toggle(list, "checkbox_enable_perf_overlay", "Stats while playing", "Frame rate, delay and lost frames in a corner of the game", false)
                 tvToggle(list, "hide_hints", "Hide button hints", "They fade after 10 seconds and come back when you press a button", tv.oled)
                 tvToggle(list, "pixel_shift", "Move the menus slightly", "Shifts everything by a few pixels every few minutes, so nothing burns in", tv.oled)
+                toggle(list, "checkbox_enable_post_stream_toast", "Connection summary after a game", "Shows the average delay and frame rate when you leave", false)
+                toggle(list, "checkbox_disable_warnings", "Hide connection warnings", "No \"poor connection\" messages while playing", false)
+                val langs = resources.getStringArray(R.array.language_values)
+                val names = resources.getStringArray(R.array.language_names)
+                val cur = langs.indexOf(stream.getString("list_languages", "default")).coerceAtLeast(0)
+                action(list, "set:lang", "Language while playing", "For messages during a game and errors. These menus stay in English",
+                        if (cur == 0) "Same as the TV" else names[cur]) { pickLanguage(langs, names, cur) }
             }
             "about" -> {
                 val ver = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (e: Exception) { "" }
@@ -1436,6 +1459,27 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         overlay.visibility = View.GONE
         main.descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
         render(force = true)
+    }
+
+    private fun pickLanguage(langs: Array<String>, names: Array<String>, cur: Int) {
+        val card = dialogCard()
+        card.addView(tv.text("Language while playing", 40, tv.p.moon, tv.display(700)))
+        card.addView(tv.text("Takes effect from the next game.", 22, tv.p.dust, tv.ui(500)),
+                tv.lp(-1, -2).apply { topMargin = tv.px(12); bottomMargin = tv.px(20) })
+        val list = tv.col()
+        langs.forEachIndexed { i, v ->
+            list.addView(tv.row().apply {
+                tag = if (i == cur) "primary" else "lang:$v"
+                background = tv.focusable(0, 16, outline = false)
+                setPadding(tv.px(20), 0, tv.px(20), 0)
+                addView(tv.text(if (i == 0) "Same as the TV" else names[i], 26, tv.p.moon, tv.ui(700)), LinearLayout.LayoutParams(0, -2, 1f))
+                if (i == cur) addView(tv.status("Now", "live"))
+                tv.focusableView(this)
+                setOnClickListener { stream.edit().putString("list_languages", v).apply(); hideOverlay() }
+            }, tv.lp(-1, 72))
+        }
+        card.addView(ScrollView(this).apply { isVerticalScrollBarEnabled = false; addView(list) }, tv.lp(-1, 560))
+        showOverlay("lang", FrameLayout(this).apply { addView(card, tv.flp(900, -2, Gravity.CENTER)) })
     }
 
     private fun dialogCard(): LinearLayout = tv.col().apply {
