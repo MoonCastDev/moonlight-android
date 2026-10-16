@@ -113,8 +113,9 @@ public class MoonCastReceiver extends Activity {
                 send(s, 200, "{\"mooncast_native\":1,\"name\":" + quote(android.os.Build.MODEL)
                         + ",\"pc\":" + quote(pc == null ? "" : pc.name) + "}");
             } else if ("POST".equals(method) && path.startsWith("/play")) {
-                char[] body = new char[Math.max(0, Math.min(clen, 2048))];
-                int n = clen > 0 ? in.read(body, 0, body.length) : 0;
+                char[] body = new char[Math.max(0, Math.min(clen, 16384))];
+                int n = 0;   // read the whole body (a PSN token makes it bigger than one read)
+                while (n < body.length) { int r = in.read(body, n, body.length - n); if (r < 0) break; n += r; }
                 String json = new String(body, 0, Math.max(0, n));
                 String appId = field(json, "appId"), appName = field(json, "appName");
                 // The phone is the controller: remember where it is (the address it POSTed from, or an explicit phoneIp).
@@ -127,7 +128,8 @@ public class MoonCastReceiver extends Activity {
                 // PS5 Remote Play (native chiaki): the phone sends the console's host + registration keys.
                 String ps5host = field(json, "ps5host");
                 if (ps5host != null && !ps5host.isEmpty()) {
-                    if (playPs5(ps5host, field(json, "registKey"), field(json, "morning"), field(json, "ps5")))
+                    if (playPs5(ps5host, field(json, "registKey"), field(json, "morning"), field(json, "ps5"),
+                            field(json, "psnToken"), field(json, "duid"), field(json, "accountId")))
                         send(s, 200, "{\"ok\":1}");
                     else send(s, 400, "{\"error\":\"ps5 launch failed\"}");
                 } else if (appId != null && play(appId, appName)) send(s, 200, "{\"ok\":1}");
@@ -175,7 +177,8 @@ public class MoonCastReceiver extends Activity {
     }
 
     // Launch a NATIVE PS5 Remote Play session (chiaki) for the given console + registration keys.
-    private boolean playPs5(String host, String registKey, String morning, String ps5) {
+    private boolean playPs5(String host, String registKey, String morning, String ps5,
+                            String psnToken, String duid, String accountId) {
         if (registKey == null || morning == null) return false;
         setStatus("Starting PlayStation…");
         final boolean isPs5 = ps5 == null || !"false".equalsIgnoreCase(ps5);
@@ -185,6 +188,10 @@ public class MoonCastReceiver extends Activity {
             i.putExtra(Ps5StreamActivity.EXTRA_REGIST_KEY, registKey);
             i.putExtra(Ps5StreamActivity.EXTRA_MORNING, morning);
             i.putExtra(Ps5StreamActivity.EXTRA_PS5, isPs5);
+            // Remote Play over the internet: used when the console isn't on this TV's LAN
+            if (psnToken != null && !psnToken.isEmpty()) i.putExtra(Ps5StreamActivity.EXTRA_PSN_TOKEN, psnToken);
+            if (duid != null && !duid.isEmpty()) i.putExtra(Ps5StreamActivity.EXTRA_DUID, duid);
+            if (accountId != null && !accountId.isEmpty()) i.putExtra(Ps5StreamActivity.EXTRA_ACCOUNT_ID, accountId);
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             getApplicationContext().startActivity(i);
         });
@@ -203,7 +210,8 @@ public class MoonCastReceiver extends Activity {
                 return e > st ? json.substring(st, e) : null;
             }
             int b = json.indexOf('"', a + 1);
-            return b > a ? json.substring(a + 1, b) : null;
+            // org.json writes "/" as "\/" (base64 account ids and tokens can contain "/")
+            return b > a ? json.substring(a + 1, b).replace("\\/", "/") : null;
         } catch (Exception e) { return null; }
     }
 

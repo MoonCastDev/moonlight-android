@@ -24,19 +24,79 @@ object Ps5Pad {
     @Volatile private var running = false
     @Volatile private var sock: Socket? = null
     @Volatile private var thread: Thread? = null
+    // The session the relay may drive. Every controller update goes through push() under this lock, and stop() clears
+    // it under the same lock - so after stop() returns nothing can call into a session that is being disposed
+    // (crashed natively in sessionSetControllerState when the PS5 dropped a remote session, 2026-10-16).
+    private val lock = Any()
+    @Volatile private var active: Session? = null
+
+    private fun push(st: ControllerState) = synchronized(lock) { active?.setControllerState(st) }
+
+    /** A controller attached to THIS device (Odin handheld, or a pad plugged into the TV): same lock as the relay. */
+    fun pushLocal(st: ControllerState) = push(st)
 
     fun start(session: Session) {
         stop()   // never leave a previous relay thread running
+        synchronized(lock) { active = session }   // local input works even without a phone relay
         val h = PhoneGamepad.phoneHost() ?: return
         running = true
         thread = Thread({ run(session, h) }, "ps5-pad").also { it.start() }
+        startUdp(h)
     }
 
     fun stop() {
+        synchronized(lock) { active = null }   // from here on push() is a no-op
         running = false
+        try { udpSock?.close() } catch (e: Exception) {}
+        udpSock = null
         try { sock?.close() } catch (e: Exception) {}
         try { thread?.interrupt() } catch (e: Exception) {}
         thread = null
+    }
+
+    // ---- controller state over UDP (preferred) ----
+    // The phone also sends every pad state as a UDP packet {"seq","k","pads"} to :8100 and repeats it every 50 ms.
+    // Unlike the TCP WebSocket, a lost/late packet doesn't hold back later inputs (TCP resend stalls of 200+ ms on
+    // the Meeting Room TV's 2.4 GHz Wi-Fi made the controller feel slow). Accepted only from the phone's IP, with
+    // our pad key and a newer seq. While UDP is flowing the WebSocket's pad frames are ignored; if it stops for 1 s
+    // the WebSocket takes over again.
+    private const val UDP_PORT = 8100
+    @Volatile private var udpSock: java.net.DatagramSocket? = null
+    @Volatile private var lastUdpAt = 0L
+    @Volatile private var lastSeq = 0L
+
+    private fun udpFlowing() = System.currentTimeMillis() - lastUdpAt < 1000
+
+    private fun startUdp(phone: String) {
+        val ds = try {
+            java.net.DatagramSocket(null).apply { reuseAddress = true; bind(InetSocketAddress(UDP_PORT)) }
+        } catch (e: Exception) { Log.w(TAG, "udp pad: can't listen on $UDP_PORT: $e"); return }
+        udpSock = ds
+        lastSeq = 0L; lastUdpAt = 0L
+        Thread({
+            val buf = ByteArray(8192)
+            var first = true
+            while (running && udpSock === ds) {
+                try {
+                    val p = java.net.DatagramPacket(buf, buf.size)
+                    ds.receive(p)
+                    if (p.address?.hostAddress != phone) continue
+                    val js = String(buf, 0, p.length, StandardCharsets.UTF_8)
+                    val o = org.json.JSONObject(js)
+                    val key = PhoneGamepad.padKey()
+                    if (!key.isNullOrEmpty() && o.optString("k") != key) continue
+                    val seq = o.optLong("seq", 0L)
+                    // drop older packets; accept a reset (phone app restarted) or a long gap
+                    if (seq <= lastSeq && lastSeq - seq < 10000 && udpFlowing()) continue
+                    lastSeq = seq
+                    lastUdpAt = System.currentTimeMillis()
+                    if (first) { first = false; Log.i(TAG, "controller over UDP from $phone") }
+                    apply(null, js)
+                } catch (e: Exception) {
+                    if (running && udpSock === ds) Log.w(TAG, "udp pad: $e")
+                }
+            }
+        }, "ps5-pad-udp").start()
     }
 
     private fun run(session: Session, h: String) {
@@ -72,21 +132,22 @@ object Ps5Pad {
             while (running) {
                 val msg = readTextFrame(inp) ?: break
                 if (msg.isEmpty()) continue   // ping/pong/continuation keep-alive: nothing to apply
+                if (udpFlowing()) continue    // UDP is delivering the pad; the TCP copy would only arrive late
                 apply(session, msg)
             }
         } finally {
             // Release every button on ANY exit (incl. a read timeout) so nothing sticks while we reconnect.
             try { s.close() } catch (e: Exception) {}
-            try { session.setControllerState(ControllerState()) } catch (e: Exception) {}
+            try { push(ControllerState()) } catch (e: Exception) {}
         }
     }
 
-    private fun apply(session: Session, json: String) {
+    private fun apply(@Suppress("UNUSED_PARAMETER") session: Session?, json: String) {
         try {
             val o = JSONObject(json)
             if (!o.has("pads")) return
             val pads = o.optJSONArray("pads") ?: return
-            if (pads.length() == 0 || pads.isNull(0)) { session.setControllerState(ControllerState()); return }
+            if (pads.length() == 0 || pads.isNull(0)) { push(ControllerState()); return }
             val pad = pads.getJSONObject(0)
             val b = pad.optJSONArray("b"); val a = pad.optJSONArray("a")
             val bt = DoubleArray(17); val ax = DoubleArray(4)
@@ -120,7 +181,7 @@ object Ps5Pad {
                 r2State = (bt[7].coerceIn(0.0, 1.0) * 255).toInt().toUByte(),
                 leftX = axis(ax[0]), leftY = axis(ax[1]), rightX = axis(ax[2]), rightY = axis(ax[3])
             )
-            session.setControllerState(st)
+            push(st)
         } catch (e: Exception) { Log.w(TAG, "bad pad: $e") }
     }
 

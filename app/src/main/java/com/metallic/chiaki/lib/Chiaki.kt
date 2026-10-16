@@ -65,7 +65,12 @@ data class ConnectInfo(
 	val host: String,
 	val registKey: ByteArray,
 	val morning: ByteArray,
-	val videoProfile: ConnectVideoProfile
+	val videoProfile: ConnectVideoProfile,
+	// MoonCast: Remote Play over the internet (PSN hole-punch). Read by the JNI only when both
+	// psnToken and duid are set; null = LAN direct connection, as before.
+	val psnToken: String? = null,
+	val duid: String? = null,
+	val psnAccountId: ByteArray? = null
 )
 
 private class ChiakiNative
