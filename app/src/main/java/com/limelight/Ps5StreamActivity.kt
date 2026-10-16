@@ -113,11 +113,10 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
         when (ev) {
             is ConnectedEvent -> Log.i(TAG, "PS5 connected")
             is QuitEvent -> {
+                // Don't dispose here: this runs on chiaki's own callback thread, and dispose()/join would deadlock.
+                // Just close the screen; onDestroy tears the session down on a separate thread.
                 Log.i(TAG, "PS5 quit: ${ev.reasonString}")
                 closed = true
-                Ps5Pad.stop()
-                session?.let { try { it.dispose() } catch (e: Exception) {} }   // clear the session on the PS5
-                session = null
                 runOnUiThread { finish() }
             }
             else -> {}
@@ -129,9 +128,11 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
 
     override fun onDestroy() {
         closed = true
-        Ps5Pad.stop()
-        session?.let { try { it.stop(); it.dispose() } catch (e: Exception) {} }
+        val s = session
         session = null
+        // Tear down off the UI thread: Session.dispose() joins native threads and can block, which would freeze the
+        // app's main looper and stop the receiver from launching the next stream.
+        Thread({ Ps5Pad.stop(); if (s != null) try { s.stop(); s.dispose() } catch (e: Exception) {} }, "ps5-teardown").start()
         super.onDestroy()
     }
 }

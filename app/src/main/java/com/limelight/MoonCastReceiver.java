@@ -160,7 +160,7 @@ public class MoonCastReceiver extends Activity {
             i.putExtra(Game.EXTRA_APP_ID, appId);
             if (appName != null) i.putExtra(Game.EXTRA_APP_NAME, appName);
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            startActivity(i);
+            getApplicationContext().startActivity(i);
         });
         return true;
     }
@@ -177,7 +177,7 @@ public class MoonCastReceiver extends Activity {
             i.putExtra(Ps5StreamActivity.EXTRA_MORNING, morning);
             i.putExtra(Ps5StreamActivity.EXTRA_PS5, isPs5);
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            startActivity(i);
+            getApplicationContext().startActivity(i);
         });
         return true;
     }
