@@ -84,6 +84,35 @@ object Ps5Store {
         }
     } catch (e: Exception) { Status(Power.NOT_FOUND) }
 
+    data class Found(val host: String, val name: String, val on: Boolean)
+
+    /** Every PlayStation that answers on this network (on or in rest mode). Blocking, about 2 s. */
+    fun discover(): List<Found> {
+        val out = LinkedHashMap<String, Found>()
+        try {
+            DatagramSocket().use { s ->
+                s.broadcast = true
+                s.soTimeout = 300
+                val msg = "SRCH * HTTP/1.1\ndevice-discovery-protocol-version:00030010\n".toByteArray()
+                val bc = InetAddress.getByName("255.255.255.255")
+                val end = System.currentTimeMillis() + 2000
+                var sent = 0
+                while (System.currentTimeMillis() < end) {
+                    if (sent < 3) { s.send(DatagramPacket(msg, msg.size, bc, 9302)); sent++ }
+                    try {
+                        val buf = ByteArray(2048); val pk = DatagramPacket(buf, buf.size)
+                        s.receive(pk)
+                        val r = String(buf, 0, pk.length, Charsets.UTF_8)
+                        val host = pk.address.hostAddress ?: continue
+                        val name = r.lineSequence().firstOrNull { it.startsWith("host-name:") }?.substringAfter(':')?.trim() ?: "PS5"
+                        out[host] = Found(host, name, r.lineSequence().first().contains(" 200"))
+                    } catch (e: java.net.SocketTimeoutException) { }
+                }
+            }
+        } catch (e: Exception) { }
+        return out.values.toList()
+    }
+
     /** chiaki's wake credential: the registration key's ASCII (up to the null pad) parsed as hex. */
     fun wakeCredential(registKeyHex: String): ULong? = try {
         val bytes = registKeyHex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()

@@ -747,6 +747,13 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                 info(list, "Quick menu", QuickMenu.COMBO_LABEL + ", or Back on the TV remote")
             }
             "ps" -> {
+                if (Psn.signedIn(this)) action(list, "set:psn", "PlayStation Network",
+                        "Signed in" + (Psn.onlineId(this)?.takeIf { it.isNotBlank() }?.let { " as $it" } ?: "") + ". This TV can add your PS5 and reach it away from home",
+                        "Sign out") {
+                    confirm("Sign out of PlayStation Network?", "This TV will need the Odin, or a new sign-in, to add a PS5 or reach it away from home.", "Sign out") {
+                        Psn.signOut(this); render(force = true) } }
+                else action(list, "set:psn", "PlayStation Network", "Sign in once to add a PS5 here and play it away from home", "Sign in") {
+                    startActivityForResult(Intent(this, PsnSignInActivity::class.java), REQ_PSN) }
                 choice(list, "ps5_resolution", "Resolution", "The PS5 streams up to 1080p", listOf("720p" to "720", "1080p" to "1080"), "1080")
                 info(list, "Frame rate", "60 fps")
                 choice(list, "ps5_bitrate_home", "Bitrate at home", "Auto: 30 Mbps on fast Wi-Fi or cable, 20 otherwise",
@@ -954,9 +961,20 @@ class HomeActivity : Activity(), PhoneLink.Listener {
     }
 
     private fun playPs(c: Ps5Store.Console) {
-        if (power(c) == Ps5Store.Power.NOT_FOUND)
-            return toast("${c.name} isn't on this network. To play away from home, send it from MoonCast on your Odin.")
-        startActivity(PhoneLink.ps5Intent(this, c.host, c.registKey, c.morning, c.ps5, null, null, null))
+        if (power(c) != Ps5Store.Power.NOT_FOUND || !Psn.signedIn(this)) {
+            if (power(c) == Ps5Store.Power.NOT_FOUND)
+                return toast("${c.name} isn't on this network. Sign in to PlayStation Network in Settings to play it from here.")
+            startActivity(PhoneLink.ps5Intent(this, c.host, c.registKey, c.morning, c.ps5, null, null, null))
+            return
+        }
+        // away from home: reach it through PlayStation Network (the player still tries the home network first)
+        Thread {
+            val r = Psn.remoteFor(this, c.name)
+            runOnUiThread {
+                if (r == null) toast("PlayStation Network doesn't list ${c.name} for Remote Play. Check Remote Play is on in its settings.")
+                else startActivity(PhoneLink.ps5Intent(this, c.host, c.registKey, c.morning, c.ps5, r.first, r.second, r.third))
+            }
+        }.start()
     }
 
     private fun wakePs(c: Ps5Store.Console) {
@@ -1014,7 +1032,142 @@ class HomeActivity : Activity(), PhoneLink.Listener {
             })
         }
         v.addView(steps, tv.lp(680, -2))
+        left.addView(tv.row().apply {
+            addView(tv.pill(if (Psn.signedIn(this@HomeActivity)) "Register on this TV" else "Sign in and register on this TV", "A", true) {
+                registerHere() }.apply { tag = "primary" })
+        }, tv.lp(-2, -2).apply { topMargin = tv.px(36) })
         showOverlay("register", v, dim = false)
+    }
+
+    // ---- registering on the TV itself: PSN sign-in (once) -> pick the PS5 -> 8-digit code ----
+    private fun registerHere() {
+        if (!Psn.signedIn(this)) { startActivityForResult(Intent(this, PsnSignInActivity::class.java), REQ_PSN_REGISTER); return }
+        pickConsole()
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (resultCode != RESULT_OK) return
+        when (requestCode) {
+            REQ_PSN_REGISTER -> { toast("Signed in to PlayStation Network"); ui.post { pickConsole() } }
+            REQ_PSN -> { toast("Signed in to PlayStation Network"); render(force = true) }
+        }
+    }
+
+    private fun pickConsole() {
+        val card = dialogCard()
+        card.addView(tv.text("Which PlayStation?", 40, tv.p.moon, tv.display(700)))
+        val sub = tv.text("Looking on this network…", 22, tv.p.dust, tv.ui(500), 3)
+        card.addView(sub, tv.lp(-1, -2).apply { topMargin = tv.px(12); bottomMargin = tv.px(20) })
+        val list = tv.col()
+        card.addView(list, tv.lp(-1, -2))
+        showOverlay("pickps", FrameLayout(this).apply { addView(card, tv.flp(1000, -2, Gravity.CENTER)) })
+        Thread {
+            val found = Ps5Store.discover()
+            runOnUiThread {
+                if (overlayKind != "pickps") return@runOnUiThread
+                if (found.isEmpty()) {
+                    sub.text = "No PlayStation answered. Make sure it's on or in rest mode (not fully off) and on this network."
+                    list.addView(tv.row().apply { addView(tv.pill("Look again", "A", true) { pickConsole() }.apply { tag = "primary" }) })
+                } else {
+                    sub.text = "Pick yours. Then open Settings, System, Remote Play, Link device on it to see the code."
+                    found.forEachIndexed { i, f ->
+                        list.addView(tv.row().apply {
+                            tag = if (i == 0) "primary" else "ps:${f.host}"
+                            background = tv.focusable(0, 16, outline = false)
+                            setPadding(tv.px(20), 0, tv.px(20), 0)
+                            addView(tv.text("PS", 18, 0xFFFFFFFF.toInt(), tv.display(700)).apply { gravity = Gravity.CENTER; background = tv.round(0xFF2F5DF0.toInt(), 12) },
+                                    tv.lp(52, 52).apply { rightMargin = tv.px(18) })
+                            addView(tv.text(f.name, 26, tv.p.moon, tv.ui(700)), LinearLayout.LayoutParams(0, -2, 1f))
+                            addView(tv.status(if (f.on) "On" else "Rest mode", if (f.on) "live" else "rest"))
+                            addView(tv.text(f.host, 19, tv.p.dust, tv.ui(600)), tv.lp(-2, -2).apply { leftMargin = tv.px(8) })
+                            tv.focusableView(this)
+                            setOnClickListener { enterCode(f) }
+                        }, tv.lp(-1, 88))
+                    }
+                }
+                list.findViewWithTag<View>("primary")?.requestFocus()
+            }
+        }.start()
+    }
+
+    private var codeDigits = StringBuilder()
+    private var codeBoxes = listOf<TextView>()
+    private var codeStatus: TextView? = null
+    private var codeTarget: Ps5Store.Found? = null
+
+    /** The 8-digit "Link device" code: number pad for a pad or remote; number keys work too. */
+    private fun enterCode(f: Ps5Store.Found) {
+        codeTarget = f; codeDigits = StringBuilder()
+        val v = tv.row(Gravity.TOP).apply { setPadding(tv.px(96), tv.px(170), tv.px(96), 0) }
+        val left = tv.col()
+        left.addView(tv.row().apply { addView(tv.status("Registering ${f.name}", "rest")) })
+        left.addView(tv.text("Type the code\nfrom your PS5", 64, tv.p.moon, tv.display(700), 2), tv.lp(-2, -2).apply { topMargin = tv.px(24) })
+        left.addView(tv.text("On the PS5: Settings, System, Remote Play, Link device.", 24, tv.p.soft, tv.ui(500), 2),
+                tv.lp(900, -2).apply { topMargin = tv.px(16) })
+        val boxes = tv.row()
+        codeBoxes = (0 until 8).map { i ->
+            tv.text("", 56, tv.p.moon, tv.display(700)).apply { gravity = Gravity.CENTER }
+                    .also { b -> boxes.addView(b, tv.lp(92, 116).apply { rightMargin = tv.px(if (i == 3) 28 else 12) }) }
+        }
+        left.addView(boxes, tv.lp(-2, -2).apply { topMargin = tv.px(36) })
+        codeStatus = tv.text("", 24, tv.p.dust, tv.ui(600), 2)
+        left.addView(codeStatus, tv.lp(900, -2).apply { topMargin = tv.px(28) })
+        v.addView(left, LinearLayout.LayoutParams(0, -2, 1f))
+
+        val pad = GridLayout(this).apply { columnCount = 3 }
+        listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "⌫", "0", "OK").forEach { k ->
+            pad.addView(tv.text(k, 34, if (k == "OK") tv.p.night else tv.p.moon, tv.display(600)).apply {
+                gravity = Gravity.CENTER
+                tag = if (k == "1") "primary" else "key:$k"
+                val fill = if (k == "OK") Tv.BEAM else tv.p.deep
+                background = android.graphics.drawable.StateListDrawable().apply {
+                    addState(intArrayOf(android.R.attr.state_focused), tv.round(if (k == "OK") Tv.BEAM else tv.p.raise, 20, Tv.CORONA, 3))
+                    addState(intArrayOf(), tv.round(fill, 20, if (k == "OK") 0 else tv.p.line, 1))
+                }
+                tv.focusableView(this)
+                setOnClickListener { codeKey(k) }
+            }, GridLayout.LayoutParams().apply { width = tv.px(150); height = tv.px(110); rightMargin = tv.px(14); bottomMargin = tv.px(14) })
+        }
+        v.addView(pad, tv.lp(-2, -2))
+        showOverlay("code", v, dim = false)
+        paintCode()
+    }
+
+    private fun paintCode() {
+        codeBoxes.forEachIndexed { i, b ->
+            b.text = codeDigits.getOrNull(i)?.toString() ?: ""
+            val cur = i == codeDigits.length
+            b.background = tv.round(tv.p.deep, 16, if (cur) Tv.CORONA else tv.p.line, if (cur) 3 else 1)
+        }
+    }
+
+    private fun codeKey(k: String) {
+        when (k) {
+            "⌫" -> if (codeDigits.isNotEmpty()) codeDigits.deleteCharAt(codeDigits.length - 1)
+            "OK" -> { submitCode(); return }
+            else -> if (codeDigits.length < 8) codeDigits.append(k)
+        }
+        paintCode()
+        if (codeDigits.length == 8) overlay.findViewWithTag<View>("key:OK")?.requestFocus()
+    }
+
+    private fun submitCode() {
+        val f = codeTarget ?: return
+        if (codeDigits.length != 8) { codeStatus?.text = "The code has 8 digits."; return }
+        val acc = Psn.accountId(this) ?: return toast("Sign in to PlayStation Network first")
+        val pin = codeDigits.toString().toInt()
+        codeStatus?.text = "Registering with ${f.name}…"
+        Thread {
+            val r = try { com.limelight.Ps5Register.register(f.host, android.util.Base64.decode(acc, android.util.Base64.DEFAULT), pin, true, 30000L) }
+                    catch (e: Exception) { null }
+            if (r != null) Ps5Store.save(this, Ps5Store.Console(f.host, r.nickname.ifBlank { f.name }, r.registKeyHex, r.morningHex, true))
+            runOnUiThread {
+                if (r == null) codeStatus?.text = "That didn't work. Check the code (it changes every few minutes) and that the PS5 still shows Link device."
+                else onRegistered(f.host, r.nickname.ifBlank { f.name })
+            }
+        }.start()
     }
 
     override fun onRegistering(host: String) {
@@ -1171,6 +1324,12 @@ class HomeActivity : Activity(), PhoneLink.Listener {
     override fun dispatchKeyEvent(e: KeyEvent): Boolean {
         lastInput = System.currentTimeMillis()
         if (overlayKind == "idle") { if (e.action == KeyEvent.ACTION_UP) hideOverlay(); return true }
+        if (overlayKind == "code" && e.action == KeyEvent.ACTION_DOWN) {
+            when (e.keyCode) {
+                in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9 -> { codeKey((e.keyCode - KeyEvent.KEYCODE_0).toString()); return true }
+                KeyEvent.KEYCODE_DEL -> { codeKey("⌫"); return true }
+            }
+        }
         if (e.action == KeyEvent.ACTION_DOWN && overlayKind == null && detail == null) {
             val i = Tab.values().indexOf(tab)
             when (e.keyCode) {
@@ -1195,5 +1354,9 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         override fun getOutline(view: View, outline: Outline) = outline.setRoundRect(0, 0, view.width, view.height, tv.pxf(r))
     }
 
-    companion object { private const val Service_BIND = Context.BIND_AUTO_CREATE }
+    companion object {
+        private const val Service_BIND = Context.BIND_AUTO_CREATE
+        private const val REQ_PSN_REGISTER = 41
+        private const val REQ_PSN = 42
+    }
 }
