@@ -200,7 +200,11 @@ class XboxRtc(
             if (answer == null) Thread.sleep(1000)
         }
         if (closed) return
-        setRemote(answer!!)
+        // what the Xbox agreed to: media sections, directions and the video codec it picked
+        answer!!.replace("\r", "").split("\n").filter { it.startsWith("m=") || it == "a=sendonly" || it == "a=recvonly" ||
+                it == "a=sendrecv" || it == "a=inactive" || it.startsWith("a=rtpmap") && (it.contains("H264") || it.contains("opus")) }
+            .forEach { Log.i(TAG, "answer $it") }
+        setRemote(answer)
 
         // Local candidates (gathering finishes quickly on a LAN; don't wait forever)
         gatheringDone.await(5, TimeUnit.SECONDS)
@@ -411,6 +415,7 @@ class XboxRtc(
         override fun onRenegotiationNeeded() {}
         override fun onAddTrack(r: RtpReceiver, s: Array<out MediaStream>) {
             val t = r.track() ?: return
+            Log.i(TAG, "track ${t.kind()} arrived")
             work.post {
                 if (t is VideoTrack) { t.addSink(videoSink); videoTrackSeen = true } else audioTrackSeen = true
                 if (videoTrackSeen && audioTrackSeen && !keyframeAsked) { keyframeAsked = true; askKeyframe() }
@@ -461,6 +466,10 @@ class XboxRtc(
         inputStarted = true
         work.post(inputBeat)
         work.postDelayed(frameFeedback, 2000)
+        // Ask for the first picture now that the control channel is open: the request made when the tracks arrived
+        // can come before the channel opens and get lost, and then the Xbox never starts the video (test129).
+        askKeyframe()
+        work.postDelayed(keyframeWatch, 3000)
 
         listOf(
             "/streaming/systemUi/configuration" to JSONObject().put("version", JSONArray(listOf(0, 2, 0)))
@@ -480,6 +489,19 @@ class XboxRtc(
 
     private fun gamepadChanged(index: Int, added: Boolean) =
         JSONObject().put("message", "gamepadChanged").put("gamepadIndex", index).put("wasAdded", added).toString()
+
+    /** Until video flows, ask for a keyframe again every 3 s (up to 5 times). */
+    private var keyframeTries = 0
+    private val keyframeWatch = object : Runnable {
+        override fun run() {
+            if (closed || videoFlowing) return
+            if (keyframeTries++ >= 5) return
+            Log.i(TAG, "no video yet, asking for a keyframe again")
+            askKeyframe()
+            work.postDelayed(this, 3000)
+        }
+    }
+    @Volatile private var videoFlowing = false
 
     private fun askKeyframe() = sendText("control", JSONObject().put("message", "videoKeyframeRequested").put("ifrRequested", false).toString())
 
@@ -599,6 +621,7 @@ class XboxRtc(
                 if (s.type == "candidate-pair" && m["state"] == "succeeded" && m["nominated"] == true)
                     rtt = ((m["currentRoundTripTime"] as? Number)?.toDouble() ?: -0.001) * 1000.0
             }
+            if (fps > 0 || mbps > 0) videoFlowing = true
             cb(Stats(fps, rtt, mbps, loss, w, h))
         }
     }

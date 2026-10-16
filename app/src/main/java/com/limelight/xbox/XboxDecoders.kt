@@ -32,7 +32,9 @@ class XboxDecoderFactory(egl: EglBase.Context, private val ultraLowLatency: Bool
     private val hw = HardwareVideoDecoderFactory(egl)
 
     override fun createDecoder(info: VideoCodecInfo): VideoDecoder? {
-        if (info.name.equals("H264", true)) hw.createDecoder(info)?.let {
+        // Our extra decoder settings only with Settings, Video, Ultra low latency: with them on the Amlogic stick,
+        // libwebrtc's decoding queue aborted right after the decoder started (test131). Default = libwebrtc as-is.
+        if (ultraLowLatency && info.name.equals("H264", true)) hw.createDecoder(info)?.let {
             Log.i("MoonCast-XboxDec", "H.264 decoder: ${it.implementationName} (low latency, ultra=$ultraLowLatency)")
             return LowLatencyDecoder(it, ultraLowLatency)
         }
@@ -87,8 +89,11 @@ private class LowLatencyDecoder(private val delegate: VideoDecoder, private val 
             if (m.name == "configure" && args?.getOrNull(0) is MediaFormat) {
                 val fmt = args[0] as MediaFormat
                 val info = codecInfo(name)
-                if (info != null) {
-                    MediaCodecHelper.setDecoderLowLatencyOptions(fmt, info, ultra, 0)
+                // never let our extra settings stop the decoder: if they can't be applied, configure as libwebrtc would
+                val applied = info != null && try {
+                    MediaCodecHelper.setDecoderLowLatencyOptions(fmt, info, ultra, 0); true
+                } catch (t: Throwable) { Log.w(TAG, "low-latency settings skipped: $t"); false }
+                if (applied) {
                     Log.i(TAG, "low-latency settings on $name (ultra=$ultra)")
                     try { return call(codec, m, args) } catch (t: Throwable) {
                         // Some decoder refused a key: fall back to libwebrtc's own settings rather than fail the stream

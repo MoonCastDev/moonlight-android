@@ -47,6 +47,9 @@ class XboxStreamActivity : Activity() {
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // The decoder rules the Xbox decoder borrows (MediaCodecHelper) need this first, as in Moonlight's Game
+        com.limelight.binding.video.MediaCodecHelper.initialize(this,
+                com.limelight.preferences.GlPreferences.readPreferences(this).glRenderer)
         val r = SurfaceViewRenderer(this).also { renderer = it }
         r.init(egl.eglBaseContext, object : RendererCommon.RendererEvents {
             override fun onFirstFrameRendered() { firstFrame = true; showStatus(null) }
