@@ -11,6 +11,7 @@ import com.metallic.chiaki.lib.ConnectInfo
 import com.metallic.chiaki.lib.ConnectVideoProfile
 import com.metallic.chiaki.lib.ConnectedEvent
 import com.metallic.chiaki.lib.ControllerState
+import com.metallic.chiaki.lib.DiscoveryService
 import com.metallic.chiaki.lib.Event
 import com.metallic.chiaki.lib.QuitEvent
 import com.metallic.chiaki.lib.Session
@@ -60,19 +61,50 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
 
     override fun surfaceCreated(holder: SurfaceHolder) {
         if (started) { session?.setSurface(holder.surface); return }
+        started = true
+        val surface = holder.surface
+        Thread({ connect(surface) }, "ps5-connect").start()
+    }
+
+    // Wake the console from standby (harmless if already on), then connect; retry a few times while it powers up.
+    private fun connect(surface: android.view.Surface) {
+        val host = intent.getStringExtra(EXTRA_HOST) ?: "192.168.100.126"
+        val ps5 = intent.getBooleanExtra(EXTRA_PS5, true)
         try {
-            val s = Session(connectInfo(), null, false)
-            s.eventCallback = { ev -> onEvent(ev) }
-            s.setSurface(holder.surface)
-            val err = s.start()
-            if (!err.isSuccess) { Log.e(TAG, "start failed: $err"); finish(); return }
-            session = s
-            started = true
-            Ps5Pad.start(s)   // phone drives the controller
-        } catch (e: Exception) {
-            Log.e(TAG, "PS5 session create failed", e)
-            finish()
+            val cred = wakeCredential(hex(intent.getStringExtra(EXTRA_REGIST_KEY) ?: ""))
+            if (cred != null) {
+                Log.i(TAG, "waking $host")
+                DiscoveryService.wakeup(null, host, cred, ps5)
+            }
+        } catch (e: Exception) { Log.w(TAG, "wake: $e") }
+        var attempt = 0
+        while (started && attempt < 8) {
+            try {
+                val s = Session(connectInfo(), null, false)
+                s.eventCallback = { ev -> onEvent(ev) }
+                s.setSurface(surface)
+                val err = s.start()
+                if (err.isSuccess) {
+                    session = s
+                    Ps5Pad.start(s)   // phone drives the controller
+                    return
+                }
+                Log.w(TAG, "start attempt ${attempt + 1} failed: $err")
+                try { s.dispose() } catch (e: Exception) {}
+            } catch (e: Exception) {
+                Log.w(TAG, "connect attempt ${attempt + 1}: $e")
+            }
+            attempt++
+            try { Thread.sleep(3000) } catch (e: InterruptedException) { break }  // console still waking
         }
+        if (session == null) { Log.e(TAG, "PS5 did not connect"); runOnUiThread { finish() } }
+    }
+
+    // chiaki's wake credential = the registration key's ASCII (up to the null pad) parsed as a hex ULong.
+    private fun wakeCredential(registKey: ByteArray): ULong? {
+        val end = registKey.indexOfFirst { it == 0.toByte() }.let { if (it >= 0) it else registKey.size }
+        val str = String(registKey, 0, end, Charsets.UTF_8)
+        return try { str.toULong(16) } catch (e: NumberFormatException) { null }
     }
 
     private fun onEvent(ev: Event) {
