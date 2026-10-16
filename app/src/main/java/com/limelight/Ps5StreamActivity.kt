@@ -36,6 +36,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
         const val EXTRA_MORNING = "ps5_morning"          // hex, 16 bytes
         const val EXTRA_PS5 = "ps5_is_ps5"
         private const val QUIT_RP_IN_USE = 4
+        private const val KEY_TOUCHPAD = KeyEvent.KEYCODE_BUTTON_16   // internal: an odd Sony pad's touchpad click
         private val MENU_COMBO = setOf(KeyEvent.KEYCODE_BUTTON_SELECT, KeyEvent.KEYCODE_BUTTON_START,
             KeyEvent.KEYCODE_BUTTON_L1, KeyEvent.KEYCODE_BUTTON_R1)   // CHIAKI_QUIT_REASON_SESSION_REQUEST_RP_IN_USE ("Remote is already in use")
         // Remote Play over the internet (PSN hole-punch): sent by the phone, used when the console isn't on this LAN
@@ -363,10 +364,39 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
     private var lx = 0f; private var ly = 0f; private var rx = 0f; private var ry = 0f
     private var lt = 0f; private var rt = 0f; private var hatX = 0f; private var hatY = 0f
 
-    private fun isPadKey(code: Int) = KeyEvent.isGamepadButton(code) || code == KeyEvent.KEYCODE_DPAD_UP ||
+    private fun isPadKey(code: Int) = KeyEvent.isGamepadButton(code) || code == KEY_TOUCHPAD || code == KeyEvent.KEYCODE_DPAD_UP ||
             code == KeyEvent.KEYCODE_DPAD_DOWN || code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT
 
-    override fun dispatchKeyEvent(e: KeyEvent): Boolean {
+    // A DualSense / DualShock 4 on an old kernel (no hid-playstation driver, e.g. the JAL AQUOS on 4.9) comes through
+    // Android's generic layout: every button is shifted (Square = BUTTON_A, Cross = BUTTON_B, Circle = BUTTON_C, ...)
+    // and the analog L2/R2 are on RX/RY. Same detection as Moonlight's ControllerHandler: Sony + a BUTTON_C key.
+    private val oddSony = HashMap<Int, Boolean>()
+    private fun isOddSony(deviceId: Int): Boolean = oddSony.getOrPut(deviceId) {
+        val d = InputDevice.getDevice(deviceId)
+        d != null && d.vendorId == 0x054c && d.hasKeys(KeyEvent.KEYCODE_BUTTON_C)[0]
+    }
+    private fun oddSonyKey(scan: Int): Int? = when (scan) {
+        304 -> KeyEvent.KEYCODE_BUTTON_X        // Square
+        305 -> KeyEvent.KEYCODE_BUTTON_A        // Cross
+        306 -> KeyEvent.KEYCODE_BUTTON_B        // Circle
+        307 -> KeyEvent.KEYCODE_BUTTON_Y        // Triangle
+        308 -> KeyEvent.KEYCODE_BUTTON_L1
+        309 -> KeyEvent.KEYCODE_BUTTON_R1
+        310 -> KeyEvent.KEYCODE_BUTTON_L2       // the click; the analog value comes from RX
+        311 -> KeyEvent.KEYCODE_BUTTON_R2
+        312 -> KeyEvent.KEYCODE_BUTTON_SELECT   // Create
+        313 -> KeyEvent.KEYCODE_BUTTON_START    // Options
+        314 -> KeyEvent.KEYCODE_BUTTON_THUMBL
+        315 -> KeyEvent.KEYCODE_BUTTON_THUMBR
+        316 -> KeyEvent.KEYCODE_BUTTON_MODE     // PS
+        317 -> KEY_TOUCHPAD                     // the real touchpad click
+        else -> null
+    }
+
+    override fun dispatchKeyEvent(raw: KeyEvent): Boolean {
+        val e = if (isOddSony(raw.deviceId)) oddSonyKey(raw.scanCode)?.let {
+            KeyEvent(raw.downTime, raw.eventTime, raw.action, it, raw.repeatCount, raw.metaState, raw.deviceId, raw.scanCode, raw.flags, raw.source)
+        } ?: raw else raw
         val code = e.keyCode
         val fromPad = (e.source and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD ||
                 (e.source and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
@@ -397,8 +427,14 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
             fun dz(v: Float) = if (Math.abs(v) < 0.08f) 0f else v
             lx = dz(e.getAxisValue(MotionEvent.AXIS_X)); ly = dz(e.getAxisValue(MotionEvent.AXIS_Y))
             rx = dz(e.getAxisValue(MotionEvent.AXIS_Z)); ry = dz(e.getAxisValue(MotionEvent.AXIS_RZ))
-            lt = maxOf(e.getAxisValue(MotionEvent.AXIS_LTRIGGER), e.getAxisValue(MotionEvent.AXIS_BRAKE))
-            rt = maxOf(e.getAxisValue(MotionEvent.AXIS_RTRIGGER), e.getAxisValue(MotionEvent.AXIS_GAS))
+            if (isOddSony(e.deviceId)) {
+                // generic layout: L2/R2 on RX/RY, scaled -1 (released) .. 1 (pressed)
+                lt = (e.getAxisValue(MotionEvent.AXIS_RX) + 1f) / 2f
+                rt = (e.getAxisValue(MotionEvent.AXIS_RY) + 1f) / 2f
+            } else {
+                lt = maxOf(e.getAxisValue(MotionEvent.AXIS_LTRIGGER), e.getAxisValue(MotionEvent.AXIS_BRAKE))
+                rt = maxOf(e.getAxisValue(MotionEvent.AXIS_RTRIGGER), e.getAxisValue(MotionEvent.AXIS_GAS))
+            }
             hatX = e.getAxisValue(MotionEvent.AXIS_HAT_X); hatY = e.getAxisValue(MotionEvent.AXIS_HAT_Y)
             sendLocal()
             return true
@@ -425,7 +461,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
         if (select && !tpCombo) f = f or ControllerState.BUTTON_SHARE
         if (start && !psCombo && !tpCombo) f = f or ControllerState.BUTTON_OPTIONS
         if (h(KeyEvent.KEYCODE_BUTTON_MODE) || psCombo) f = f or ControllerState.BUTTON_PS
-        if (tpCombo) f = f or ControllerState.BUTTON_TOUCHPAD
+        if (tpCombo || h(KEY_TOUCHPAD)) f = f or ControllerState.BUTTON_TOUCHPAD
         if (h(KeyEvent.KEYCODE_DPAD_UP) || hatY < -.5f) f = f or ControllerState.BUTTON_DPAD_UP
         if (h(KeyEvent.KEYCODE_DPAD_DOWN) || hatY > .5f) f = f or ControllerState.BUTTON_DPAD_DOWN
         if (h(KeyEvent.KEYCODE_DPAD_LEFT) || hatX < -.5f) f = f or ControllerState.BUTTON_DPAD_LEFT
