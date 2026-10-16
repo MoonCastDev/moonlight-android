@@ -1327,6 +1327,10 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
     @Override
     public boolean handleKeyDown(KeyEvent event) {
+        // MoonCast Quick menu first: the stream view hands us keys before the IME and before the activity
+        Boolean menuKey = quickMenuKey(event);
+        if (menuKey != null) return menuKey;
+
         // Pass-through virtual navigation keys
         if ((event.getFlags() & KeyEvent.FLAG_VIRTUAL_HARD_KEY) != 0) {
             return false;
@@ -1409,6 +1413,10 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
     @Override
     public boolean handleKeyUp(KeyEvent event) {
+        // MoonCast Quick menu first: the stream view hands us keys before the IME and before the activity
+        Boolean menuKey = quickMenuKey(event);
+        if (menuKey != null) return menuKey;
+
         // Pass-through virtual navigation keys
         if ((event.getFlags() & KeyEvent.FLAG_VIRTUAL_HARD_KEY) != 0) {
             return false;
@@ -1546,13 +1554,20 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         finish();
     }
 
-    @Override
-    public boolean dispatchKeyEvent(KeyEvent event) {
+    // The open menu takes every key; the TV remote's Back opens it (Moonlight would send it to the PC as Select).
+    private Boolean quickMenuKey(KeyEvent event) {
         if (quickMenu != null && quickMenu.isShowing()) return quickMenu.onKey(event);
         if (com.limelight.home.QuickMenu.isRemoteBack(event)) {
             if (event.getAction() == KeyEvent.ACTION_UP) openQuickMenu();
             return true;
         }
+        return null;
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        Boolean menuKey = quickMenuKey(event);
+        if (menuKey != null) return menuKey;
         return super.dispatchKeyEvent(event);
     }
 
