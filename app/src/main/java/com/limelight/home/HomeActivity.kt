@@ -759,6 +759,8 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                 choice(list, "ps5_bitrate_home", "Bitrate at home", "Auto: 30 Mbps on fast Wi-Fi or cable, 20 otherwise",
                         listOf("Auto" to "auto", "10" to "10", "15" to "15", "20" to "20", "30" to "30"), "auto")
                 choice(list, "ps5_codec", "Video codec", "H.265 looks better at the same bitrate", listOf("H.264" to "h264", "H.265" to "h265"), "h265")
+                choice(list, "ps5_on_disconnect", "When I disconnect", "What happens to the PS5 after you leave a game",
+                        listOf("Ask" to "ask", "Rest mode" to "rest", "Keep it on" to "keep"), "ask")
                 toggle(list, "ps5_swap_cross_circle", "Swap Cross and Circle", "For the Japanese layout", false)
                 info(list, "PS button", "L2 + Start")
                 info(list, "Touchpad", "Select + Start")

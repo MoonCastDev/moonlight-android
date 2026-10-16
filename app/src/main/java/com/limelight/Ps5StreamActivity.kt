@@ -512,7 +512,36 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
             listOf(
                 com.limelight.home.QuickMenu.Item("PS", "PS button", "L2 + Start", false) { tap(ControllerState.BUTTON_PS) },
                 com.limelight.home.QuickMenu.Item("▢", "Touchpad", "Select + Start", false) { tap(ControllerState.BUTTON_TOUCHPAD) },
-                com.limelight.home.QuickMenu.Item("←", "Disconnect", "Your PS5 stays on", false) { finish() }))
+                com.limelight.home.QuickMenu.Item("←", "Disconnect", disconnectHint(), false) { leave() },
+                com.limelight.home.QuickMenu.Item("Zz", "Put PS5 to rest", "Ends the game", true) { rest() }))
+    }
+
+    // What leaving does: Settings, PlayStation, "When I disconnect" (ask / rest / keep).
+    private fun onDisconnect() = android.preference.PreferenceManager.getDefaultSharedPreferences(this).getString("ps5_on_disconnect", "ask")
+    private fun disconnectHint() = when (onDisconnect()) { "rest" -> "Puts it in rest mode"; "keep" -> "Your PS5 stays on"; else -> "Asks what to do" }
+
+    private fun leave() {
+        when (onDisconnect()) {
+            "rest" -> rest()
+            "keep" -> finish()
+            else -> menu.show("Leave your PS5?", "Rest mode saves power. Keeping it on gets you back in faster.", { emptyList() }, listOf(
+                com.limelight.home.QuickMenu.Item("Zz", "Put it in rest mode", "Uses less power", false) { rest() },
+                com.limelight.home.QuickMenu.Item("←", "Keep it on", "Back in faster", false) { finish() },
+                com.limelight.home.QuickMenu.Item("↩", "Keep playing", null, false) { }))
+        }
+    }
+
+    /** Rest mode (chiaki's goto-bed), then leave. Give the message a moment to go out before the session stops. */
+    private fun rest() {
+        val s = session
+        if (s == null) { finish(); return }
+        showStatus("Putting your PS5 in rest mode…")
+        Thread({
+            val r = try { s.gotoBed() } catch (e: Throwable) { Log.w(TAG, "goto bed: $e"); null }
+            Log.i(TAG, "rest mode requested: $r")
+            try { Thread.sleep(800) } catch (e: InterruptedException) { }
+            runOnUiThread { finish() }
+        }, "ps5-rest").start()
     }
 
     /** Press and release one button, for the buttons a pad doesn't have. */
