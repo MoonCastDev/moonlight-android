@@ -49,10 +49,8 @@ static ChiakiHolepunchSession mc_psn_connect(ChiakiLog *log, const char *token, 
 		CHIAKI_LOGE(log, "MoonCast PSN: hole-punch session init failed (token?)");
 		return NULL;
 	}
-	ChiakiErrorCode err = chiaki_holepunch_upnp_discover(hs);
-	if(err != CHIAKI_ERR_SUCCESS)
-		CHIAKI_LOGW(log, "MoonCast PSN: no UPnP gateway (%s), continuing", chiaki_error_string(err));
-	err = chiaki_holepunch_session_create(hs);
+	// No UPnP probe: it only ever timed out (7 s per attempt) and the hole-punch works without it.
+	ChiakiErrorCode err = chiaki_holepunch_session_create(hs);
 	if(err == CHIAKI_ERR_SUCCESS)
 		err = holepunch_session_create_offer(hs);
 	if(err == CHIAKI_ERR_SUCCESS)

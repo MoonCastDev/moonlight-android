@@ -135,9 +135,8 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
         // phone sent a PSN token. PSN wakes the console itself when the session starts.
         val remote = !lanConsoleAnswers(host, ps5) && canGoRemote()
         Log.i(TAG, if (remote) "console not on this LAN -> Remote Play via PSN" else "console on LAN ($host)")
-        if (remote) ensureCaBundle()
-        showStatus(if (remote) "Waking your PlayStation over the internet…\nThis can take up to a minute."
-                   else "Connecting to your PlayStation…")
+        if (remote) { ensureCaBundle(); startProgressWatch() }
+        showStatus(if (remote) "Reaching PlayStation Network…" else "Connecting to your PlayStation…")
         if (!remote) try {
             val cred = wakeCredential(hex(intent.getStringExtra(EXTRA_REGIST_KEY) ?: ""))
             if (cred != null) {
@@ -165,14 +164,54 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
                 Log.w(TAG, "connect attempt ${attempt + 1}: $e")
             }
             attempt++
+            if (remote && attempt < maxAttempts && !closed) progressStage = 0
+            if (remote && attempt < maxAttempts && !closed)
+                showStatus("PlayStation Network didn't answer in time.\nRetrying (attempt ${attempt + 1} of $maxAttempts)…")
             try { Thread.sleep(3000) } catch (e: InterruptedException) { break }  // console still waking
         }
         if (session == null && !closed) {
             Log.e(TAG, "PS5 did not connect")
+            stopProgressWatch()
             showStatus("Couldn't reach your PlayStation.\nCheck it's in rest mode (not off) and try again.")
             try { Thread.sleep(4000) } catch (e: InterruptedException) { }
             runOnUiThread { finish() }
         }
+    }
+
+    // Live status for a remote connect: the hole-punch runs in native code with no callback to us, but it logs every
+    // milestone. An app may read its own logcat (no permission), so follow chiaki's lines and show where we are.
+    @Volatile private var progressProc: Process? = null
+    @Volatile private var progressStage = 0
+
+    private fun startProgressWatch() {
+        stopProgressWatch()
+        Thread({
+            try {
+                val p = Runtime.getRuntime().exec(arrayOf("logcat", "-T", "1", "-v", "brief", "-s", "Chiaki:V"))
+                progressProc = p
+                p.inputStream.bufferedReader().forEachLine { line ->
+                    if (closed || progressProc !== p) return@forEachLine
+                    // stages only move forward within an attempt (create_offer is logged again for the data channel)
+                    val (stage, st) = when {
+                        "hole-punch failed" in line -> { progressStage = 0; return@forEachLine }   // retry restarts
+                        "websocket_thread_func: connecting" in line -> 1 to "Reaching PlayStation Network…"
+                        "create_offer" in line -> 2 to
+                            "Asking your PS5 to start Remote Play…\n(it wakes from rest mode if needed — up to a minute)"
+                        "customdata1" in line || ("Sent response to" in line && ":9303" in line) -> 3 to "Your PS5 answered — connecting…"
+                        "control hole punched" in line -> 4 to "Connected through PlayStation Network — signing in…"
+                        "Login message: success" in line -> 5 to "Signed in to your PS5 — opening the video channel…"
+                        "Punched hole for data" in line -> 6 to "Starting video…"
+                        else -> return@forEachLine
+                    }
+                    if (stage > progressStage) { progressStage = stage; showStatus(st) }
+                }
+            } catch (e: Exception) { Log.w(TAG, "progress watch: $e") }
+        }, "ps5-progress").start()
+    }
+
+    private fun stopProgressWatch() {
+        val p = progressProc; progressProc = null
+        try { p?.destroy() } catch (e: Exception) { }
     }
 
     // chiaki's wake credential = the registration key's ASCII (up to the null pad) parsed as a hex ULong.
@@ -184,7 +223,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
 
     private fun onEvent(ev: Event) {
         when (ev) {
-            is ConnectedEvent -> { Log.i(TAG, "PS5 connected"); showStatus(null) }
+            is ConnectedEvent -> { Log.i(TAG, "PS5 connected"); stopProgressWatch(); showStatus(null) }
             is QuitEvent -> {
                 // Don't dispose here: this runs on chiaki's own callback thread, and dispose()/join would deadlock.
                 // Just close the screen; onDestroy tears the session down on a separate thread.
@@ -201,6 +240,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
 
     override fun onDestroy() {
         closed = true
+        stopProgressWatch()
         val s = session
         session = null
         // Tear down off the UI thread: Session.dispose() joins native threads and can block, which would freeze the
