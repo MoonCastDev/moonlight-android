@@ -316,6 +316,13 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
                 // Just close the screen; onDestroy tears the session down on a separate thread.
                 Log.i(TAG, "PS5 quit: ${ev.reasonString}")
                 closed = true
+                if (!connected) {
+                    // never got a picture: say why instead of dropping back to the home screen without a word
+                    stopProgressWatch()
+                    showStatus("Couldn't reach your PlayStation.\nCheck it's on or in rest mode (not fully off), then try again.")
+                    Thread({ try { Thread.sleep(6000) } catch (e: InterruptedException) { }; runOnUiThread { if (!menu.isShowing) finish() } }, "ps5-noconnect").start()
+                    return
+                }
                 runOnUiThread { finish() }
             }
             else -> {}
