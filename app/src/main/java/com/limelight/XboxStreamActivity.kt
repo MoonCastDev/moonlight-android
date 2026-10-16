@@ -50,10 +50,12 @@ class XboxStreamActivity : Activity() {
         val r = SurfaceViewRenderer(this).also { renderer = it }
         r.init(egl.eglBaseContext, object : RendererCommon.RendererEvents {
             override fun onFirstFrameRendered() { firstFrame = true; showStatus(null) }
-            override fun onFrameResolutionChanged(w: Int, h: Int, rotation: Int) { Log.i(TAG, "picture ${w}x$h") }
+            override fun onFrameResolutionChanged(w: Int, h: Int, rotation: Int) {
+                Log.i(TAG, "picture ${w}x$h"); runOnUiThread { applyShape(w, h) }
+            }
         })
-        r.setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT)
         r.setEnableHardwareScaler(true)
+        applyShape(0, 0)
         status = TextView(this).apply {
             setTextColor(0xFFE8ECFF.toInt()); textSize = 22f; gravity = Gravity.CENTER
             text = "Connecting to $consoleName…"
@@ -82,10 +84,13 @@ class XboxStreamActivity : Activity() {
             // Settings, Xbox, Picture. No bitrate is sent; the Xbox picks quality from the device type this implies:
             // 720 = Android, 1080 = Windows, 1081 = Tizen. Auto: 1080, or 720 on a weak link, like the PS5.
             val pick = prefs.getString("xbox_resolution", "auto")
-            val res = when (pick) { "720" -> 720; "1080" -> 1080; "1081" -> 1081; else -> if (linkMbps() in 1..59) 720 else 1080 }
+            // Auto also follows the screen: a 1440p-or-larger panel asks for the high-quality profile, like Native
+            val res = when (pick) { "720" -> 720; "1080" -> 1080; "1081" -> 1081
+                else -> if (linkMbps() in 1..59) 720 else if (screenHeight() >= 1440) 1081 else 1080 }
             Log.i(TAG, "stream $consoleName at ${res}p via ${auth.baseUri}")
             val session = XboxRtc(this, egl, consoleId, auth.baseUri, auth.gsToken, auth.connectToken, res,
-                    prefs.getString("xbox_language", "en-US") ?: "en-US", coop, renderer!!, object : XboxRtc.Listener {
+                    prefs.getString("xbox_language", "en-US") ?: "en-US", coop, prefs.getInt("xbox_bitrate", 0),
+                    prefs.getBoolean("checkbox_ultra_low_latency", false), renderer!!, object : XboxRtc.Listener {
                 override fun onStatus(text: String) { if (!firstFrame) showStatus(text) }
                 override fun onConnected() { runOnUiThread { if (!started) { started = true; send(); pollStats() } } }
                 override fun onFailed(reason: String) { showStatus("The Xbox stream stopped.\n$reason") }
@@ -100,6 +105,31 @@ class XboxStreamActivity : Activity() {
             Log.w(TAG, "connect failed", e)
             showStatus(if (!Xbox.signedIn(this)) "Sign in to Xbox first: Settings, Xbox."
                     else "Couldn't start Xbox Remote Play. Check the Xbox is on or asleep, with remote features on.\n\n${e.message ?: ""}".trim())
+        }
+    }
+
+    private fun screenHeight(): Int {
+        val d = windowManager.defaultDisplay
+        return if (android.os.Build.VERSION.SDK_INT >= 23) minOf(d.mode.physicalWidth, d.mode.physicalHeight)
+               else android.graphics.Point().also { d.getRealSize(it) }.let { minOf(it.x, it.y) }
+    }
+
+    /**
+     * Settings, Video, Picture shape and Zoom (shared with the PC player): Fit keeps the shape with bars, Fill crops to
+     * cover the screen, Stretch fills it ignoring the shape; Zoom enlarges for TVs that cut off the edges.
+     */
+    private fun applyShape(videoW: Int, videoH: Int) {
+        val r = renderer ?: return
+        val shape = prefs.getString("list_video_scale_mode", if (prefs.getBoolean("checkbox_stretch_video", false)) "stretch" else "fit")
+        val zoom = prefs.getInt("seekbar_video_zoom", 100) / 100f
+        r.setScalingType(if (shape == "fill") RendererCommon.ScalingType.SCALE_ASPECT_FILL else RendererCommon.ScalingType.SCALE_ASPECT_FIT)
+        r.post {
+            var sx = zoom; var sy = zoom
+            val parent = r.parent as? View
+            if (shape == "stretch" && parent != null && r.width > 0 && r.height > 0 && videoW > 0 && videoH > 0) {
+                sx *= parent.width.toFloat() / r.width; sy *= parent.height.toFloat() / r.height
+            }
+            r.scaleX = sx; r.scaleY = sy
         }
     }
 

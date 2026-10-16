@@ -7,7 +7,6 @@ import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 import org.webrtc.DataChannel
-import org.webrtc.DefaultVideoDecoderFactory
 import org.webrtc.DefaultVideoEncoderFactory
 import org.webrtc.EglBase
 import org.webrtc.IceCandidate
@@ -51,6 +50,10 @@ class XboxRtc(
     private val resolution: Int,
     private val language: String,
     private val coop: Boolean,
+    /** Settings, Xbox, Bitrate: a cap in Mbps (0 = let the Xbox decide), sent as b=AS in the offer like XStreaming. */
+    private val maxMbps: Int,
+    /** Settings, Video, Ultra low latency: Artemis' vendor decoder keys on top of Moonlight's. */
+    private val ultraLowLatency: Boolean,
     private val videoSink: VideoSink,
     private val listener: Listener,
 ) {
@@ -297,7 +300,7 @@ class XboxRtc(
         }
         val adm = JavaAudioDeviceModule.builder(ctx.applicationContext).setUseStereoOutput(true).createAudioDeviceModule()
         val f = PeerConnectionFactory.builder()
-            .setVideoDecoderFactory(DefaultVideoDecoderFactory(eglBase.eglBaseContext))
+            .setVideoDecoderFactory(XboxDecoderFactory(eglBase.eglBaseContext, ultraLowLatency))
             .setVideoEncoderFactory(DefaultVideoEncoderFactory(eglBase.eglBaseContext, false, false))
             .setAudioDeviceModule(adm)
             .createPeerConnectionFactory()
@@ -345,7 +348,7 @@ class XboxRtc(
         }, MediaConstraints())
         l1.await(10, TimeUnit.SECONDS)
         val offer = made ?: throw IllegalStateException("Offer failed: $error")
-        val munged = SessionDescription(offer.type, stereo(offer.description))
+        val munged = SessionDescription(offer.type, capBitrate(stereo(offer.description)))
         val l2 = CountDownLatch(1)
         p.setLocalDescription(object : SdpAdapter() {
             override fun onSetSuccess() { l2.countDown() }
@@ -364,6 +367,20 @@ class XboxRtc(
         }, SessionDescription(SessionDescription.Type.ANSWER, sdp))
         l.await(10, TimeUnit.SECONDS)
         error?.let { throw IllegalStateException("Answer rejected: $it") }
+    }
+
+    /** XStreaming's _setBitrate: a b=AS line (kbps, Mbps x 1024) in the video section, after its i= / c= lines. */
+    private fun capBitrate(sdp: String): String {
+        if (maxMbps <= 0) return sdp
+        val lines = sdp.replace("\r", "").split("\n").toMutableList()
+        val m = lines.indexOfFirst { it.startsWith("m=video") }
+        if (m < 0) return sdp
+        var i = m + 1
+        while (i < lines.size && (lines[i].startsWith("i=") || lines[i].startsWith("c="))) i++
+        val line = "b=AS:${maxMbps * 1024}"
+        if (i < lines.size && lines[i].startsWith("b=AS:")) lines[i] = line else lines.add(i, line)
+        Log.i(TAG, "video capped at $maxMbps Mbps")
+        return lines.joinToString("\r\n")
     }
 
     /** Opus in stereo with in-band FEC, as XStreaming does (forceStereoAudio). */

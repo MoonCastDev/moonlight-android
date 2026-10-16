@@ -1017,8 +1017,16 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                         refreshXboxes(true) }
                     info(list, "On the Xbox", "Settings, Devices and connections, Remote features: on. Power mode: Sleep")
                 }
-                choice(list, "xbox_resolution", "Picture", "The Xbox sets quality from this. Auto: 1080p, or 720p on weak Wi-Fi",
+                choice(list, "xbox_resolution", "Picture", "The Xbox sets quality from this. Auto: 720p on weak Wi-Fi, high on a 1440p+ screen, else 1080p",
                         listOf("Auto" to "auto", "720p" to "720", "1080p" to "1080", "1080p high" to "1081"), "auto")
+                xboxBitrate(list)
+                choice(list, "list_video_scale_mode", "Picture shape", "Fit with bars, fill and crop, or stretch. Shared with PC games",
+                        listOf("Fit" to "fit", "Fill" to "fill", "Stretch" to "stretch"),
+                        if (stream.getBoolean("checkbox_stretch_video", false)) "stretch" else "fit")
+                intChoice(list, "seekbar_video_zoom", "Zoom", "Enlarge the picture if this TV cuts off the edges. Shared with PC games",
+                        listOf(100, 102, 104, 106, 108, 110), 100) { if (it == 100) "Off" else "$it%" }
+                toggle(list, "checkbox_ultra_low_latency", "Ultra low latency",
+                        "Experimental. Snapdragon 8 Gen 2 or newer, MediaTek, NVIDIA Shield. This device: ${chipName()}", false)
                 info(list, "Frame rate", "60 fps")
                 choice(list, "xbox_rumble", "Rumble", "How strongly the controller shakes", listOf("Off" to "off", "Weak" to "weak",
                         "Medium" to "medium", "Strong" to "strong"), "strong")
@@ -1560,6 +1568,27 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         }, tv.lp(-2, -2).apply { topMargin = tv.px(24) })
         showOverlay("addpc", FrameLayout(this).apply { addView(card, tv.flp(1000, -2, Gravity.CENTER)) })
         field.requestFocus()
+    }
+
+    /** Settings, Xbox, Bitrate: Auto lets the Xbox decide; a number caps it (XStreaming's "Host stream bitrate"). */
+    private fun xboxBitrate(list: LinearLayout) {
+        val steps = listOf(0, 5, 10, 15, 20, 30)
+        val cur = stream.getInt("xbox_bitrate", 0)
+        settingRow(list, "xbox_bitrate", "Bitrate", "Auto lets the Xbox decide. A cap keeps a weak Wi-Fi from stuttering",
+                true, tv.text(if (cur == 0) "Auto" else "$cur Mbps", 23, tv.p.moon, tv.ui(700))) {
+            val next = steps[(steps.indexOf(steps.firstOrNull { it >= cur } ?: 0) + 1) % steps.size]
+            stream.edit().putInt("xbox_bitrate", next).apply()
+            render(force = true)
+        }
+        val custom = cur != 0 && cur !in steps
+        action(list, "set:xboxrate", "Custom bitrate", "Any cap from 1 to 50 Mbps", if (custom) "$cur Mbps" else "Off") {
+            entryDialog("Xbox bitrate", "A cap in Mbps, from 1 to 50. The Xbox stays at or below it.", "For example 12",
+                    if (cur > 0) cur.toString() else "", true, onSave = { raw ->
+                val v = raw.toIntOrNull()
+                if (v == null || v !in 1..50) "A number from 1 to 50."
+                else { stream.edit().putInt("xbox_bitrate", v).apply(); render(force = true); null }
+            }, clear = if (cur > 0) ({ stream.edit().putInt("xbox_bitrate", 0).apply(); render(force = true) }) else null)
+        }
     }
 
     /** This screen's physical resolution, landscape (the display mode, not the app's possibly scaled window). */
