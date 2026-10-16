@@ -34,6 +34,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
         const val EXTRA_REGIST_KEY = "ps5_regist_key"   // hex, 16 bytes
         const val EXTRA_MORNING = "ps5_morning"          // hex, 16 bytes
         const val EXTRA_PS5 = "ps5_is_ps5"
+        private const val QUIT_RP_IN_USE = 4   // CHIAKI_QUIT_REASON_SESSION_REQUEST_RP_IN_USE ("Remote is already in use")
         // Remote Play over the internet (PSN hole-punch): sent by the phone, used when the console isn't on this LAN
         const val EXTRA_PSN_TOKEN = "ps5_psn_token"
         const val EXTRA_DUID = "ps5_duid"                  // the console's PSN device id (hex)
@@ -253,6 +254,17 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
                 stopProgressWatch(); showStatus(null); attemptLatch?.countDown()
             }
             is QuitEvent -> {
+                // The PS5 allows ONE Remote Play session: if another device (e.g. the Odin's own player) still has it,
+                // say so instead of closing silently - retrying can't help until that one ends.
+                if (!connected && ev.reason.value == QUIT_RP_IN_USE) {
+                    Log.i(TAG, "PS5 is already streaming to another device")
+                    closed = true
+                    attemptLatch?.countDown()
+                    stopProgressWatch()
+                    showStatus("Your PS5 is already streaming to another device.\nClose it there, then try again.")
+                    Thread({ try { Thread.sleep(6000) } catch (e: InterruptedException) { }; runOnUiThread { finish() } }, "ps5-inuse").start()
+                    return
+                }
                 val latch = attemptLatch
                 if (!connected && latch != null) {
                     // a remote attempt failed before the picture: let connect() retry it instead of closing the screen
@@ -353,6 +365,13 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
                 android.view.View.SYSTEM_UI_FLAG_FULLSCREEN or android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
                 android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE or android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
                 android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION)
+    }
+
+    // Leaving the player ends the PS5 session. Otherwise it keeps streaming in the background (Odin: switching back to
+    // MoonCast) and the PS5 - one Remote Play session at a time - refuses the next device with "Remote is already in use".
+    override fun onStop() {
+        super.onStop()
+        if (!isChangingConfigurations && !isFinishing) finish()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
