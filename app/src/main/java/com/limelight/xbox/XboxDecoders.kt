@@ -8,7 +8,7 @@ import com.limelight.binding.video.MediaCodecHelper
 import org.webrtc.EglBase
 import org.webrtc.EncodedImage
 import org.webrtc.HardwareVideoDecoderFactory
-import org.webrtc.SoftwareVideoDecoderFactory
+import org.webrtc.DefaultVideoDecoderFactory
 import org.webrtc.VideoCodecInfo
 import org.webrtc.VideoCodecStatus
 import org.webrtc.VideoDecoder
@@ -26,14 +26,22 @@ import java.lang.reflect.Proxy
  * MediaCodecWrapperFactory for a proxy and add our keys to the MediaFormat when it calls configure().
  */
 class XboxDecoderFactory(egl: EglBase.Context, private val ultraLowLatency: Boolean) : VideoDecoderFactory {
+    // The codec list (and so the offer the Xbox sees) must stay exactly libwebrtc's default: with our own list the
+    // Xbox accepted the connection but never sent video (test127). Only the H.264 decoder itself is ours.
+    private val default = DefaultVideoDecoderFactory(egl)
     private val hw = HardwareVideoDecoderFactory(egl)
-    private val sw = SoftwareVideoDecoderFactory()
 
-    override fun createDecoder(info: VideoCodecInfo): VideoDecoder? =
-        hw.createDecoder(info)?.let { LowLatencyDecoder(it, ultraLowLatency) } ?: sw.createDecoder(info)
+    override fun createDecoder(info: VideoCodecInfo): VideoDecoder? {
+        if (info.name.equals("H264", true)) hw.createDecoder(info)?.let {
+            Log.i("MoonCast-XboxDec", "H.264 decoder: ${it.implementationName} (low latency, ultra=$ultraLowLatency)")
+            return LowLatencyDecoder(it, ultraLowLatency)
+        }
+        return default.createDecoder(info)
+    }
 
-    override fun getSupportedCodecs(): Array<VideoCodecInfo> =
-        (hw.supportedCodecs.toList() + sw.supportedCodecs.toList()).distinctBy { it.name + it.params }.toTypedArray()
+    override fun getSupportedCodecs(): Array<VideoCodecInfo> = default.supportedCodecs.also { list ->
+        Log.i("MoonCast-XboxDec", "offering " + list.joinToString { it.name + it.params })
+    }
 }
 
 private class LowLatencyDecoder(private val delegate: VideoDecoder, private val ultra: Boolean) : VideoDecoder {
