@@ -53,6 +53,10 @@ object Ps5Pad {
         val s = Socket()
         s.connect(InetSocketAddress(h, PAD_PORT), 2000)
         s.tcpNoDelay = true
+        // The phone pings every ~8s; if nothing (frame or ping) arrives within the window the link is dead
+        // (WiFi power-save / NAT dropped it silently) - time out the blocked read so run() reconnects instead
+        // of hanging forever with a frozen controller.
+        s.soTimeout = 25000
         sock = s
         val out = s.getOutputStream()
         val inp = s.getInputStream()
@@ -64,12 +68,17 @@ object Ps5Pad {
         out.flush()
         if (!readHeaders(inp)) throw Exception("handshake refused")
         sendText(out, "{\"hello\":{\"id\":\"mctv-ps5\",\"kind\":\"mctv-ps5\"}}")
-        while (running) {
-            val msg = readTextFrame(inp) ?: break
-            apply(session, msg)
+        try {
+            while (running) {
+                val msg = readTextFrame(inp) ?: break
+                if (msg.isEmpty()) continue   // ping/pong/continuation keep-alive: nothing to apply
+                apply(session, msg)
+            }
+        } finally {
+            // Release every button on ANY exit (incl. a read timeout) so nothing sticks while we reconnect.
+            try { s.close() } catch (e: Exception) {}
+            try { session.setControllerState(ControllerState()) } catch (e: Exception) {}
         }
-        try { s.close() } catch (e: Exception) {}
-        try { session.setControllerState(ControllerState()) } catch (e: Exception) {}  // neutral on drop
     }
 
     private fun apply(session: Session, json: String) {
