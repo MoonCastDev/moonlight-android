@@ -156,7 +156,26 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
                 if (err.isSuccess) {
                     session = s
                     Ps5Pad.start(s)   // phone drives the controller
-                    return
+                    if (!remote) return
+                    // Remote: the data-channel hole-punch happens after start(), and the PS5 may give up on it.
+                    // Only the first picture counts as success; a quit before that is a failed attempt -> retry.
+                    val latch = java.util.concurrent.CountDownLatch(1)
+                    attemptLatch = latch
+                    attemptQuit = false
+                    latch.await(120, java.util.concurrent.TimeUnit.SECONDS)
+                    attemptLatch = null
+                    if (connected || closed) return
+                    Log.w(TAG, "attempt ${attempt + 1}: PS5 dropped the session before the picture - retrying")
+                    Ps5Pad.stop()
+                    session = null
+                    try { s.stop(); s.dispose() } catch (e: Exception) {}
+                    attempt++
+                    if (attempt < maxAttempts) {
+                        progressStage = 0
+                        showStatus("Your PS5 dropped the connection.\nRetrying (attempt ${attempt + 1} of $maxAttempts)…")
+                        try { Thread.sleep(3000) } catch (e: InterruptedException) { break }
+                    }
+                    continue
                 }
                 Log.w(TAG, "start attempt ${attempt + 1} failed: $err")
                 try { s.dispose() } catch (e: Exception) {}   // always release the native session so none linger on the PS5
@@ -180,6 +199,9 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
 
     // Live status for a remote connect: the hole-punch runs in native code with no callback to us, but it logs every
     // milestone. An app may read its own logcat (no permission), so follow chiaki's lines and show where we are.
+    @Volatile private var connected = false                                  // first picture arrived
+    @Volatile private var attemptLatch: java.util.concurrent.CountDownLatch? = null  // remote attempt in flight
+    @Volatile private var attemptQuit = false
     @Volatile private var progressProc: Process? = null
     @Volatile private var progressStage = 0
 
@@ -223,8 +245,19 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
 
     private fun onEvent(ev: Event) {
         when (ev) {
-            is ConnectedEvent -> { Log.i(TAG, "PS5 connected"); stopProgressWatch(); showStatus(null) }
+            is ConnectedEvent -> {
+                Log.i(TAG, "PS5 connected"); connected = true
+                stopProgressWatch(); showStatus(null); attemptLatch?.countDown()
+            }
             is QuitEvent -> {
+                val latch = attemptLatch
+                if (!connected && latch != null) {
+                    // a remote attempt failed before the picture: let connect() retry it instead of closing the screen
+                    Log.i(TAG, "PS5 quit before the picture: ${ev.reasonString}")
+                    attemptQuit = true
+                    latch.countDown()
+                    return
+                }
                 // Don't dispose here: this runs on chiaki's own callback thread, and dispose()/join would deadlock.
                 // Just close the screen; onDestroy tears the session down on a separate thread.
                 Log.i(TAG, "PS5 quit: ${ev.reasonString}")
@@ -240,6 +273,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
 
     override fun onDestroy() {
         closed = true
+        attemptLatch?.countDown()   // release a remote attempt that's waiting for its first picture
         stopProgressWatch()
         val s = session
         session = null

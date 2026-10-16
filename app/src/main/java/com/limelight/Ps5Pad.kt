@@ -24,15 +24,24 @@ object Ps5Pad {
     @Volatile private var running = false
     @Volatile private var sock: Socket? = null
     @Volatile private var thread: Thread? = null
+    // The session the relay may drive. Every controller update goes through push() under this lock, and stop() clears
+    // it under the same lock - so after stop() returns nothing can call into a session that is being disposed
+    // (crashed natively in sessionSetControllerState when the PS5 dropped a remote session, 2026-10-16).
+    private val lock = Any()
+    @Volatile private var active: Session? = null
+
+    private fun push(st: ControllerState) = synchronized(lock) { active?.setControllerState(st) }
 
     fun start(session: Session) {
         stop()   // never leave a previous relay thread running
         val h = PhoneGamepad.phoneHost() ?: return
+        synchronized(lock) { active = session }
         running = true
         thread = Thread({ run(session, h) }, "ps5-pad").also { it.start() }
     }
 
     fun stop() {
+        synchronized(lock) { active = null }   // from here on push() is a no-op
         running = false
         try { sock?.close() } catch (e: Exception) {}
         try { thread?.interrupt() } catch (e: Exception) {}
@@ -77,7 +86,7 @@ object Ps5Pad {
         } finally {
             // Release every button on ANY exit (incl. a read timeout) so nothing sticks while we reconnect.
             try { s.close() } catch (e: Exception) {}
-            try { session.setControllerState(ControllerState()) } catch (e: Exception) {}
+            try { push(ControllerState()) } catch (e: Exception) {}
         }
     }
 
@@ -86,7 +95,7 @@ object Ps5Pad {
             val o = JSONObject(json)
             if (!o.has("pads")) return
             val pads = o.optJSONArray("pads") ?: return
-            if (pads.length() == 0 || pads.isNull(0)) { session.setControllerState(ControllerState()); return }
+            if (pads.length() == 0 || pads.isNull(0)) { push(ControllerState()); return }
             val pad = pads.getJSONObject(0)
             val b = pad.optJSONArray("b"); val a = pad.optJSONArray("a")
             val bt = DoubleArray(17); val ax = DoubleArray(4)
@@ -120,7 +129,7 @@ object Ps5Pad {
                 r2State = (bt[7].coerceIn(0.0, 1.0) * 255).toInt().toUByte(),
                 leftX = axis(ax[0]), leftY = axis(ax[1]), rightX = axis(ax[2]), rightY = axis(ax[3])
             )
-            session.setControllerState(st)
+            push(st)
         } catch (e: Exception) { Log.w(TAG, "bad pad: $e") }
     }
 
