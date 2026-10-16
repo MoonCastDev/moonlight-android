@@ -1,6 +1,7 @@
 /*
  * From XStreaming (github.com/Geocld/XStreaming, AGPL-3.0) at 9e6a21251c37, the Java side of its nano-rs
- * Xbox Remote Play engine. Package kept: libnano_rs.so binds to these class names. MoonCast change: no androidx.
+ * Xbox Remote Play engine. Package kept: libnano_rs.so binds to these class names. MoonCast changes: no androidx,
+ * keyframe SPS patched (MoonCastSpsFix), frames shown as soon as decoded.
  */
 package com.xstreaming.nano;
 
@@ -23,7 +24,7 @@ import java.util.Locale;
 public final class NanoRustBridge {
     private static final String TAG = "NanoRustBridge";
     private static final boolean NATIVE_AVAILABLE;
-    private static final long VIDEO_INPUT_BUFFER_TIMEOUT_US = 0L;
+    private static final long VIDEO_INPUT_BUFFER_TIMEOUT_US = 100_000L;
     private static final long VIDEO_OUTPUT_BUFFER_TIMEOUT_US = 100_000L;
     private static final long VIDEO_OUTPUT_THREAD_JOIN_TIMEOUT_MS = 5_000L;
     private static final long VIDEO_RENDER_START_DELAY_NS = 8_000_000L;
@@ -68,6 +69,7 @@ public final class NanoRustBridge {
     private int videoWidth = 1920;
     private int videoHeight = 1080;
     private long queuedVideoFrameCount = 0L;
+    private long droppedInputFrames = 0L;
     private long renderedVideoFrameCount = 0L;
     private long queuedVideoByteCount = 0L;
     private long firstVideoPresentationTimeUs = Long.MIN_VALUE;
@@ -303,9 +305,13 @@ public final class NanoRustBridge {
             }
 
             try {
+                // MoonCast: wait for a free input slot (up to 100 ms), like Moonlight. With a 0 timeout, a decoder with
+                // few slots (Amlogic) lost about a third of the frames, and every lost P-frame froze the picture
+                // until the next keyframe.
                 int inputIndex = videoDecoder.dequeueInputBuffer(VIDEO_INPUT_BUFFER_TIMEOUT_US);
                 if (inputIndex < 0) {
-                    if (queuedVideoFrameCount == 0 || queuedVideoFrameCount % 120 == 0) {
+                    droppedInputFrames++;
+                    if (droppedInputFrames == 1 || droppedInputFrames % 60 == 0) {
                         Log.w(TAG, "Video decoder input unavailable count=" + queuedVideoFrameCount);
                     }
                     return;
@@ -321,6 +327,9 @@ public final class NanoRustBridge {
                 ByteBuffer sourceBuffer = data.duplicate();
                 sourceBuffer.position(0);
                 sourceBuffer.limit(sourceBuffer.capacity());
+                if (keyframe) {   // MoonCast: no-reorder SPS, so the decoder shows each frame at once
+                    sourceBuffer = MoonCastSpsFix.patch(sourceBuffer);
+                }
                 inputBuffer.clear();
                 if (sourceBuffer.remaining() > inputBuffer.remaining()) {
                     Log.w(TAG, "Video frame too large data=" + sourceBuffer.remaining() + " remaining=" + inputBuffer.remaining());
@@ -329,7 +338,8 @@ public final class NanoRustBridge {
                 }
                 inputBuffer.put(sourceBuffer);
                 int flags = keyframe ? MediaCodec.BUFFER_FLAG_KEY_FRAME : 0;
-                long codecPtsUs = normalizeVideoPresentationTimeUs(ptsUs);
+                // MoonCast: arrival time, like Moonlight, so the decoder never waits on the stream's own clock
+                long codecPtsUs = normalizeVideoPresentationTimeUs(System.nanoTime() / 1000L);
                 videoDecoder.queueInputBuffer(inputIndex, 0, sourceBuffer.position(), codecPtsUs, flags);
                 queuedVideoFrameCount += 1;
                 queuedVideoByteCount += sourceBuffer.position();
@@ -674,12 +684,9 @@ public final class NanoRustBridge {
                 codec.releaseOutputBuffer(outputIndex, false);
                 return true;
             }
-            long renderTimeNs = getVideoRenderTimeNs(presentationTimeUs);
-            if (renderTimeNs <= 0L) {
-                codec.releaseOutputBuffer(outputIndex, true);
-            } else {
-                codec.releaseOutputBuffer(outputIndex, renderTimeNs);
-            }
+            // MoonCast: show each frame now, like Moonlight's lowest-delay mode. Scheduling by presentation time
+            // made Amlogic decoders queue frames and fall behind.
+            codec.releaseOutputBuffer(outputIndex, true);
             return true;
         } catch (Throwable error) {
             Log.w(TAG, "Video decoder output release failed", error);
@@ -688,7 +695,8 @@ public final class NanoRustBridge {
     }
 
     private void recordRenderedVideoFrame(long presentationTimeUs) {
-        synchronized (videoDecoderLock) {
+        // MoonCast: no decoder lock here; the input side may hold it while it waits for a free slot.
+        {
             renderedVideoFrameCount += 1;
             if (renderedVideoFrameCount == 1 || renderedVideoFrameCount % 120 == 0) {
                 Log.i(TAG, "video output released count=" + renderedVideoFrameCount
@@ -780,6 +788,13 @@ public final class NanoRustBridge {
     }
 
     private static void applyLowLatencyVideoFormat(MediaFormat format, String codecName, String mime) {
+        // MoonCast: on Amlogic use exactly what Moonlight uses (it streams smoothly on these sticks). The extra keys
+        // below - operating rate (rejected), priority, allow-frame-drop - left the decoder holding or dropping frames.
+        if (codecName != null && codecName.toLowerCase(Locale.US).contains("amlogic")) {
+            putFormatInt(format, "low-latency", 1);
+            putFormatInt(format, "vdec-lowlatency", 1);
+            return;
+        }
         putFormatInt(format, MediaFormat.KEY_OPERATING_RATE, 32767);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             putFormatInt(format, "priority", 0);

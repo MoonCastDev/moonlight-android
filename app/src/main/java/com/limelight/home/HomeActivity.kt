@@ -995,7 +995,19 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                         refreshXboxes(true) }
                     info(list, "On the Xbox", "Settings, Devices and connections, Remote features: on. Power mode: Sleep")
                 }
+                choice(list, "xbox_resolution", "Picture", "The Xbox sets quality from this. Auto: 1080p, or 720p on weak Wi-Fi",
+                        listOf("Auto" to "auto", "720p" to "720", "1080p" to "1080", "1080p high" to "1081"), "auto")
                 info(list, "Frame rate", "60 fps")
+                choice(list, "xbox_rumble", "Rumble", "How strongly the controller shakes", listOf("Off" to "off", "Weak" to "weak",
+                        "Medium" to "medium", "Strong" to "strong"), "strong")
+                intChoice(list, "xbox_deadzone", "Stick deadzone", "Raise it if a character drifts on its own", listOf(3, 5, 8, 10, 15), 8) { "$it%" }
+                toggle(list, "xbox_edge", "Full stick range", "Rescale after the deadzone so the stick still reaches 100% at its edge", false)
+                toggle(list, "xbox_swap_ab", "Swap A and B", "For Nintendo-style layouts", false)
+                toggle(list, "xbox_swap_xy", "Swap X and Y", "For Nintendo-style layouts", false)
+                toggle(list, "xbox_short_triggers", "Short triggers", "A light pull counts as a full press", false)
+                toggle(list, "xbox_coop", "Two players", "A second controller plays as player 2", false)
+                choice(list, "xbox_language", "Game language", "The language games start in", listOf("English" to "en-US",
+                        "Arabic" to "ar-SA", "French" to "fr-FR", "German" to "de-DE", "Spanish" to "es-ES"), "en-US")
                 info(list, "Quick menu", QuickMenu.COMBO_LABEL + ", or Back on the TV remote")
             }
             "mk" -> {
