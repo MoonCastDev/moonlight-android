@@ -122,6 +122,24 @@ public class MoonCastReceiver extends Activity {
                     else send(s, 400, "{\"error\":\"ps5 launch failed\"}");
                 } else if (appId != null && play(appId, appName)) send(s, 200, "{\"ok\":1}");
                 else send(s, 400, "{\"error\":\"no app id, or no paired PC\"}");
+            } else if ("POST".equals(method) && path.startsWith("/register")) {
+                // Register a PlayStation (the PIN "Link Device" flow): host + PSN account id (base64) + 8-digit pin.
+                char[] body = new char[Math.max(0, Math.min(clen, 2048))];
+                int n = clen > 0 ? in.read(body, 0, body.length) : 0;
+                String json = new String(body, 0, Math.max(0, n));
+                try {
+                    String host = field(json, "host");
+                    byte[] accountId = android.util.Base64.decode(field(json, "accountId"), android.util.Base64.DEFAULT);
+                    int pin = Integer.parseInt(field(json, "pin").trim());
+                    boolean isPs5 = !"false".equalsIgnoreCase(field(json, "ps5"));
+                    Ps5Register.Result r = Ps5Register.INSTANCE.register(host, accountId, pin, isPs5, 30000L);
+                    if (r != null)
+                        send(s, 200, "{\"ok\":1,\"registKey\":\"" + r.getRegistKeyHex() + "\",\"morning\":\""
+                                + r.getMorningHex() + "\",\"nickname\":" + quote(r.getNickname()) + "}");
+                    else send(s, 400, "{\"error\":\"registration failed - check the 8-digit code and that the console is on\"}");
+                } catch (Exception e) {
+                    send(s, 400, "{\"error\":\"bad register request\"}");
+                }
             } else {
                 send(s, 404, "{\"error\":\"not found\"}");
             }
