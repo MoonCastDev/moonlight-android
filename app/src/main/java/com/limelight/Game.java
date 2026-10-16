@@ -1327,6 +1327,10 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
     @Override
     public boolean handleKeyDown(KeyEvent event) {
+        // MoonCast Quick menu first: the stream view hands us keys before the IME and before the activity
+        Boolean menuKey = quickMenuKey(event);
+        if (menuKey != null) return menuKey;
+
         // Pass-through virtual navigation keys
         if ((event.getFlags() & KeyEvent.FLAG_VIRTUAL_HARD_KEY) != 0) {
             return false;
@@ -1409,6 +1413,10 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
     @Override
     public boolean handleKeyUp(KeyEvent event) {
+        // MoonCast Quick menu first: the stream view hands us keys before the IME and before the activity
+        Boolean menuKey = quickMenuKey(event);
+        if (menuKey != null) return menuKey;
+
         // Pass-through virtual navigation keys
         if ((event.getFlags() & KeyEvent.FLAG_VIRTUAL_HARD_KEY) != 0) {
             return false;
@@ -1503,6 +1511,70 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         LimeLog.info("Toggling keyboard overlay");
         InputMethodManager inputManager = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
         inputManager.toggleSoftInput(0, 0);
+    }
+
+    // ---- MoonCast Quick menu: Select + Start + LB + RB on a pad, or Back on the TV remote ----
+    private com.limelight.home.QuickMenu quickMenu;
+
+    @Override
+    public void openQuickMenu() {
+        runOnUiThread(() -> {
+            if (isFinishing()) return;
+            if (quickMenu == null) quickMenu = new com.limelight.home.QuickMenu(Game.this);
+            java.util.List<com.limelight.home.QuickMenu.Item> items = new java.util.ArrayList<>();
+            items.add(new com.limelight.home.QuickMenu.Item("⌨", "Keyboard", "On-screen", false, this::toggleKeyboard));
+            items.add(new com.limelight.home.QuickMenu.Item("⏻", "Disconnect", "The game keeps running", false, this::finish));
+            items.add(new com.limelight.home.QuickMenu.Item("✕", "Quit game", null, true, this::quitOnHostAndFinish));
+            quickMenu.show(appName != null ? appName : "Your game",
+                    (pcName != null ? "On " + pcName + ". " : "") + com.limelight.home.QuickMenu.COMBO_LABEL + " opens this menu",
+                    () -> java.util.Arrays.asList(
+                            com.limelight.home.QuickMenu.stat(String.format(java.util.Locale.US, "%.0f", com.limelight.home.StreamStats.INSTANCE.getFps()), "Frames per second"),
+                            com.limelight.home.QuickMenu.stat(com.limelight.home.StreamStats.INSTANCE.getRttMs() + " ms", "Network delay"),
+                            com.limelight.home.QuickMenu.stat((prefConfig.bitrate / 1000) + " Mbps", "Picture quality"),
+                            com.limelight.home.QuickMenu.stat(String.format(java.util.Locale.US, "%.1f%%", com.limelight.home.StreamStats.INSTANCE.getLossPct()), "Lost frames")),
+                    items);
+        });
+    }
+
+    // Quit the game on the PC (not just this stream), then leave.
+    private void quitOnHostAndFinish() {
+        final Intent i = getIntent();
+        new Thread(() -> {
+            try {
+                X509Certificate cert = null;
+                byte[] der = i.getByteArrayExtra(EXTRA_SERVER_CERT);
+                if (der != null) cert = (X509Certificate) CertificateFactory.getInstance("X.509").generateCertificate(new ByteArrayInputStream(der));
+                new NvHTTP(new ComputerDetails.AddressTuple(i.getStringExtra(EXTRA_HOST), i.getIntExtra(EXTRA_PORT, NvHTTP.DEFAULT_HTTP_PORT)),
+                        i.getIntExtra(EXTRA_HTTPS_PORT, 0), i.getStringExtra(EXTRA_UNIQUEID), cert,
+                        PlatformBinding.getCryptoProvider(Game.this)).quitApp();
+            } catch (Exception e) {
+                LimeLog.warning("Quick menu quit: " + e);
+            }
+        }, "mc-quit").start();
+        finish();
+    }
+
+    // The open menu takes every key; the TV remote's Back opens it (Moonlight would send it to the PC as Select).
+    private Boolean quickMenuKey(KeyEvent event) {
+        if (quickMenu != null && quickMenu.isShowing()) return quickMenu.onKey(event);
+        if (com.limelight.home.QuickMenu.isRemoteBack(event)) {
+            if (event.getAction() == KeyEvent.ACTION_UP) openQuickMenu();
+            return true;
+        }
+        return null;
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        Boolean menuKey = quickMenuKey(event);
+        if (menuKey != null) return menuKey;
+        return super.dispatchKeyEvent(event);
+    }
+
+    @Override
+    public boolean dispatchGenericMotionEvent(MotionEvent event) {
+        if (quickMenu != null && quickMenu.isShowing()) return quickMenu.onMotion(event);
+        return super.dispatchGenericMotionEvent(event);
     }
 
     private byte getLiTouchTypeFromEvent(MotionEvent event) {

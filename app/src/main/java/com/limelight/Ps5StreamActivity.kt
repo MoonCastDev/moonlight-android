@@ -34,7 +34,9 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
         const val EXTRA_REGIST_KEY = "ps5_regist_key"   // hex, 16 bytes
         const val EXTRA_MORNING = "ps5_morning"          // hex, 16 bytes
         const val EXTRA_PS5 = "ps5_is_ps5"
-        private const val QUIT_RP_IN_USE = 4   // CHIAKI_QUIT_REASON_SESSION_REQUEST_RP_IN_USE ("Remote is already in use")
+        private const val QUIT_RP_IN_USE = 4
+        private val MENU_COMBO = setOf(KeyEvent.KEYCODE_BUTTON_SELECT, KeyEvent.KEYCODE_BUTTON_START,
+            KeyEvent.KEYCODE_BUTTON_L1, KeyEvent.KEYCODE_BUTTON_R1)   // CHIAKI_QUIT_REASON_SESSION_REQUEST_RP_IN_USE ("Remote is already in use")
         // Remote Play over the internet (PSN hole-punch): sent by the phone, used when the console isn't on this LAN
         const val EXTRA_PSN_TOKEN = "ps5_psn_token"
         const val EXTRA_DUID = "ps5_duid"                  // the console's PSN device id (hex)
@@ -75,14 +77,21 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
         val registKey = hex(intent.getStringExtra(EXTRA_REGIST_KEY) ?: "")
         val morning = hex(intent.getStringExtra(EXTRA_MORNING) ?: "")
         val ps5 = intent.getBooleanExtra(EXTRA_PS5, true)
-        // 1080p60 HEVC; chiaki falls back if the console/link can't hold it
+        // Settings, PlayStation (TV home): 1080p or 720p at 60, H.265 or H.264. chiaki falls back if the console
+        // or link can't hold it.
+        val prefs = android.preference.PreferenceManager.getDefaultSharedPreferences(this)
+        val res720 = prefs.getString("ps5_resolution", "1080") == "720"
+        val h264 = !ps5 || prefs.getString("ps5_codec", "h265") == "h264"
         val preset = ConnectVideoProfile.preset(
-            VideoResolutionPreset.RES_1080P, VideoFPSPreset.FPS_60,
-            if (ps5) Codec.CODEC_H265 else Codec.CODEC_H264
+            if (res720) VideoResolutionPreset.RES_720P else VideoResolutionPreset.RES_1080P, VideoFPSPreset.FPS_60,
+            if (h264) Codec.CODEC_H264 else Codec.CODEC_H265
         )
-        // Home network: 30 or 20 Mbps depending on this device's own link (chiaki's 1080p preset is 15). Over the
-        // internet keep 15 - the PS5 also backs off by itself now that real packet loss is reported.
-        val profile = if (remote) preset else preset.copy(bitrate = lanBitrateKbps())
+        // Home network: Auto = 30 or 20 Mbps from this device's own link (chiaki's 1080p preset is 15), or the
+        // number picked in Settings. Over the internet keep the preset - the PS5 backs off by itself.
+        val homeKbps = prefs.getString("ps5_bitrate_home", "auto")?.toIntOrNull()?.times(1000) ?: lanBitrateKbps()
+        val profile = if (remote) preset else preset.copy(bitrate = homeKbps)
+        streamInfo = Triple(if (res720) "720p" else "1080p", if (h264) "H.264" else "H.265", profile.bitrate / 1000)
+        streamRemote = remote
         if (!remote) return ConnectInfo(ps5, host, registKey, morning, profile)
         val account = intent.getStringExtra(EXTRA_ACCOUNT_ID)?.let {
             try { android.util.Base64.decode(it, android.util.Base64.DEFAULT) } catch (e: Exception) { null }
@@ -328,14 +337,18 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
         val code = e.keyCode
         val fromPad = (e.source and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD ||
                 (e.source and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
-        // the system Back (Odin's back key / a TV remote) leaves the stream; the pad's B button is Circle
+        if (menu.isShowing) return menu.onKey(e)
+        // the system Back (Odin's back key / a TV remote) opens the Quick menu; the pad's B button is Circle
         if (code == KeyEvent.KEYCODE_BACK && !fromPad) {
-            if (e.action == KeyEvent.ACTION_UP) finish()
+            if (e.action == KeyEvent.ACTION_UP) openMenu()
             return true
         }
         if (isPadKey(code)) {
             if (e.repeatCount == 0) {
                 if (e.action == KeyEvent.ACTION_DOWN) held.add(code) else if (e.action == KeyEvent.ACTION_UP) held.remove(code)
+                // Select + Start + LB + RB opens the Quick menu once all four are let go; the game never sees it
+                if (held.containsAll(MENU_COMBO)) { comboPending = true; Ps5Pad.pushLocal(ControllerState()) }
+                if (comboPending) { if (held.isEmpty()) { comboPending = false; openMenu() }; return true }
                 sendLocal()
             }
             return true
@@ -344,6 +357,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
     }
 
     override fun dispatchGenericMotionEvent(e: MotionEvent): Boolean {
+        if (menu.isShowing) return menu.onMotion(e)
         if ((e.source and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK && e.action == MotionEvent.ACTION_MOVE) {
             fun dz(v: Float) = if (Math.abs(v) < 0.08f) 0f else v
             lx = dz(e.getAxisValue(MotionEvent.AXIS_X)); ly = dz(e.getAxisValue(MotionEvent.AXIS_Y))
@@ -365,8 +379,8 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
         val psCombo = l2 > .5f && start
         val tpCombo = select && start && !psCombo
         var f = 0u
-        if (h(KeyEvent.KEYCODE_BUTTON_A)) f = f or ControllerState.BUTTON_CROSS
-        if (h(KeyEvent.KEYCODE_BUTTON_B)) f = f or ControllerState.BUTTON_MOON
+        if (h(KeyEvent.KEYCODE_BUTTON_A)) f = f or (if (swapCrossCircle) ControllerState.BUTTON_MOON else ControllerState.BUTTON_CROSS)
+        if (h(KeyEvent.KEYCODE_BUTTON_B)) f = f or (if (swapCrossCircle) ControllerState.BUTTON_CROSS else ControllerState.BUTTON_MOON)
         if (h(KeyEvent.KEYCODE_BUTTON_X)) f = f or ControllerState.BUTTON_BOX
         if (h(KeyEvent.KEYCODE_BUTTON_Y)) f = f or ControllerState.BUTTON_PYRAMID
         if (h(KeyEvent.KEYCODE_BUTTON_L1)) f = f or ControllerState.BUTTON_L1
@@ -387,6 +401,37 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
             buttons = f,
             l2State = trig(if (psCombo) 0f else l2), r2State = trig(r2),
             leftX = ax(lx), leftY = ax(ly), rightX = ax(rx), rightY = ax(ry)))
+    }
+
+    // ---- Quick menu ----
+    private val menu by lazy { com.limelight.home.QuickMenu(this) }
+    private var comboPending = false
+    @Volatile private var streamInfo = Triple("1080p", "H.265", 0)
+    @Volatile private var streamRemote = false
+    private val startedAt = System.currentTimeMillis()
+    private val swapCrossCircle by lazy {
+        android.preference.PreferenceManager.getDefaultSharedPreferences(this).getBoolean("ps5_swap_cross_circle", false)
+    }
+
+    private fun openMenu() {
+        if (isFinishing) return
+        menu.show("PlayStation 5",
+            (if (streamRemote) "Over PlayStation Network. " else "On your home network. ") + com.limelight.home.QuickMenu.COMBO_LABEL + " opens this menu",
+            {
+                val min = (System.currentTimeMillis() - startedAt) / 60000
+                listOf(streamInfo.first to "Picture", streamInfo.second to "Video",
+                    (if (streamInfo.third > 0) "${streamInfo.third} Mbps" else "Auto") to "Quality", "$min min" to "Playing for")
+            },
+            listOf(
+                com.limelight.home.QuickMenu.Item("◐", "PS button", "L2 + Start", false) { tap(ControllerState.BUTTON_PS) },
+                com.limelight.home.QuickMenu.Item("▭", "Touchpad", "Select + Start", false) { tap(ControllerState.BUTTON_TOUCHPAD) },
+                com.limelight.home.QuickMenu.Item("⏻", "Disconnect", "Your PS5 stays on", false) { finish() }))
+    }
+
+    /** Press and release one button, for the buttons a pad doesn't have. */
+    private fun tap(button: UInt) {
+        Ps5Pad.pushLocal(ControllerState(buttons = button))
+        android.os.Handler(mainLooper).postDelayed({ Ps5Pad.pushLocal(ControllerState()) }, 150)
     }
 
     private fun immersive() {

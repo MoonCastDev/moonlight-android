@@ -623,9 +623,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         return p
     }
 
-    private fun topLine() = LayerDrawable(arrayOf(android.graphics.drawable.ColorDrawable(tv.p.line))).apply {
-        setLayerInset(0, 0, 0, 0, tv.px(75))
-    }
+    private fun topLine() = tv.topLine()
 
     private fun pcPage(d: ComputerDetails): View {
         val running = runningApp(d)
@@ -687,33 +685,175 @@ class HomeActivity : Activity(), PhoneLink.Listener {
 
     // ---------------------------------------------------------------- Settings
 
+    private var settingsGroup = "video"
+    private val stream by lazy { android.preference.PreferenceManager.getDefaultSharedPreferences(this) }
+
     private fun settingsPage(): View {
-        hints("A" to "Select", "LB" to "Previous tab", "RB" to "Next tab", "|" to "", "B" to "Back")
-        val list = tv.col().apply { background = tv.round(tv.p.deep, 24, tv.p.line, 1); setPadding(tv.px(24), tv.px(16), tv.px(24), tv.px(16)) }
-        fun item(key: String, title: String, sub: String, value: String?, onClick: (() -> Unit)?) {
-            list.addView(tv.row().apply {
-                tag = key
-                background = tv.focusable(0, 16, outline = false)
+        hints("A" to "Change", "LB" to "Previous tab", "RB" to "Next tab", "|" to "", "B" to "Back")
+        val groups = listOf("video" to "Video", "audio" to "Audio", "pads" to "Controllers", "ps" to "PlayStation",
+                "screen" to "Screen", "about" to "About and help")
+        val row = tv.row(Gravity.TOP)
+        val nav = tv.col()
+        groups.forEachIndexed { i, (k, label) ->
+            val on = k == settingsGroup
+            nav.addView(tv.text(label, 24, if (on) tv.p.moon else tv.p.dust, tv.ui(700)).apply {
+                gravity = Gravity.CENTER_VERTICAL
                 setPadding(tv.px(24), 0, tv.px(24), 0)
-                addView(tv.col().apply {
-                    addView(tv.text(title, 24, tv.p.moon, tv.ui(700)))
-                    addView(tv.text(sub, 19, tv.p.dust, tv.ui(500)), tv.lp(-2, -2).apply { topMargin = tv.px(4) })
-                }, LinearLayout.LayoutParams(0, -2, 1f))
-                if (value != null) addView(tv.text(value, 23, tv.p.moon, tv.ui(700)))
+                tag = "group:$k"
+                background = android.graphics.drawable.StateListDrawable().apply {
+                    addState(intArrayOf(android.R.attr.state_focused), tv.round(tv.p.raise, 16, Tv.CORONA, 3))
+                    addState(intArrayOf(), if (on) LayerDrawable(arrayOf(tv.round(tv.p.deep, 16, tv.p.line, 1),
+                            android.graphics.drawable.ColorDrawable(Tv.CORONA))).apply { setLayerInset(1, 0, tv.px(16), tv.px(436), tv.px(16)) }
+                            else android.graphics.drawable.ColorDrawable(0))
+                }
+                tv.focusableView(this)
+                setOnClickListener { settingsGroup = k; render(force = true); firstFocusable(content.findViewWithTag<View>("settings:list") ?: content)?.requestFocus() }
+            }, tv.lp(-1, 76).apply { if (i == groups.size - 1) topMargin = tv.px(24) })
+        }
+        row.addView(nav, tv.lp(440, -2).apply { rightMargin = tv.px(40) })
+
+        val list = tv.col().apply {
+            tag = "settings:list"
+            background = tv.round(tv.p.deep, 24, tv.p.line, 1); setPadding(tv.px(24), tv.px(12), tv.px(24), tv.px(12))
+        }
+        when (settingsGroup) {
+            "video" -> {
+                choice(list, "list_resolution", "Resolution", "Higher is sharper and needs more bitrate",
+                        listOf("720p" to "1280x720", "1080p" to "1920x1080", "1440p" to "2560x1440", "4K" to "3840x2160"), "1280x720")
+                choice(list, "list_fps", "Frame rate", "MoonCast streams at 60 unless you raise it", listOf("60" to "60", "90" to "90", "120" to "120"), "60")
+                bitrate(list)
+                choice(list, "video_format", "Video codec", "H.265 and AV1 look better at the same bitrate",
+                        listOf("Auto" to "auto", "H.264" to "neverh265", "H.265" to "forceh265", "AV1" to "forceav1"), "auto")
+                toggle(list, "checkbox_enable_hdr", "HDR", "Only when the PC, the game and this TV support it", false)
+                toggle(list, "checkbox_full_range", "Full-range colour", "Deeper blacks, if this TV shows them correctly", false)
+                toggle(list, "checkbox_stretch_video", "Stretch to fill", "Fills the screen when the shape doesn't match", false)
+                choice(list, "frame_pacing", "Frame pacing", "Trade a little delay for smoother motion",
+                        listOf("Lowest delay" to "latency", "Balanced" to "balanced", "Smoothest" to "smoothness"), "latency")
+            }
+            "audio" -> {
+                choice(list, "list_audio_config", "Speakers", "Match what's connected to this TV",
+                        listOf("Stereo" to "2", "5.1" to "51", "7.1" to "71"), "2")
+                toggle(list, "checkbox_host_audio", "Also play sound on the PC", "Useful when someone's in the room with it", false)
+            }
+            "pads" -> {
+                action(list, "set:pad", "Pair a controller", "Opens this TV's Bluetooth settings. Put the pad in pairing mode first", null) { pairController() }
+                toggle(list, "checkbox_multi_controller", "More than one player", "On a PC each pad is its own player. On the PS5, every pad is player 1", true)
+                intChoice(list, "seekbar_deadzone", "Stick deadzone", "Raise it if a character drifts on its own", listOf(3, 5, 7, 10, 15), 7) { "$it%" }
+                toggle(list, "checkbox_flip_face_buttons", "Swap A and B", "For Nintendo-style layouts", false)
+                toggle(list, "checkbox_gamepad_motion_sensors", "Motion", "Send the pad's gyro to games that use it", true)
+                toggle(list, "checkbox_mouse_emulation", "Use the pad as a mouse", "Hold Start to switch", true)
+                info(list, "Quick menu", QuickMenu.COMBO_LABEL + ", or Back on the TV remote")
+            }
+            "ps" -> {
+                choice(list, "ps5_resolution", "Resolution", "The PS5 streams up to 1080p", listOf("720p" to "720", "1080p" to "1080"), "1080")
+                info(list, "Frame rate", "60 fps")
+                choice(list, "ps5_bitrate_home", "Bitrate at home", "Auto: 30 Mbps on fast Wi-Fi or cable, 20 otherwise",
+                        listOf("Auto" to "auto", "10" to "10", "15" to "15", "20" to "20", "30" to "30"), "auto")
+                choice(list, "ps5_codec", "Video codec", "H.265 looks better at the same bitrate", listOf("H.264" to "h264", "H.265" to "h265"), "h265")
+                toggle(list, "ps5_swap_cross_circle", "Swap Cross and Circle", "For the Japanese layout", false)
+                info(list, "PS button", "L2 + Start")
+                info(list, "Touchpad", "Select + Start")
+            }
+            "screen" -> {
+                action(list, "set:oled", "OLED screen", "True black, quieter menus, and a dim screen saver that moves", if (tv.oled) "On" else "Off") {
+                    prefs.edit().putBoolean("oled", !tv.oled).apply(); recreate() }
+                toggle(list, "checkbox_enable_perf_overlay", "Stats while playing", "Frame rate, delay and lost frames in a corner of the game", false)
+            }
+            "about" -> {
+                val ver = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (e: Exception) { "" }
+                info(list, "MoonCast TV", ver ?: "")
+                info(list, "Phones send games here", "Port ${PhoneLink.PORT}")
+                action(list, "set:add", "Add a PC by its address", "For a PC this TV doesn't find on its own", null) { addPcByAddress() }
+                action(list, "set:all", "All Moonlight settings", "Every option, including the rare ones", null) {
+                    startActivity(Intent(this, StreamSettings::class.java)) }
+            }
+        }
+        row.addView(ScrollView(this).apply {
+            isVerticalScrollBarEnabled = false; isFocusable = false; clipToPadding = false
+            addView(list)
+        }, LinearLayout.LayoutParams(0, -1, 1f))
+        return row
+    }
+
+    private fun settingRow(list: LinearLayout, key: String, title: String, sub: String?, focusable: Boolean, value: View?, onClick: (() -> Unit)?) {
+        list.addView(tv.row().apply {
+            tag = "set:$key"
+            if (list.childCount > 0) background = topLine()
+            setPadding(tv.px(24), 0, tv.px(24), 0)
+            addView(tv.col().apply {
+                addView(tv.text(title, 24, tv.p.moon, tv.ui(700)))
+                if (sub != null) addView(tv.text(sub, 19, tv.p.dust, tv.ui(500)), tv.lp(-2, -2).apply { topMargin = tv.px(4) })
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+            if (value != null) addView(value)
+            if (focusable) {
+                val line = background
+                background = android.graphics.drawable.StateListDrawable().apply {
+                    addState(intArrayOf(android.R.attr.state_focused), tv.round(tv.p.raise, 16, Tv.CORONA, 3))
+                    addState(intArrayOf(), line ?: android.graphics.drawable.ColorDrawable(0))
+                }
                 tv.focusableView(this)
                 setOnClickListener { onClick?.invoke() }
-            }, tv.lp(-1, 96))
-        }
-        item("set:stream", "Stream settings", "Resolution, frame rate, bitrate, codec, audio and controller options", null) {
-            startActivity(Intent(this, StreamSettings::class.java)) }
-        item("set:pad", "Pair a controller", "Opens this TV's Bluetooth settings. Put the pad in pairing mode first", null) { pairController() }
-        item("set:oled", "OLED screen", "True black, quieter menus, and a dim screen saver that moves", if (tv.oled) "On" else "Off") {
-            prefs.edit().putBoolean("oled", !tv.oled).apply(); recreate() }
-        item("set:add", "Add a PC by its address", "For a PC this TV doesn't find on its own", null) { addPcByAddress() }
-        val ver = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (e: Exception) { "" }
-        item("set:about", "About", "MoonCast TV $ver. Phones send games to this TV on port ${PhoneLink.PORT}", null, null)
-        return ScrollView(this).apply { isVerticalScrollBarEnabled = false; isFocusable = false; addView(list, FrameLayout.LayoutParams(tv.px(1240), -2)) }
+            }
+        }, tv.lp(-1, 96))
     }
+
+    /** Options as a segmented control; A moves to the next one. */
+    private fun choice(list: LinearLayout, key: String, title: String, sub: String, options: List<Pair<String, String>>, def: String) {
+        val cur = stream.getString(key, def)
+        val seg = tv.row().apply { background = tv.round(0, 20, tv.p.line, 1) }
+        options.forEach { (label, v) ->
+            val on = v == cur
+            seg.addView(tv.text(label, 19, if (on) (if (tv.oled) tv.p.moon else tv.p.night) else tv.p.dust, tv.ui(700)).apply {
+                gravity = Gravity.CENTER; setPadding(tv.px(16), 0, tv.px(16), 0)
+                if (on) background = if (tv.oled) tv.round(tv.p.raise, 20, tv.p.moon, 2) else tv.round(tv.p.moon, 20)
+            }, tv.lp(-2, 40))
+        }
+        settingRow(list, key, title, sub, true, seg) {
+            val i = options.indexOfFirst { it.second == cur }
+            stream.edit().putString(key, options[(i + 1) % options.size].second).apply()
+            render(force = true)
+        }
+    }
+
+    private fun intChoice(list: LinearLayout, key: String, title: String, sub: String, options: List<Int>, def: Int, label: (Int) -> String) {
+        val cur = stream.getInt(key, def)
+        settingRow(list, key, title, sub, true, tv.text(label(cur), 23, tv.p.moon, tv.ui(700))) {
+            val i = options.indexOf(cur)
+            stream.edit().putInt(key, options[(i + 1) % options.size]).apply()
+            render(force = true)
+        }
+    }
+
+    /** Moonlight keeps the bitrate in kbps; no value means Moonlight picks one for the resolution. */
+    private fun bitrate(list: LinearLayout) {
+        val steps = listOf(0, 10, 20, 30, 50, 80)
+        val cur = stream.getInt("seekbar_bitrate_kbps", 0) / 1000
+        val shown = if (cur == 0) "Auto" else "$cur Mbps"
+        settingRow(list, "seekbar_bitrate_kbps", "Bitrate", "Auto picks one for the resolution. Raise it for a sharper picture on a fast network",
+                true, tv.text(shown, 23, tv.p.moon, tv.ui(700))) {
+            val next = steps[(steps.indexOf(steps.firstOrNull { it >= cur } ?: 0) + 1) % steps.size]
+            if (next == 0) stream.edit().remove("seekbar_bitrate_kbps").apply()
+            else stream.edit().putInt("seekbar_bitrate_kbps", next * 1000).apply()
+            render(force = true)
+        }
+    }
+
+    private fun toggle(list: LinearLayout, key: String, title: String, sub: String, def: Boolean) {
+        val on = stream.getBoolean(key, def)
+        val sw = FrameLayout(this).apply {
+            background = tv.round(if (on) Tv.BEAM else tv.p.line, 19)
+            addView(View(this@HomeActivity).apply { background = tv.round(if (on) tv.p.night else tv.p.dust, 14) },
+                    tv.flp(28, 28, Gravity.CENTER_VERTICAL or (if (on) Gravity.END else Gravity.START)).apply { leftMargin = tv.px(5); rightMargin = tv.px(5) })
+            layoutParams = tv.lp(68, 38)
+        }
+        settingRow(list, key, title, sub, true, sw) { stream.edit().putBoolean(key, !on).apply(); render(force = true) }
+    }
+
+    private fun action(list: LinearLayout, key: String, title: String, sub: String, value: String?, onClick: () -> Unit) =
+        settingRow(list, key.removePrefix("set:"), title, sub, true, value?.let { tv.text(it, 23, tv.p.moon, tv.ui(700)) }, onClick)
+
+    private fun info(list: LinearLayout, title: String, value: String) =
+        settingRow(list, "info:$title", title, null, false, tv.text(value, 22, tv.p.dust, tv.ui(700)), null)
 
     // ---------------------------------------------------------------- actions
 

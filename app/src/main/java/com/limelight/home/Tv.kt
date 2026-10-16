@@ -90,6 +90,15 @@ class Tv(val ctx: Context, val oled: Boolean) {
             addState(intArrayOf(), round(fill, radius, if (outline) p.line else 0, 1))
         }
 
+    /** A 1 px divider along the top edge, whatever the row's height. */
+    fun topLine(): Drawable = object : Drawable() {
+        private val paint = Paint().apply { color = p.line }
+        override fun draw(c: Canvas) { c.drawRect(bounds.left.toFloat(), bounds.top.toFloat(), bounds.right.toFloat(), bounds.top + px(1).coerceAtLeast(1).toFloat(), paint) }
+        override fun setAlpha(alpha: Int) {}
+        override fun setColorFilter(cf: android.graphics.ColorFilter?) {}
+        @Deprecated("Deprecated in Java") override fun getOpacity() = android.graphics.PixelFormat.TRANSLUCENT
+    }
+
     /** A ring-only foreground, for covers whose content is an image. */
     fun focusRing(radius: Number): StateListDrawable = StateListDrawable().apply {
         addState(intArrayOf(android.R.attr.state_focused), round(0, radius, CORONA, 4))
