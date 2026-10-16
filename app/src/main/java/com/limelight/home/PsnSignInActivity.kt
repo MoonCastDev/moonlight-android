@@ -39,10 +39,9 @@ class PsnSignInActivity : Activity() {
         val web = WebView(this).also { this.web = it }.apply {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
-            // Sony's bot check rejects the embedded-browser marker ("; wv"); present as the device's own Chrome
-            settings.userAgentString = settings.userAgentString.replace("; wv)", ")").replace(" Version/4.0", "")
             setBackgroundColor(0xFFFFFFFF.toInt())
             isFocusable = true; isFocusableInTouchMode = true
+            CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
             webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(v: WebView, r: WebResourceRequest) = handle(r.url.toString(), v, status)
                 @Deprecated("Deprecated in Java")
@@ -50,8 +49,9 @@ class PsnSignInActivity : Activity() {
                 override fun onPageStarted(v: WebView, url: String, f: android.graphics.Bitmap?) { handle(url, v, status) }
             }
         }
-        // a fresh sign-in every time (Sony asks again anyway with prompt=always)
-        CookieManager.getInstance().removeAllCookies(null)
+        // Don't clear cookies here: Sony's bot check sets one while it runs, and an async wipe racing it made the
+        // page fail with "The connection to the server timed out". prompt=always asks for the password anyway.
+        CookieManager.getInstance().setAcceptCookie(true)
         val body = FrameLayout(this)
         body.addView(web, FrameLayout.LayoutParams(-1, -1))
         body.addView(status, FrameLayout.LayoutParams(-1, -1))
