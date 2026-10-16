@@ -39,6 +39,9 @@ class PhoneGamepad {
     /** Remember where the phone is, from the address that POSTed /play. */
     static void setPhoneHost(String ip) { if (ip != null && !ip.isEmpty()) phoneHost = ip; }
 
+    /** The last phone address that drove a /play (used by the PS5 pad relay too). */
+    static String phoneHost() { return phoneHost; }
+
     /** Start feeding this connection from the phone's pad (uses the last known phone address, or an override). */
     static synchronized void start(NvConnection conn, String overrideHost) {
         stop();

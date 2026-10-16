@@ -114,7 +114,13 @@ public class MoonCastReceiver extends Activity {
                     try { phoneIp = s.getInetAddress().getHostAddress(); } catch (Exception ignored) { }
                 }
                 PhoneGamepad.setPhoneHost(phoneIp);
-                if (appId != null && play(appId, appName)) send(s, 200, "{\"ok\":1}");
+                // PS5 Remote Play (native chiaki): the phone sends the console's host + registration keys.
+                String ps5host = field(json, "ps5host");
+                if (ps5host != null && !ps5host.isEmpty()) {
+                    if (playPs5(ps5host, field(json, "registKey"), field(json, "morning"), field(json, "ps5")))
+                        send(s, 200, "{\"ok\":1}");
+                    else send(s, 400, "{\"error\":\"ps5 launch failed\"}");
+                } else if (appId != null && play(appId, appName)) send(s, 200, "{\"ok\":1}");
                 else send(s, 400, "{\"error\":\"no app id, or no paired PC\"}");
             } else {
                 send(s, 404, "{\"error\":\"not found\"}");
@@ -134,6 +140,23 @@ public class MoonCastReceiver extends Activity {
             i.putExtra(AppView.NAME_EXTRA, pc.name);
             i.putExtra(Game.EXTRA_APP_ID, appId);
             if (appName != null) i.putExtra(Game.EXTRA_APP_NAME, appName);
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(i);
+        });
+        return true;
+    }
+
+    // Launch a NATIVE PS5 Remote Play session (chiaki) for the given console + registration keys.
+    private boolean playPs5(String host, String registKey, String morning, String ps5) {
+        if (registKey == null || morning == null) return false;
+        setStatus("Starting PlayStation…");
+        final boolean isPs5 = ps5 == null || !"false".equalsIgnoreCase(ps5);
+        new Handler(Looper.getMainLooper()).post(() -> {
+            Intent i = new Intent(MoonCastReceiver.this, Ps5StreamActivity.class);
+            i.putExtra(Ps5StreamActivity.EXTRA_HOST, host);
+            i.putExtra(Ps5StreamActivity.EXTRA_REGIST_KEY, registKey);
+            i.putExtra(Ps5StreamActivity.EXTRA_MORNING, morning);
+            i.putExtra(Ps5StreamActivity.EXTRA_PS5, isPs5);
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             startActivity(i);
         });
