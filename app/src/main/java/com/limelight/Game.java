@@ -1523,7 +1523,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             if (quickMenu == null) quickMenu = new com.limelight.home.QuickMenu(Game.this);
             java.util.List<com.limelight.home.QuickMenu.Item> items = new java.util.ArrayList<>();
             items.add(new com.limelight.home.QuickMenu.Item("⌨", "Keyboard", "On-screen", false, this::toggleKeyboard));
-            items.add(new com.limelight.home.QuickMenu.Item("⏻", "Disconnect", "The game keeps running", false, this::finish));
+            items.add(new com.limelight.home.QuickMenu.Item("←", "Disconnect", "The game keeps running", false, this::finish));
             items.add(new com.limelight.home.QuickMenu.Item("✕", "Quit game", null, true, this::quitOnHostAndFinish));
             quickMenu.show(appName != null ? appName : "Your game",
                     (pcName != null ? "On " + pcName + ". " : "") + com.limelight.home.QuickMenu.COMBO_LABEL + " opens this menu",

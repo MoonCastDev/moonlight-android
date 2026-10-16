@@ -423,9 +423,9 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
                     (if (streamInfo.third > 0) "${streamInfo.third} Mbps" else "Auto") to "Quality", "$min min" to "Playing for")
             },
             listOf(
-                com.limelight.home.QuickMenu.Item("◐", "PS button", "L2 + Start", false) { tap(ControllerState.BUTTON_PS) },
-                com.limelight.home.QuickMenu.Item("▭", "Touchpad", "Select + Start", false) { tap(ControllerState.BUTTON_TOUCHPAD) },
-                com.limelight.home.QuickMenu.Item("⏻", "Disconnect", "Your PS5 stays on", false) { finish() }))
+                com.limelight.home.QuickMenu.Item("PS", "PS button", "L2 + Start", false) { tap(ControllerState.BUTTON_PS) },
+                com.limelight.home.QuickMenu.Item("▢", "Touchpad", "Select + Start", false) { tap(ControllerState.BUTTON_TOUCHPAD) },
+                com.limelight.home.QuickMenu.Item("←", "Disconnect", "Your PS5 stays on", false) { finish() }))
     }
 
     /** Press and release one button, for the buttons a pad doesn't have. */
