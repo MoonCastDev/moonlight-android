@@ -18,6 +18,8 @@ import com.metallic.chiaki.lib.DiscoveryService
 import com.metallic.chiaki.lib.Event
 import com.metallic.chiaki.lib.QuitEvent
 import com.metallic.chiaki.lib.RumbleEvent
+import com.metallic.chiaki.lib.LoginPinRequestEvent
+import com.metallic.chiaki.lib.ControllerTouch
 import com.metallic.chiaki.lib.Session
 import com.metallic.chiaki.lib.VideoFPSPreset
 import com.metallic.chiaki.lib.VideoResolutionPreset
@@ -37,6 +39,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
         const val EXTRA_PS5 = "ps5_is_ps5"
         private const val QUIT_RP_IN_USE = 4
         private const val KEY_TOUCHPAD = KeyEvent.KEYCODE_BUTTON_16   // internal: an odd Sony pad's touchpad click
+        private val STEP_NAMES = listOf("Found your PS5", "Waking it up", "Signing in", "Starting video")
         private val MENU_COMBO = setOf(KeyEvent.KEYCODE_BUTTON_SELECT, KeyEvent.KEYCODE_BUTTON_START,
             KeyEvent.KEYCODE_BUTTON_L1, KeyEvent.KEYCODE_BUTTON_R1)   // CHIAKI_QUIT_REASON_SESSION_REQUEST_RP_IN_USE ("Remote is already in use")
         // Remote Play over the internet (PSN hole-punch): sent by the phone, used when the console isn't on this LAN
@@ -61,10 +64,25 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
             gravity = android.view.Gravity.CENTER
             text = "Connecting to your PlayStation…"
         }
+        val dm = resources.displayMetrics
+        fun dp(v: Int) = Math.round(v * dm.widthPixels / 1920f)
+        steps = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            STEP_NAMES.forEach { name ->
+                addView(android.widget.LinearLayout(context).apply {
+                    orientation = android.widget.LinearLayout.VERTICAL
+                    addView(android.view.View(context).apply { setBackgroundColor(0xFF263150.toInt()) }, android.widget.LinearLayout.LayoutParams(-1, dp(5)))
+                    addView(android.widget.TextView(context).apply {
+                        text = name; setTextColor(0xFF97A1B8.toInt()); textSize = 15f; setPadding(0, dp(12), 0, 0)
+                    })
+                }, android.widget.LinearLayout.LayoutParams(0, -2, 1f).apply { rightMargin = dp(14) })
+            }
+        }
         setContentView(android.widget.FrameLayout(this).apply {
             setBackgroundColor(0xFF000000.toInt())
             addView(sv, android.widget.FrameLayout.LayoutParams(-1, -1))
             addView(status, android.widget.FrameLayout.LayoutParams(-1, -1))
+            addView(steps, android.widget.FrameLayout.LayoutParams(dp(1100), -2, android.view.Gravity.CENTER_HORIZONTAL or android.view.Gravity.BOTTOM).apply { bottomMargin = dp(220) })
         })
         sv.holder.addCallback(this)
     }
@@ -72,6 +90,20 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
     private var status: android.widget.TextView? = null
     private fun showStatus(t: String?) = runOnUiThread {
         status?.let { if (t == null) it.visibility = android.view.View.GONE else { it.text = t; it.visibility = android.view.View.VISIBLE } }
+        if (t == null) steps?.visibility = android.view.View.GONE
+    }
+
+    // The four steps of a connect, as in the mockup: done = cyan, now = amber, to do = grey.
+    private var steps: android.widget.LinearLayout? = null
+    private fun step(n: Int) = runOnUiThread {
+        val row = steps ?: return@runOnUiThread
+        row.visibility = android.view.View.VISIBLE
+        for (i in 0 until row.childCount) {
+            val c = row.getChildAt(i) as android.widget.LinearLayout
+            val color = when { i < n - 1 -> 0xFF4FD6E3.toInt(); i == n - 1 -> 0xFFF2B55C.toInt(); else -> 0xFF263150.toInt() }
+            c.getChildAt(0).setBackgroundColor(color)
+            (c.getChildAt(1) as android.widget.TextView).setTextColor(if (i <= n - 1) 0xFFEEF1F7.toInt() else 0xFF97A1B8.toInt())
+        }
     }
 
     private fun connectInfo(remote: Boolean): ConnectInfo {
@@ -86,10 +118,19 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
         // 26-39 Mbps link, 15 Mbps asked over PSN -> dropped packets and a laggy feel). Keep 60 fps and step down pixels.
         val link = linkMbps()
         val weak = link in 1..59
-        val res720 = prefs.getString("ps5_resolution", "1080") == "720" || weak
+        // Home: Settings resolution (720p on a weak link). Away: "Quality away from home", Auto = by the link.
+        val away = prefs.getString("ps5_away_quality", "auto")
+        val resPreset = when {
+            remote && away == "540" -> VideoResolutionPreset.RES_540P
+            remote && away == "720" -> VideoResolutionPreset.RES_720P
+            remote && away == "1080" -> VideoResolutionPreset.RES_1080P
+            weak || prefs.getString("ps5_resolution", "1080") == "720" -> VideoResolutionPreset.RES_720P
+            else -> VideoResolutionPreset.RES_1080P
+        }
+        val res720 = resPreset != VideoResolutionPreset.RES_1080P
         val h264 = !ps5 || prefs.getString("ps5_codec", "h265") == "h264"
         val preset = ConnectVideoProfile.preset(
-            if (res720) VideoResolutionPreset.RES_720P else VideoResolutionPreset.RES_1080P, VideoFPSPreset.FPS_60,
+            resPreset, VideoFPSPreset.FPS_60,
             if (h264) Codec.CODEC_H264 else Codec.CODEC_H265
         )
         // Home network: Auto = 30 or 20 Mbps from this device's own link (chiaki's 1080p preset is 15), or the
@@ -98,8 +139,8 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
         val linkCap = if (link > 0) (link * 300).coerceIn(5000, 30000) else 30000
         val homeKbps = prefs.getString("ps5_bitrate_home", "auto")?.toIntOrNull()?.times(1000) ?: minOf(lanBitrateKbps(), linkCap)
         val profile = if (remote) preset.copy(bitrate = minOf(preset.bitrate, linkCap)) else preset.copy(bitrate = homeKbps)
-        Log.i(TAG, "stream ${if (res720) "720p" else "1080p"}60 at ${profile.bitrate / 1000} Mbps (${if (remote) "PSN" else "home"}, link ${if (link > 0) "$link Mbps" else "cable/unknown"})")
-        streamInfo = Triple(if (res720) "720p" else "1080p", if (h264) "H.264" else "H.265", profile.bitrate / 1000)
+        Log.i(TAG, "stream ${streamInfo.first}60 at ${profile.bitrate / 1000} Mbps (${if (remote) "PSN" else "home"}, link ${if (link > 0) "$link Mbps" else "cable/unknown"})")
+        streamInfo = Triple(when (resPreset) { VideoResolutionPreset.RES_540P -> "540p"; VideoResolutionPreset.RES_720P -> "720p"; else -> "1080p" }, if (h264) "H.264" else "H.265", profile.bitrate / 1000)
         streamRemote = remote
         if (!remote) return ConnectInfo(ps5, host, registKey, morning, profile)
         val account = intent.getStringExtra(EXTRA_ACCOUNT_ID)?.let {
@@ -198,6 +239,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
         Log.i(TAG, if (remote) "console not on this LAN -> Remote Play via PSN" else "console on LAN ($host)")
         if (remote) { ensureCaBundle(); startProgressWatch() }
         showStatus(if (remote) "Reaching PlayStation Network…" else "Connecting to your PlayStation…")
+        step(if (remote) 1 else 2)
         if (!remote) wakeLan(host, ps5)
         var attempt = 0
         // remote: a missed PSN start request is only fixed by a fresh attempt. Home network: a console still waking
@@ -212,6 +254,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
                 if (closed) { try { s.stop(); s.dispose() } catch (e: Exception) {}; return }  // torn down mid-connect
                 if (err.isSuccess) {
                     session = s
+                    if (!remote) step(3)
                     Ps5Pad.start(s)   // phone drives the controller
                     // Only the first picture counts as success; a quit before that is a failed attempt -> retry.
                     // Remote: the data-channel hole-punch may fail. Home: the console may still be waking up.
@@ -285,7 +328,10 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
                         "Punched hole for data" in line -> 6 to "Starting video…"
                         else -> return@forEachLine
                     }
-                    if (stage > progressStage) { progressStage = stage; showStatus(st) }
+                    if (stage > progressStage) {
+                        progressStage = stage; showStatus(st)
+                        step(when (stage) { 1 -> 1; 2 -> 2; 3, 4, 5 -> 3; else -> 4 })
+                    }
                 }
             } catch (e: Exception) { Log.w(TAG, "progress watch: $e") }
         }, "ps5-progress").start()
@@ -351,6 +397,13 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
                 runOnUiThread { finish() }
             }
             is RumbleEvent -> rumble(ev.left.toInt(), ev.right.toInt())
+            is LoginPinRequestEvent -> {
+                // Settings, PlayStation, Console PIN: answer the PS5's login PIN for you (once; a wrong one isn't retried)
+                val pin = getSharedPreferences("mc_tv", MODE_PRIVATE).getString("ps5_login_pin", "") ?: ""
+                if (pin.length == 4 && !ev.pinIncorrect) { Log.i(TAG, "answering the console login PIN"); session?.setLoginPin(pin) }
+                else showStatus(if (ev.pinIncorrect) "The console PIN in Settings is wrong.\nFix it in Settings, PlayStation, Console PIN."
+                                else "Your PS5 asks for its login PIN.\nSet it once in Settings, PlayStation, Console PIN.")
+            }
             else -> {}
         }
     }
@@ -423,6 +476,15 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
             if (e.action == KeyEvent.ACTION_UP) openMenu()
             return true
         }
+        if (fromPad && e.deviceId in mutedPads) return true
+        if (dpadTouch && isPadKey(code) && held.contains(KeyEvent.KEYCODE_BUTTON_SELECT) && e.action == KeyEvent.ACTION_DOWN && e.repeatCount == 0) {
+            when (code) {
+                KeyEvent.KEYCODE_DPAD_LEFT -> { swipe(-600, 0); return true }
+                KeyEvent.KEYCODE_DPAD_RIGHT -> { swipe(600, 0); return true }
+                KeyEvent.KEYCODE_DPAD_UP -> { swipe(0, -350); return true }
+                KeyEvent.KEYCODE_DPAD_DOWN -> { swipe(0, 350); return true }
+            }
+        }
         if (isPadKey(code)) {
             if (e.repeatCount == 0) {
                 if (e.action == KeyEvent.ACTION_DOWN) held.add(code) else if (e.action == KeyEvent.ACTION_UP) held.remove(code)
@@ -438,6 +500,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
 
     override fun dispatchGenericMotionEvent(e: MotionEvent): Boolean {
         if (menu.isShowing) return menu.onMotion(e)
+        if (e.deviceId in mutedPads) return true
         if ((e.source and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK && e.action == MotionEvent.ACTION_MOVE) {
             padDeviceId = e.deviceId
             fun dz(v: Float) = if (Math.abs(v) < 0.08f) 0f else v
@@ -457,6 +520,23 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
         }
         return super.dispatchGenericMotionEvent(e)
     }
+
+    // Settings, PlayStation, "D-pad as touchpad": hold Select and press a direction to swipe on the touchpad.
+    private val dpadTouch by lazy {
+        android.preference.PreferenceManager.getDefaultSharedPreferences(this).getBoolean("ps5_dpad_touchpad", false)
+    }
+    @Volatile private var touch: ControllerTouch? = null
+    private fun swipe(dx: Int, dy: Int) {
+        val h = android.os.Handler(mainLooper)
+        val cx = 960; val cy = 471          // the touchpad is 1920 x 942
+        for (i in 0..5) h.postDelayed({
+            touch = ControllerTouch((cx + dx * i / 5).toUShort(), (cy + dy * i / 5).toUShort(), 0); sendLocal()
+        }, i * 25L)
+        h.postDelayed({ touch = null; sendLocal() }, 170)
+    }
+
+    // Quick menu, Controllers: pads you mute are ignored (the PS5 takes one controller; everyone shares player 1).
+    private val mutedPads = HashSet<Int>()
 
     private fun sendLocal() {
         fun h(k: Int) = held.contains(k)
@@ -484,7 +564,9 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
         if (h(KeyEvent.KEYCODE_DPAD_RIGHT) || hatX > .5f) f = f or ControllerState.BUTTON_DPAD_RIGHT
         fun ax(v: Float): Short = (Math.round(v * 32767f).coerceIn(-32767, 32767)).toShort()
         fun trig(v: Float) = (v.coerceIn(0f, 1f) * 255).toInt().toUByte()
+        val st = touch
         Ps5Pad.pushLocal(ControllerState(
+            touches = if (st != null) arrayOf(st, ControllerTouch()) else arrayOf(ControllerTouch(), ControllerTouch()),
             buttons = f,
             l2State = trig(if (psCombo) 0f else l2), r2State = trig(r2),
             leftX = ax(lx), leftY = ax(ly), rightX = ax(rx), rightY = ax(ry)))
@@ -512,6 +594,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
             listOf(
                 com.limelight.home.QuickMenu.Item("PS", "PS button", "L2 + Start", false) { tap(ControllerState.BUTTON_PS) },
                 com.limelight.home.QuickMenu.Item("▢", "Touchpad", "Select + Start", false) { tap(ControllerState.BUTTON_TOUCHPAD) },
+                com.limelight.home.QuickMenu.Item("✚", "Controllers", "${com.limelight.home.QuickMenu.pads().size} connected", false) { controllers() },
                 com.limelight.home.QuickMenu.Item("←", "Disconnect", disconnectHint(), false) { leave() },
                 com.limelight.home.QuickMenu.Item("Zz", "Put PS5 to rest", "Ends the game", true) { rest() }))
     }
@@ -542,6 +625,21 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
             try { Thread.sleep(800) } catch (e: InterruptedException) { }
             runOnUiThread { finish() }
         }, "ps5-rest").start()
+    }
+
+    private fun controllers() {
+        val pads = com.limelight.home.QuickMenu.pads()
+        menu.show("Controllers", "The PS5 takes one controller, so every pad is player 1. Mute one to stop it interfering.",
+            { emptyList() },
+            pads.map { d ->
+                val muted = d.id in mutedPads
+                com.limelight.home.QuickMenu.Item(if (muted) "–" else "1", d.name,
+                    (if (muted) "Muted" else "On") + (com.limelight.home.QuickMenu.battery(d)?.let { ", $it" } ?: ""), false) {
+                    if (muted) mutedPads.remove(d.id) else { mutedPads.add(d.id); held.clear(); sendLocal() }
+                    controllers()
+                }
+            } + listOf(com.limelight.home.QuickMenu.Item("+", "Pair a controller", "Bluetooth settings", false) {
+                com.limelight.home.QuickMenu.pairController(this) }))
     }
 
     /** Press and release one button, for the buttons a pad doesn't have. */
