@@ -114,13 +114,22 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
     // Is a PlayStation answering chiaki discovery at this address on our LAN? (Also true in standby: "620 Server Standby".)
     // A different device that happens to own the same IP on another network (e.g. JAL vs home) won't answer SRCH.
     private fun lanConsoleAnswers(host: String, ps5: Boolean): Boolean = try {
+        // Ask up to 3 times: on a lossy 2.4 GHz link ONE lost SRCH/reply sent a home session over PSN (~40-80 s instead
+        // of ~9 s) - seen on the home Mi stick 2026-10-16.
         java.net.DatagramSocket().use { s ->
-            s.soTimeout = 1500
+            s.soTimeout = 600
             val msg = "SRCH * HTTP/1.1\ndevice-discovery-protocol-version:${if (ps5) "00030010" else "00020020"}\n".toByteArray()
-            s.send(java.net.DatagramPacket(msg, msg.size, java.net.InetAddress.getByName(host), if (ps5) 9302 else 987))
-            val buf = ByteArray(1024); val p = java.net.DatagramPacket(buf, buf.size)
-            s.receive(p)
-            String(buf, 0, p.length).startsWith("HTTP/1.1")
+            val dst = java.net.InetAddress.getByName(host)
+            val buf = ByteArray(1024)
+            var ok = false
+            for (i in 0 until 3) {
+                s.send(java.net.DatagramPacket(msg, msg.size, dst, if (ps5) 9302 else 987))
+                try {
+                    val p = java.net.DatagramPacket(buf, buf.size); s.receive(p)
+                    if (String(buf, 0, p.length).startsWith("HTTP/1.1")) { ok = true; break }
+                } catch (e: java.net.SocketTimeoutException) { }
+            }
+            ok
         }
     } catch (e: Exception) { false }
 
