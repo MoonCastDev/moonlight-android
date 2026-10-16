@@ -69,6 +69,27 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
             psnToken = intent.getStringExtra(EXTRA_PSN_TOKEN), duid = intent.getStringExtra(EXTRA_DUID), psnAccountId = account)
     }
 
+    // chiaki's libcurl has no CA store on Android, so PSN's HTTPS calls failed ("SSL peer certificate ... was not OK").
+    // Export this device's trusted roots (AndroidCAStore) as a PEM bundle; the patched lib reads MC_CA_BUNDLE.
+    private fun ensureCaBundle() {
+        try {
+            val f = java.io.File(filesDir, "cacert.pem")
+            if (!f.exists() || f.length() == 0L || System.currentTimeMillis() - f.lastModified() > 7L * 24 * 3600 * 1000) {
+                val ks = java.security.KeyStore.getInstance("AndroidCAStore").apply { load(null) }
+                val pem = StringBuilder()
+                for (alias in ks.aliases()) {
+                    val cert = ks.getCertificate(alias) ?: continue
+                    pem.append("-----BEGIN CERTIFICATE-----\n")
+                        .append(android.util.Base64.encodeToString(cert.encoded, android.util.Base64.DEFAULT))
+                        .append("-----END CERTIFICATE-----\n")
+                }
+                f.writeText(pem.toString())
+            }
+            android.system.Os.setenv("MC_CA_BUNDLE", f.absolutePath, true)
+            Log.i(TAG, "CA bundle for PSN: ${f.length()} bytes")
+        } catch (e: Exception) { Log.w(TAG, "CA bundle: $e") }
+    }
+
     private fun canGoRemote() = !intent.getStringExtra(EXTRA_PSN_TOKEN).isNullOrEmpty() && !intent.getStringExtra(EXTRA_DUID).isNullOrEmpty()
 
     // Is a PlayStation answering chiaki discovery at this address on our LAN? (Also true in standby: "620 Server Standby".)
@@ -99,6 +120,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
         // phone sent a PSN token. PSN wakes the console itself when the session starts.
         val remote = !lanConsoleAnswers(host, ps5) && canGoRemote()
         Log.i(TAG, if (remote) "console not on this LAN -> Remote Play via PSN" else "console on LAN ($host)")
+        if (remote) ensureCaBundle()
         if (!remote) try {
             val cred = wakeCredential(hex(intent.getStringExtra(EXTRA_REGIST_KEY) ?: ""))
             if (cred != null) {
