@@ -160,7 +160,7 @@ class QuickMenu(private val act: Activity) {
     companion object {
         /** Physical game pads connected now (not the TV remote). */
         @JvmStatic fun pads(): List<InputDevice> = InputDevice.getDeviceIds().toList().mapNotNull { InputDevice.getDevice(it) }.filter { d ->
-            !d.isVirtual && ((d.sources and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD ||
+            !d.isVirtual && d.controllerNumber > 0 && ((d.sources and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD ||
                     (d.sources and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK)
         }
 

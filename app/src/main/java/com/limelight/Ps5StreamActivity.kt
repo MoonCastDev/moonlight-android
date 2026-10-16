@@ -139,9 +139,9 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
         val linkCap = if (link > 0) (link * 300).coerceIn(5000, 30000) else 30000
         val homeKbps = prefs.getString("ps5_bitrate_home", "auto")?.toIntOrNull()?.times(1000) ?: minOf(lanBitrateKbps(), linkCap)
         val profile = if (remote) preset.copy(bitrate = minOf(preset.bitrate, linkCap)) else preset.copy(bitrate = homeKbps)
-        Log.i(TAG, "stream ${streamInfo.first}60 at ${profile.bitrate / 1000} Mbps (${if (remote) "PSN" else "home"}, link ${if (link > 0) "$link Mbps" else "cable/unknown"})")
         streamInfo = Triple(when (resPreset) { VideoResolutionPreset.RES_540P -> "540p"; VideoResolutionPreset.RES_720P -> "720p"; else -> "1080p" }, if (h264) "H.264" else "H.265", profile.bitrate / 1000)
         streamRemote = remote
+        Log.i(TAG, "stream ${streamInfo.first}60 at ${profile.bitrate / 1000} Mbps (${if (remote) "PSN" else "home"}, link ${if (link > 0) "$link Mbps" else "cable/unknown"})")
         if (!remote) return ConnectInfo(ps5, host, registKey, morning, profile)
         val account = intent.getStringExtra(EXTRA_ACCOUNT_ID)?.let {
             try { android.util.Base64.decode(it, android.util.Base64.DEFAULT) } catch (e: Exception) { null }

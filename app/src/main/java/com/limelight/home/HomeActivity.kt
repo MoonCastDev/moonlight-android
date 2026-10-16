@@ -115,6 +115,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
     override fun onResume() {
         super.onResume()
         resumed = true
+        lastInput = System.currentTimeMillis()
         PhoneLinkService.listener = this
         if (overlayKind == "incoming") hideOverlay()
         consoles = Ps5Store.all(this)
@@ -311,7 +312,8 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         val inTabs = focused != null && focused.parent === tabsRow
         val focusTag = focused?.tag as? String
         content.removeAllViews()
-        content.addView(page(), FrameLayout.LayoutParams(-1, -1))
+        val pg = page()
+        content.addView(pg, pg.layoutParams as? FrameLayout.LayoutParams ?: FrameLayout.LayoutParams(-1, -1))
         styleTabs()
         if (overlayKind != null) return
         when {
@@ -475,7 +477,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         setPadding(tv.px(28), tv.px(28), tv.px(28), tv.px(26))
         addView(tv.col().apply {
             addView(tv.text("Add a console", 28, tv.p.moon, tv.display(600)))
-            addView(tv.text("A PC by its address, or a PS5 from your Odin", 21, tv.p.dust, tv.ui(500), 2), tv.lp(-1, -2).apply { topMargin = tv.px(10) })
+            addView(tv.text("A PC by its address, or register a PS5", 21, tv.p.dust, tv.ui(500), 2), tv.lp(-1, -2).apply { topMargin = tv.px(10) })
         })
         addView(tv.text("+", 34, tv.p.moon, tv.display(600)).apply { gravity = Gravity.CENTER; background = tv.round(tv.p.raise, 16, tv.p.line, 1) },
                 tv.flp(60, 60, Gravity.END or Gravity.BOTTOM))
@@ -541,7 +543,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
             col.addView(tv.text("Nothing called “$q”", 40, tv.p.moon, tv.display(600)))
             col.addView(tv.row().apply {
                 addView(tv.pill("Search again", "Y", true) { openSearch() }.apply { tag = "primary" })
-                addView(tv.pill("Show all games", null, false) { libraryQuery = ""; render(force = true) })
+                addView(tv.pill("Show all games", null, false) { libraryQuery = ""; filter = null; render(force = true) })
             }, tv.lp(-2, -2).apply { topMargin = tv.px(32) })
             return col
         }
@@ -651,7 +653,9 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         item(if (app.appId == pc.runningGameId) "Resume on this TV" else "Play on this TV", null, true) { start(pc, app) }
         if (app.appId == pc.runningGameId) item("Quit game", "Closes it on the PC") { quit(pc, app) }
         item(if (hidden) "Show in Library" else "Hide from Library", if (hidden) null else "Still under the Hidden filter") {
-            setHidden(pc, app, !hidden); render(force = true); toast(if (hidden) "${app.appName} is back in your Library" else "${app.appName} hidden") }
+            setHidden(pc, app, !hidden)
+            if (filter == "hidden" && pcs.values.none { hiddenIds(it).isNotEmpty() }) filter = null
+            render(force = true); toast(if (hidden) "${app.appName} is back in your Library" else "${app.appName} hidden") }
         item("Add to the TV's home screen", "A row of your games there") {
             try { com.limelight.utils.TvChannelHelper(this).addGameToHomeScreen(pc, app); toast("Added. Look for the ${pc.name} row on the TV's home screen.") }
             catch (e: Exception) { toast("This TV doesn't allow adding games to its home screen.") } }
@@ -685,8 +689,9 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         }
         return ScrollView(this).apply {
             isVerticalScrollBarEnabled = false; isFocusable = false; clipToPadding = false
-            setPadding(tv.px(10), tv.px(10), tv.px(10), tv.px(10))
-            addView(grid)
+            setPadding(tv.px(24), tv.px(24), tv.px(24), tv.px(24))
+            addView(grid.apply { setPadding(0, tv.px(8), 0, tv.px(8)); clipToPadding = false })
+            layoutParams = FrameLayout.LayoutParams(-1, -1).apply { leftMargin = -tv.px(24); rightMargin = -tv.px(24); topMargin = -tv.px(24) }
         }
     }
 
@@ -705,7 +710,9 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         left.addView(tv.text(name, 80, tv.p.moon, tv.display(700)), tv.lp(-2, -2).apply { topMargin = tv.px(32) })
         left.addView(tv.text(line, 26, tv.p.soft, tv.ui(500), 3), tv.lp(-1, -2).apply { topMargin = tv.px(14) })
         left.addView(tv.row().apply { states.forEach { (l, k) -> addView(tv.status(l, k)) } }, tv.lp(-2, -2).apply { topMargin = tv.px(24) })
-        left.addView(tv.row().apply { actions.forEach { addView(it) } }, tv.lp(-2, -2).apply { topMargin = tv.px(36) })
+        // up to two buttons on the first row, the rest on a second, so long labels never get cut ("Re…")
+        left.addView(tv.row().apply { actions.take(2).forEach { addView(it) } }, tv.lp(-2, -2).apply { topMargin = tv.px(36) })
+        if (actions.size > 2) left.addView(tv.row().apply { actions.drop(2).forEach { addView(it) } }, tv.lp(-2, -2).apply { topMargin = tv.px(16) })
         row.addView(left, LinearLayout.LayoutParams(0, -2, 1f).apply { rightMargin = tv.px(88) })
         row.addView(panel, tv.lp(820, -2))
         return row
@@ -770,7 +777,8 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         val line = when (pw) {
             Ps5Store.Power.ON -> "On" + (psStatus[c.host]?.runningApp?.let { ", playing $it" } ?: "") + ". Play opens Remote Play on this TV."
             Ps5Store.Power.REST -> "In rest mode. Play wakes it and opens Remote Play on this TV, in about a minute."
-            Ps5Store.Power.NOT_FOUND -> "Not on this network. To play away from home, send it from MoonCast on your Odin."
+            Ps5Store.Power.NOT_FOUND -> if (Psn.signedIn(this)) "Not on this network. Play reaches it through PlayStation Network."
+                                        else "Not on this network. Sign in to PlayStation Network in Settings to play it from here."
             Ps5Store.Power.CHECKING -> "Checking whether it's on…"
         }
         val states = when (pw) {
@@ -783,9 +791,9 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                 tv.pill(if (pw == Ps5Store.Power.ON) "Play" else "Wake and play", "A", true) { playPs(c) }.apply { tag = "primary" },
                 tv.pill("Wake only", null, false) { wakePs(c) }.apply { tag = "wake" },
                 tv.pill("Remove", null, false) { confirmRemovePs(c) }.apply { tag = "remove" })
-        val route = if (pw == Ps5Store.Power.NOT_FOUND) "Send from your Odin" else "Home network"
+        val route = if (pw != Ps5Store.Power.NOT_FOUND) "Home network" else if (Psn.signedIn(this)) "PlayStation Network" else "Needs PSN sign-in"
         return detailShell("PS", 0xFF2F5DF0.toInt(), c.name, line, states, actions,
-                panel("Stream", listOf("Route" to route, "Picture" to "1080p, 60 fps, H.265", "Quality" to "Auto, 20 to 30 Mbps",
+                panel("Stream", listOf("Route" to route, "Picture" to "60 fps, set by this TV's link", "Quality" to "Auto",
                         "Controller" to "Your phone or a pad on this TV"),
                         "Buttons your pad doesn't have", listOf("PS button" to "L2 + Start", "Touchpad" to "Select + Start")))
     }
@@ -917,6 +925,11 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                 if (sub != null) addView(tv.text(sub, 19, tv.p.dust, tv.ui(500)), tv.lp(-2, -2).apply { topMargin = tv.px(4) })
             }, LinearLayout.LayoutParams(0, -2, 1f))
             if (value != null) addView(value)
+            setOnKeyListener { _, code, e ->
+                if (code == KeyEvent.KEYCODE_DPAD_LEFT && e.action == KeyEvent.ACTION_DOWN)
+                    content.findViewWithTag<View>("group:$settingsGroup")?.requestFocus() ?: false
+                else false
+            }
             if (focusable) {
                 val line = background
                 background = android.graphics.drawable.StateListDrawable().apply {
@@ -1164,7 +1177,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         if (pcs.values.any { !paired(it) && online(it) }) { go(Tab.CONSOLES); return }
         val card = dialogCard()
         card.addView(tv.text("Add a console", 40, tv.p.moon, tv.display(700)))
-        card.addView(tv.text("PCs running Sunshine on your network appear here by themselves. A PlayStation is registered once from MoonCast on your Odin.",
+        card.addView(tv.text("PCs running Sunshine on your network appear here by themselves. Register a PlayStation here or from MoonCast on your Odin.",
                 22, tv.p.dust, tv.ui(500), 4), tv.lp(-1, -2).apply { topMargin = tv.px(12); bottomMargin = tv.px(28) })
         card.addView(tv.row().apply {
             addView(tv.pill("Register a PS5", "A", true) { hideOverlay(); showRegister() }.apply { tag = "primary" })
@@ -1414,6 +1427,10 @@ class HomeActivity : Activity(), PhoneLink.Listener {
     }
 
     private fun hideOverlay() {
+        try {   // close the TV keyboard too (search / add PC / PIN boxes), or it stays up and squashes the screen
+            (getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
+                    .hideSoftInputFromWindow(window.decorView.windowToken, 0)
+        } catch (e: Exception) { }
         overlayKind = null
         overlay.removeAllViews()
         overlay.visibility = View.GONE
