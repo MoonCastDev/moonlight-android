@@ -84,10 +84,10 @@ object Ps5Pad {
             for (i in 0 until 17) if (b != null && i < b.length()) bt[i] = b.optDouble(i, 0.0)
             for (i in 0 until 4) if (a != null && i < a.length()) ax[i] = a.optDouble(i, 0.0)
             // Combos for the buttons an Xbox-style pad lacks (its Guide button is grabbed by the launcher):
-            //   Select + Start -> PS (home),  L2 + Start -> Touchpad click.
+            //   L2 + Start -> PS (home),  Select + Start -> Touchpad click.
             val select = bt[8] > .5; val start = bt[9] > .5; val l2held = bt[6] > .5
-            val psCombo = select && start
-            val tpCombo = l2held && start && !select
+            val psCombo = l2held && start
+            val tpCombo = select && start && !l2held
             var flags = 0u
             if (bt[0] > .5) flags = flags or ControllerState.BUTTON_CROSS
             if (bt[1] > .5) flags = flags or ControllerState.BUTTON_MOON
@@ -95,7 +95,7 @@ object Ps5Pad {
             if (bt[3] > .5) flags = flags or ControllerState.BUTTON_PYRAMID
             if (bt[4] > .5) flags = flags or ControllerState.BUTTON_L1
             if (bt[5] > .5) flags = flags or ControllerState.BUTTON_R1
-            if (select && !psCombo) flags = flags or ControllerState.BUTTON_SHARE
+            if (select && !tpCombo) flags = flags or ControllerState.BUTTON_SHARE
             if (start && !psCombo && !tpCombo) flags = flags or ControllerState.BUTTON_OPTIONS
             if (bt[10] > .5) flags = flags or ControllerState.BUTTON_L3
             if (bt[11] > .5) flags = flags or ControllerState.BUTTON_R3
@@ -107,7 +107,7 @@ object Ps5Pad {
             if (tpCombo) flags = flags or ControllerState.BUTTON_TOUCHPAD
             val st = ControllerState(
                 buttons = flags,
-                l2State = (bt[6].coerceIn(0.0, 1.0) * 255).toInt().toUByte(),
+                l2State = (if (psCombo) 0.0 else bt[6].coerceIn(0.0, 1.0)) .let { (it * 255).toInt().toUByte() },
                 r2State = (bt[7].coerceIn(0.0, 1.0) * 255).toInt().toUByte(),
                 leftX = axis(ax[0]), leftY = axis(ax[1]), rightX = axis(ax[2]), rightY = axis(ax[3])
             )
