@@ -75,7 +75,6 @@ class HomeActivity : Activity(), PhoneLink.Listener {
     private lateinit var overlay: FrameLayout
     private lateinit var clock: TextView
     private val ui = Handler(Looper.getMainLooper())
-    private var link: PhoneLink? = null
 
     // Moonlight's PC manager
     private var binder: ComputerManagerService.ComputerManagerBinder? = null
@@ -109,13 +108,14 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         tv = Tv(this, prefs.getBoolean("oled", false))
         buildShell()
         bindService(Intent(this, ComputerManagerService::class.java), conn, Service_BIND)
-        link = PhoneLink(this, this).also { it.start() }
+        PhoneLinkService.start(this)   // the phone's channel lives in the service, so it outlasts this screen
         if (!prefs.getBoolean("oled_asked", false)) ui.post { askOled() }
     }
 
     override fun onResume() {
         super.onResume()
         resumed = true
+        PhoneLinkService.listener = this
         if (overlayKind == "incoming") hideOverlay()
         consoles = Ps5Store.all(this)
         startPolling()
@@ -125,13 +125,13 @@ class HomeActivity : Activity(), PhoneLink.Listener {
 
     override fun onPause() {
         resumed = false
+        if (PhoneLinkService.listener === this) PhoneLinkService.listener = null
         stopPolling()
         ui.removeCallbacks(tick)
         super.onPause()
     }
 
     override fun onDestroy() {
-        link?.stop()
         probes.shutdownNow()
         loaders.values.forEach { it.cancelBackgroundLoads(); it.cancelForegroundLoads(); it.freeCacheMemory() }
         try { unbindService(conn) } catch (e: Exception) { }
