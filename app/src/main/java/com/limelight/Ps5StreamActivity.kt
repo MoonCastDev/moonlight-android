@@ -76,10 +76,13 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
         val morning = hex(intent.getStringExtra(EXTRA_MORNING) ?: "")
         val ps5 = intent.getBooleanExtra(EXTRA_PS5, true)
         // 1080p60 HEVC; chiaki falls back if the console/link can't hold it
-        val profile = ConnectVideoProfile.preset(
+        val preset = ConnectVideoProfile.preset(
             VideoResolutionPreset.RES_1080P, VideoFPSPreset.FPS_60,
             if (ps5) Codec.CODEC_H265 else Codec.CODEC_H264
         )
+        // Home network: 30 or 20 Mbps depending on this device's own link (chiaki's 1080p preset is 15). Over the
+        // internet keep 15 - the PS5 also backs off by itself now that real packet loss is reported.
+        val profile = if (remote) preset else preset.copy(bitrate = lanBitrateKbps())
         if (!remote) return ConnectInfo(ps5, host, registKey, morning, profile)
         val account = intent.getStringExtra(EXTRA_ACCOUNT_ID)?.let {
             try { android.util.Base64.decode(it, android.util.Base64.DEFAULT) } catch (e: Exception) { null }
@@ -107,6 +110,24 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
             android.system.Os.setenv("MC_CA_BUNDLE", f.absolutePath, true)
             Log.i(TAG, "CA bundle for PSN: ${f.length()} bytes")
         } catch (e: Exception) { Log.w(TAG, "CA bundle: $e") }
+    }
+
+    // Home-network bitrate from this device's own link: 30 Mbps on Ethernet or fast 5/6 GHz Wi-Fi, 20 on 2.4 GHz /
+    // slow / unknown links. Measured 2026-10-16: the home Mi stick (2.4 GHz, 87 Mbps link) got ~25 Mbps at a 30 Mbps
+    // ask but lost 6-9 % of packets (a glitch every ~7 s), the PS5 not backing off enough.
+    private fun lanBitrateKbps(): Int {
+        try {
+            val cm = getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+            val caps = cm.getNetworkCapabilities(cm.activeNetwork)
+            if (caps != null && caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET)) {
+                Log.i(TAG, "LAN bitrate 30 Mbps (Ethernet)"); return 30000
+            }
+            @Suppress("DEPRECATION")
+            val wi = (applicationContext.getSystemService(android.content.Context.WIFI_SERVICE) as android.net.wifi.WifiManager).connectionInfo
+            val fast = wi != null && wi.frequency >= 4900 && wi.linkSpeed >= 200
+            Log.i(TAG, "LAN bitrate ${if (fast) 30 else 20} Mbps (Wi-Fi ${wi?.frequency} MHz, link ${wi?.linkSpeed} Mbps)")
+            return if (fast) 30000 else 20000
+        } catch (e: Exception) { Log.w(TAG, "link check: $e"); return 20000 }
     }
 
     private fun canGoRemote() = !intent.getStringExtra(EXTRA_PSN_TOKEN).isNullOrEmpty() && !intent.getStringExtra(EXTRA_DUID).isNullOrEmpty()
