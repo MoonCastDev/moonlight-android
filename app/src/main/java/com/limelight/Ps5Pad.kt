@@ -23,25 +23,29 @@ object Ps5Pad {
     private const val PAD_PORT = 8099
     @Volatile private var running = false
     @Volatile private var sock: Socket? = null
-    @Volatile private var host: String? = null
+    @Volatile private var thread: Thread? = null
 
     fun start(session: Session) {
+        stop()   // never leave a previous relay thread running
         val h = PhoneGamepad.phoneHost() ?: return
-        host = h
         running = true
-        Thread({ run(session, h) }, "ps5-pad").start()
+        thread = Thread({ run(session, h) }, "ps5-pad").also { it.start() }
     }
 
     fun stop() {
         running = false
         try { sock?.close() } catch (e: Exception) {}
+        try { thread?.interrupt() } catch (e: Exception) {}
+        thread = null
     }
 
     private fun run(session: Session, h: String) {
+        var backoff = 1000L
         while (running) {
-            try { session(session, h) } catch (e: Exception) { Log.w(TAG, "pad link: $e") }
+            try { session(session, h); backoff = 1000L } catch (e: Exception) { Log.w(TAG, "pad link: $e") }
             if (!running) break
-            try { Thread.sleep(1000) } catch (e: InterruptedException) { break }
+            try { Thread.sleep(backoff) } catch (e: InterruptedException) { break }
+            if (backoff < 8000L) backoff += 1000L   // the phone may not be reachable; don't busy-loop
         }
     }
 

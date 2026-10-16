@@ -37,6 +37,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
 
     private var session: Session? = null
     private var started = false
+    @Volatile private var closed = false
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
@@ -78,26 +79,27 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
             }
         } catch (e: Exception) { Log.w(TAG, "wake: $e") }
         var attempt = 0
-        while (started && attempt < 8) {
+        while (!closed && attempt < 8) {
             try {
                 val s = Session(connectInfo(), null, false)
                 s.eventCallback = { ev -> onEvent(ev) }
                 s.setSurface(surface)
                 val err = s.start()
+                if (closed) { try { s.stop(); s.dispose() } catch (e: Exception) {}; return }  // torn down mid-connect
                 if (err.isSuccess) {
                     session = s
                     Ps5Pad.start(s)   // phone drives the controller
                     return
                 }
                 Log.w(TAG, "start attempt ${attempt + 1} failed: $err")
-                try { s.dispose() } catch (e: Exception) {}
+                try { s.dispose() } catch (e: Exception) {}   // always release the native session so none linger on the PS5
             } catch (e: Exception) {
                 Log.w(TAG, "connect attempt ${attempt + 1}: $e")
             }
             attempt++
             try { Thread.sleep(3000) } catch (e: InterruptedException) { break }  // console still waking
         }
-        if (session == null) { Log.e(TAG, "PS5 did not connect"); runOnUiThread { finish() } }
+        if (session == null && !closed) { Log.e(TAG, "PS5 did not connect"); runOnUiThread { finish() } }
     }
 
     // chiaki's wake credential = the registration key's ASCII (up to the null pad) parsed as a hex ULong.
@@ -110,15 +112,23 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
     private fun onEvent(ev: Event) {
         when (ev) {
             is ConnectedEvent -> Log.i(TAG, "PS5 connected")
-            is QuitEvent -> { Log.i(TAG, "PS5 quit: ${ev.reasonString}"); runOnUiThread { finish() } }
+            is QuitEvent -> {
+                Log.i(TAG, "PS5 quit: ${ev.reasonString}")
+                closed = true
+                Ps5Pad.stop()
+                session?.let { try { it.dispose() } catch (e: Exception) {} }   // clear the session on the PS5
+                session = null
+                runOnUiThread { finish() }
+            }
             else -> {}
         }
     }
 
     override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, ht: Int) {}
-    override fun surfaceDestroyed(holder: SurfaceHolder) { session?.setSurface(null) }
+    override fun surfaceDestroyed(holder: SurfaceHolder) { if (!closed) session?.setSurface(null) }
 
     override fun onDestroy() {
+        closed = true
         Ps5Pad.stop()
         session?.let { try { it.stop(); it.dispose() } catch (e: Exception) {} }
         session = null
