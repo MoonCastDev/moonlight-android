@@ -32,6 +32,10 @@ public class PhoneLink {
     public interface Listener {
         void onIncoming(String title, String from);
         void onConsolesChanged();
+        /** The Odin started registering a PlayStation through this TV. */
+        default void onRegistering(String host) { }
+        /** Registration finished: the console's name, or null if it failed. */
+        default void onRegistered(String host, String name) { }
     }
 
     private final Context ctx;
@@ -123,8 +127,9 @@ public class PhoneLink {
             } else if ("POST".equals(method) && path.startsWith("/register")) {
                 // Register a PlayStation (the PIN "Link Device" flow): host + PSN account id (base64) + 8-digit pin.
                 String json = readBody(in, clen, 2048);
+                String host = field(json, "host");
+                main.post(() -> listener.onRegistering(host));
                 try {
-                    String host = field(json, "host");
                     byte[] accountId = android.util.Base64.decode(field(json, "accountId"), android.util.Base64.DEFAULT);
                     int pin = Integer.parseInt(field(json, "pin").trim());
                     boolean isPs5 = !"false".equalsIgnoreCase(field(json, "ps5"));
@@ -132,12 +137,17 @@ public class PhoneLink {
                     if (r != null) {
                         Ps5Store.INSTANCE.save(ctx, new Ps5Store.Console(host, r.getNickname() == null ? "PS5" : r.getNickname(),
                                 r.getRegistKeyHex(), r.getMorningHex(), isPs5));
-                        main.post(listener::onConsolesChanged);
+                        final String nick = r.getNickname() == null ? "PS5" : r.getNickname();
+                        main.post(() -> { listener.onConsolesChanged(); listener.onRegistered(host, nick); });
                         send(s, 200, "{\"ok\":1,\"registKey\":\"" + r.getRegistKeyHex() + "\",\"morning\":\""
                                 + r.getMorningHex() + "\",\"nickname\":" + quote(r.getNickname()) + "}");
                     }
-                    else send(s, 400, "{\"error\":\"registration failed - check the 8-digit code and that the console is on\"}");
+                    else {
+                        main.post(() -> listener.onRegistered(host, null));
+                        send(s, 400, "{\"error\":\"registration failed - check the 8-digit code and that the console is on\"}");
+                    }
                 } catch (Exception e) {
+                    main.post(() -> listener.onRegistered(host, null));
                     send(s, 400, "{\"error\":\"bad register request\"}");
                 }
             } else {

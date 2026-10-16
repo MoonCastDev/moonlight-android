@@ -73,6 +73,8 @@ class Tv(val ctx: Context, val oled: Boolean) {
             includeFontPadding = false
             if (lines > 0) { maxLines = lines; ellipsize = android.text.TextUtils.TruncateAt.END }
             setLineSpacing(0f, 1.12f)
+            // without font padding the last line's descenders (g, y, p) get cut on wrapped text
+            if (lines != 1) setPadding(0, 0, 0, px(size.toFloat() * 0.18f))
         }
 
     // ---- surfaces ----

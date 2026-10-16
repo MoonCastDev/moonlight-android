@@ -528,8 +528,10 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         col.addView(ScrollView(this).apply {
             isVerticalScrollBarEnabled = false; isFocusable = false; clipToPadding = false
             setPadding(tv.px(24), tv.px(24), tv.px(24), tv.px(24))
-            addView(grid)
-        }, LinearLayout.LayoutParams(-1, 0, 1f).apply { leftMargin = -tv.px(24); rightMargin = -tv.px(24); topMargin = -tv.px(24) })
+            // the grid gets the padding, not just the scroll view: ScrollView scrolls a focused cover flush to
+            // its top edge, which cut off the top of the ring on the first row
+            addView(grid.apply { setPadding(0, tv.px(12), 0, tv.px(12)); clipToPadding = false })
+        }, LinearLayout.LayoutParams(-1, 0, 1f).apply { leftMargin = -tv.px(24); rightMargin = -tv.px(24); topMargin = -tv.px(36) })
         return col
     }
 
@@ -972,8 +974,64 @@ class HomeActivity : Activity(), PhoneLink.Listener {
 
     private fun addConsole() {
         if (pcs.values.any { !paired(it) && online(it) }) { go(Tab.CONSOLES); return }
-        confirm("Add a console", "PCs running Sunshine on your network appear here by themselves. A PS5 is registered from MoonCast on your Odin, then shows up here.",
-                "Add a PC by address") { addPcByAddress() }
+        val card = dialogCard()
+        card.addView(tv.text("Add a console", 40, tv.p.moon, tv.display(700)))
+        card.addView(tv.text("PCs running Sunshine on your network appear here by themselves. A PlayStation is registered once from MoonCast on your Odin.",
+                22, tv.p.dust, tv.ui(500), 4), tv.lp(-1, -2).apply { topMargin = tv.px(12); bottomMargin = tv.px(28) })
+        card.addView(tv.row().apply {
+            addView(tv.pill("Register a PS5", "A", true) { hideOverlay(); showRegister() }.apply { tag = "primary" })
+            addView(tv.pill("Add a PC by address", null, false) { hideOverlay(); addPcByAddress() })
+        })
+        showOverlay("confirm", FrameLayout(this).apply { addView(card, tv.flp(1000, -2, Gravity.CENTER)) })
+    }
+
+    /** The PS5 is registered from the Odin (it has the PSN sign-in); this TV shows the steps and waits for it. */
+    private var registerStatus: TextView? = null
+    private fun showRegister() {
+        val v = tv.row(Gravity.TOP).apply { setPadding(tv.px(96), tv.px(200), tv.px(96), 0) }
+        val left = tv.col()
+        left.addView(tv.row().apply { addView(tv.status("Add a PlayStation", "rest")) })
+        left.addView(tv.text("Register it\nfrom your Odin", 72, tv.p.moon, tv.display(700), 2), tv.lp(-2, -2).apply { topMargin = tv.px(28) })
+        left.addView(tv.text("The Odin has your PlayStation sign-in. Once it registers the PS5 through this TV, the console appears here.",
+                27, tv.p.soft, tv.ui(500), 3), tv.lp(900, -2).apply { topMargin = tv.px(22) })
+        registerStatus = tv.text("Waiting for your Odin. B cancels.", 24, tv.p.dust, tv.ui(600))
+        left.addView(tv.row().apply {
+            addView(View(this@HomeActivity).apply { background = tv.round(Tv.CORONA, 7) }, tv.lp(14, 14).apply { rightMargin = tv.px(14) })
+            addView(registerStatus)
+        }, tv.lp(-2, -2).apply { topMargin = tv.px(40) })
+        v.addView(left, LinearLayout.LayoutParams(0, -2, 1f))
+        val steps = tv.col().apply { background = tv.round(tv.p.deep, 24, tv.p.line, 1); setPadding(tv.px(40), tv.px(36), tv.px(40), tv.px(24)) }
+        steps.addView(tv.text("Steps", 26, tv.p.moon, tv.display(600)))
+        listOf("On the PS5, open Settings, System, Remote Play and choose Link device",
+                "In MoonCast on your Odin, open the PlayStation and choose Register, with this TV as the screen",
+                "Type the 8-digit code the PS5 shows").forEachIndexed { i, st ->
+            steps.addView(tv.row(Gravity.TOP).apply {
+                if (i > 0) background = topLine()
+                setPadding(0, tv.px(18), 0, tv.px(18))
+                addView(tv.text("${i + 1}", 17, tv.p.moon, tv.display(700)).apply { gravity = Gravity.CENTER; background = tv.round(tv.p.raise, 20, tv.p.line, 1) },
+                        tv.lp(40, 40).apply { rightMargin = tv.px(18) })
+                addView(tv.text(st, 23, tv.p.soft, tv.ui(500), 3), LinearLayout.LayoutParams(0, -2, 1f))
+            })
+        }
+        v.addView(steps, tv.lp(680, -2))
+        showOverlay("register", v, dim = false)
+    }
+
+    override fun onRegistering(host: String) {
+        if (overlayKind != "register") showRegister()
+        registerStatus?.text = "Registering with the PS5 at $host…"
+    }
+
+    override fun onRegistered(host: String, name: String?) {
+        if (name == null) {
+            if (overlayKind == "register") registerStatus?.text = "That didn't work. Check the 8-digit code and that the PS5 is on, then try again on the Odin."
+            return
+        }
+        if (overlayKind == "register") hideOverlay()
+        toast("$name added")
+        consoles = Ps5Store.all(this)
+        tab = Tab.CONSOLES
+        open("ps:$host")
     }
 
     private fun addPcByAddress() = startActivity(Intent(this, AddComputerManually::class.java))
