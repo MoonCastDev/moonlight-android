@@ -83,6 +83,11 @@ object Ps5Pad {
             val bt = DoubleArray(17); val ax = DoubleArray(4)
             for (i in 0 until 17) if (b != null && i < b.length()) bt[i] = b.optDouble(i, 0.0)
             for (i in 0 until 4) if (a != null && i < a.length()) ax[i] = a.optDouble(i, 0.0)
+            // Combos for the buttons an Xbox-style pad lacks (its Guide button is grabbed by the launcher):
+            //   Select + Start -> PS (home),  L2 + Start -> Touchpad click.
+            val select = bt[8] > .5; val start = bt[9] > .5; val l2held = bt[6] > .5
+            val psCombo = select && start
+            val tpCombo = l2held && start && !select
             var flags = 0u
             if (bt[0] > .5) flags = flags or ControllerState.BUTTON_CROSS
             if (bt[1] > .5) flags = flags or ControllerState.BUTTON_MOON
@@ -90,15 +95,16 @@ object Ps5Pad {
             if (bt[3] > .5) flags = flags or ControllerState.BUTTON_PYRAMID
             if (bt[4] > .5) flags = flags or ControllerState.BUTTON_L1
             if (bt[5] > .5) flags = flags or ControllerState.BUTTON_R1
-            if (bt[8] > .5) flags = flags or ControllerState.BUTTON_SHARE
-            if (bt[9] > .5) flags = flags or ControllerState.BUTTON_OPTIONS
+            if (select && !psCombo) flags = flags or ControllerState.BUTTON_SHARE
+            if (start && !psCombo && !tpCombo) flags = flags or ControllerState.BUTTON_OPTIONS
             if (bt[10] > .5) flags = flags or ControllerState.BUTTON_L3
             if (bt[11] > .5) flags = flags or ControllerState.BUTTON_R3
             if (bt[12] > .5) flags = flags or ControllerState.BUTTON_DPAD_UP
             if (bt[13] > .5) flags = flags or ControllerState.BUTTON_DPAD_DOWN
             if (bt[14] > .5) flags = flags or ControllerState.BUTTON_DPAD_LEFT
             if (bt[15] > .5) flags = flags or ControllerState.BUTTON_DPAD_RIGHT
-            if (bt[16] > .5) flags = flags or ControllerState.BUTTON_PS
+            if (bt[16] > .5 || psCombo) flags = flags or ControllerState.BUTTON_PS
+            if (tpCombo) flags = flags or ControllerState.BUTTON_TOUCHPAD
             val st = ControllerState(
                 buttons = flags,
                 l2State = (bt[6].coerceIn(0.0, 1.0) * 255).toInt().toUByte(),
