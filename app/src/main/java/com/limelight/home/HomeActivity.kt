@@ -119,6 +119,8 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         PhoneLinkService.listener = this
         if (overlayKind == "incoming") hideOverlay()
         consoles = Ps5Store.all(this)
+        xboxes = Xbox.consoles(this)
+        refreshXboxes()
         startPolling()
         ui.post(tick)
         render(force = true)
@@ -334,12 +336,14 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         append(tab).append(detail).append(filter)
         pcs.values.forEach { append(it.uuid).append(it.state).append(it.pairState).append(it.runningGameId).append(apps[it.uuid]?.size) }
         consoles.forEach { append(it.host).append(it.name).append(psStatus[it.host]?.power).append(psStatus[it.host]?.runningApp) }
+        xboxes.forEach { append(it.id).append(it.name).append(it.powerState) }
     }
 
     private fun page(): View {
         detail?.let { d ->
             if (d.startsWith("pc:")) pcs[d.removePrefix("pc:")]?.let { return pcPage(it) }
             if (d.startsWith("ps:")) consoles.firstOrNull { it.host == d.removePrefix("ps:") }?.let { return psPage(it) }
+            if (d.startsWith("xb:")) xboxes.firstOrNull { it.id == d.removePrefix("xb:") }?.let { return xbPage(it) }
             detail = null
         }
         return when (tab) {
@@ -421,6 +425,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
 
     private fun shelfItems(): List<View> =
         consoles.map { consoleCard(psCardInfo(it), "ps:${it.host}") { open("ps:${it.host}") } } +
+        xboxes.map { consoleCard(xbCardInfo(it), "xb:${it.id}") { open("xb:${it.id}") } } +
         pcs.values.map { consoleCard(pcCardInfo(it), "pc:${it.uuid}") { open("pc:${it.uuid}") } } +
         listOf(addCard())
 
@@ -798,6 +803,85 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                         "Buttons your pad doesn't have", listOf("PS button" to "L2 + Start", "Touchpad" to "Select + Start")))
     }
 
+    // ---------------------------------------------------------------- Xbox
+
+    private var xboxes: List<Xbox.Console> = emptyList()
+
+    private fun refreshXboxes(loud: Boolean = false) {
+        if (!Xbox.signedIn(this)) return
+        Thread {
+            val r = try { Xbox.refreshConsoles(this) } catch (e: Exception) { null }
+            runOnUiThread {
+                if (r != null) { xboxes = r; render(force = true) }
+                if (loud) toast(when { r == null -> "Couldn't reach Xbox network"; r.isEmpty() -> "No Xbox on this account"
+                    else -> "Found " + r.joinToString { it.name } })
+            }
+        }.start()
+    }
+
+    private fun xbCardInfo(c: Xbox.Console): CardInfo {
+        val on = c.powerState.equals("On", true)
+        return CardInfo("XB", 0xFF107C10.toInt(), c.name, if (on) "On" else "Wakes when you play",
+                listOf((if (on) "On" else if (c.powerState.isBlank()) "Xbox" else "Asleep") to (if (on) "live" else "rest")))
+    }
+
+    private fun xbPage(c: Xbox.Console): View {
+        val on = c.powerState.equals("On", true)
+        val actions = listOf(
+                tv.pill(if (on) "Play" else "Wake and play", "A", true) { playXbox(c) }.apply { tag = "primary" },
+                tv.pill("Wake only", null, false) {
+                    Thread { val ok = try { Xbox.wake(this, c.id); true } catch (e: Exception) { false }
+                        runOnUiThread { toast(if (ok) "Waking ${c.name}" else "Couldn't wake ${c.name}") } }.start() }.apply { tag = "wake" })
+        return detailShell("XB", 0xFF107C10.toInt(), c.name,
+                (if (on) "On. " else "") + "Play opens Xbox Remote Play on this TV, at home or away, through Xbox network.",
+                listOf((if (on) "On" to "live" else "Asleep" to "rest"), "Signed in" to ""), actions,
+                panel("Stream", listOf("Route" to "Xbox network", "Picture" to "60 fps, set by this TV's link", "Type" to c.type,
+                        "Controller" to "A pad on this TV"), "Buttons", listOf("Xbox button" to "Quick menu, Xbox button")))
+    }
+
+    private fun playXbox(c: Xbox.Console) = startActivity(Intent(this, com.limelight.XboxStreamActivity::class.java)
+            .putExtra(com.limelight.XboxStreamActivity.EXTRA_CONSOLE_ID, c.id).putExtra(com.limelight.XboxStreamActivity.EXTRA_NAME, c.name))
+
+    /** Microsoft's device-code sign-in: the TV shows a code, you type it at microsoft.com/link on a phone. */
+    private fun xboxSignIn() {
+        val card = dialogCard()
+        card.addView(tv.text("Sign in to Xbox", 40, tv.p.moon, tv.display(700)))
+        val sub = tv.text("Getting a code…", 24, tv.p.dust, tv.ui(500), 3)
+        card.addView(sub, tv.lp(-1, -2).apply { topMargin = tv.px(12) })
+        val code = tv.text("", 88, tv.p.moon, tv.display(700)).apply { letterSpacing = 0.12f }
+        card.addView(code, tv.lp(-2, -2).apply { topMargin = tv.px(28); bottomMargin = tv.px(28) })
+        card.addView(tv.row().apply { addView(tv.pill("Cancel", "B", false) { hideOverlay() }.apply { tag = "primary" }) })
+        showOverlay("xbox", FrameLayout(this).apply { addView(card, tv.flp(1000, -2, Gravity.CENTER)) })
+        Thread {
+            try {
+                val dc = Xbox.startSignIn()
+                runOnUiThread {
+                    sub.text = "On your phone, open ${dc.url.removePrefix("https://").removePrefix("www.")} and enter this code. " +
+                            "Then sign in with your Xbox account."
+                    code.text = dc.userCode
+                }
+                val end = System.currentTimeMillis() + dc.expiresIn * 1000L
+                while (System.currentTimeMillis() < end && overlayKind == "xbox") {
+                    Thread.sleep(dc.interval * 1000L)
+                    if (overlayKind != "xbox") return@Thread
+                    if (Xbox.pollSignIn(this, dc)) {
+                        val list = try { Xbox.refreshConsoles(this) } catch (e: Exception) { emptyList() }
+                        runOnUiThread {
+                            xboxes = list
+                            if (overlayKind == "xbox") hideOverlay()
+                            toast("Signed in to Xbox" + (Xbox.gamertag(this)?.let { " as $it" } ?: "") +
+                                    if (list.isEmpty()) ". No console found yet" else ". Found " + list.joinToString { it.name })
+                        }
+                        return@Thread
+                    }
+                }
+                runOnUiThread { if (overlayKind == "xbox") { sub.text = "The code expired. Press B and try again."; code.text = "" } }
+            } catch (e: Exception) {
+                runOnUiThread { if (overlayKind == "xbox") sub.text = "Sign-in didn't work: ${e.message?.take(120) ?: e.javaClass.simpleName}" }
+            }
+        }.start()
+    }
+
     // ---------------------------------------------------------------- Settings
 
     private var settingsGroup = "video"
@@ -806,7 +890,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
     private fun settingsPage(): View {
         hints("A" to "Change", "LB" to "Previous tab", "RB" to "Next tab", "|" to "", "B" to "Back")
         val groups = listOf("video" to "Video", "audio" to "Audio", "pads" to "Controllers", "ps" to "PlayStation",
-                "mk" to "Mouse and keyboard", "screen" to "Screen", "about" to "About and help")
+                "xbox" to "Xbox", "mk" to "Mouse and keyboard", "screen" to "Screen", "about" to "About and help")
         val row = tv.row(Gravity.TOP)
         val nav = tv.col()
         groups.forEachIndexed { i, (k, label) ->
@@ -899,6 +983,20 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                 toggle(list, "ps5_dpad_touchpad", "D-pad as touchpad", "Hold Select and use the D-pad to swipe on the PS5's touchpad", false)
                 info(list, "PS button", "L2 + Start")
                 info(list, "Touchpad", "Select + Start")
+            }
+            "xbox" -> {
+                if (Xbox.signedIn(this)) action(list, "set:xbox", "Xbox network",
+                        "Signed in" + (Xbox.gamertag(this)?.let { " as $it" } ?: "") + ". Your consoles show under Consoles", "Sign out") {
+                    confirm("Sign out of Xbox?", "Your Xbox consoles leave this TV until you sign in again.", "Sign out") {
+                        Xbox.signOut(this); xboxes = emptyList(); render(force = true) } }
+                else action(list, "set:xbox", "Xbox network", "Sign in once to play your Xbox on this TV, at home or away", "Sign in") { xboxSignIn() }
+                if (Xbox.signedIn(this)) {
+                    action(list, "set:xbref", "Find my consoles", if (xboxes.isEmpty()) "None found yet" else xboxes.joinToString { it.name }, null) {
+                        refreshXboxes(true) }
+                    info(list, "On the Xbox", "Settings, Devices and connections, Remote features: on. Power mode: Sleep")
+                }
+                info(list, "Frame rate", "60 fps")
+                info(list, "Quick menu", QuickMenu.COMBO_LABEL + ", or Back on the TV remote")
             }
             "mk" -> {
                 toggle(list, "checkbox_absolute_mouse_mode", "Remote-desktop mouse", "The pointer goes exactly where your mouse is, for desktop use", false)
