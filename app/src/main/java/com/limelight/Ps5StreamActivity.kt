@@ -31,6 +31,10 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
         const val EXTRA_REGIST_KEY = "ps5_regist_key"   // hex, 16 bytes
         const val EXTRA_MORNING = "ps5_morning"          // hex, 16 bytes
         const val EXTRA_PS5 = "ps5_is_ps5"
+        // Remote Play over the internet (PSN hole-punch): sent by the phone, used when the console isn't on this LAN
+        const val EXTRA_PSN_TOKEN = "ps5_psn_token"
+        const val EXTRA_DUID = "ps5_duid"                  // the console's PSN device id (hex)
+        const val EXTRA_ACCOUNT_ID = "ps5_account_id"      // base64, 8 bytes
         fun hex(s: String): ByteArray =
             s.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
     }
@@ -47,7 +51,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
         sv.holder.addCallback(this)
     }
 
-    private fun connectInfo(): ConnectInfo {
+    private fun connectInfo(remote: Boolean): ConnectInfo {
         val host = intent.getStringExtra(EXTRA_HOST) ?: "192.168.100.126"
         val registKey = hex(intent.getStringExtra(EXTRA_REGIST_KEY) ?: "")
         val morning = hex(intent.getStringExtra(EXTRA_MORNING) ?: "")
@@ -57,8 +61,28 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
             VideoResolutionPreset.RES_1080P, VideoFPSPreset.FPS_60,
             if (ps5) Codec.CODEC_H265 else Codec.CODEC_H264
         )
-        return ConnectInfo(ps5, host, registKey, morning, profile)
+        if (!remote) return ConnectInfo(ps5, host, registKey, morning, profile)
+        val account = intent.getStringExtra(EXTRA_ACCOUNT_ID)?.let {
+            try { android.util.Base64.decode(it, android.util.Base64.DEFAULT) } catch (e: Exception) { null }
+        }
+        return ConnectInfo(ps5, host, registKey, morning, profile,
+            psnToken = intent.getStringExtra(EXTRA_PSN_TOKEN), duid = intent.getStringExtra(EXTRA_DUID), psnAccountId = account)
     }
+
+    private fun canGoRemote() = !intent.getStringExtra(EXTRA_PSN_TOKEN).isNullOrEmpty() && !intent.getStringExtra(EXTRA_DUID).isNullOrEmpty()
+
+    // Is a PlayStation answering chiaki discovery at this address on our LAN? (Also true in standby: "620 Server Standby".)
+    // A different device that happens to own the same IP on another network (e.g. JAL vs home) won't answer SRCH.
+    private fun lanConsoleAnswers(host: String, ps5: Boolean): Boolean = try {
+        java.net.DatagramSocket().use { s ->
+            s.soTimeout = 1500
+            val msg = "SRCH * HTTP/1.1\ndevice-discovery-protocol-version:${if (ps5) "00030010" else "00020020"}\n".toByteArray()
+            s.send(java.net.DatagramPacket(msg, msg.size, java.net.InetAddress.getByName(host), if (ps5) 9302 else 987))
+            val buf = ByteArray(1024); val p = java.net.DatagramPacket(buf, buf.size)
+            s.receive(p)
+            String(buf, 0, p.length).startsWith("HTTP/1.1")
+        }
+    } catch (e: Exception) { false }
 
     override fun surfaceCreated(holder: SurfaceHolder) {
         if (started) { session?.setSurface(holder.surface); return }
@@ -71,7 +95,11 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
     private fun connect(surface: android.view.Surface) {
         val host = intent.getStringExtra(EXTRA_HOST) ?: "192.168.100.126"
         val ps5 = intent.getBooleanExtra(EXTRA_PS5, true)
-        try {
+        // LAN if the console answers here; otherwise over the internet via PSN (no VPN / no port-forward) when the
+        // phone sent a PSN token. PSN wakes the console itself when the session starts.
+        val remote = !lanConsoleAnswers(host, ps5) && canGoRemote()
+        Log.i(TAG, if (remote) "console not on this LAN -> Remote Play via PSN" else "console on LAN ($host)")
+        if (!remote) try {
             val cred = wakeCredential(hex(intent.getStringExtra(EXTRA_REGIST_KEY) ?: ""))
             if (cred != null) {
                 Log.i(TAG, "waking $host")
@@ -79,9 +107,10 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
             }
         } catch (e: Exception) { Log.w(TAG, "wake: $e") }
         var attempt = 0
-        while (!closed && attempt < 8) {
+        val maxAttempts = if (remote) 3 else 8   // a hole-punch attempt already takes several seconds
+        while (!closed && attempt < maxAttempts) {
             try {
-                val s = Session(connectInfo(), null, false)
+                val s = Session(connectInfo(remote), null, false)
                 s.eventCallback = { ev -> onEvent(ev) }
                 s.setSurface(surface)
                 val err = s.start()
