@@ -107,6 +107,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        Profile.syncPcSettings(this)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         tv = Tv(this, prefs.getBoolean("oled", false))
         buildShell()
@@ -322,6 +323,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
 
     /** Rebuild the current page when something visible changed, keeping focus on the same item. */
     private fun render(force: Boolean = false, focusContent: Boolean = true) {
+        Profile.syncPcSettings(this)
         val sig = signature()
         if (!force && sig == lastSig) return
         lastSig = sig

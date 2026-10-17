@@ -145,6 +145,7 @@ class HandheldHomeActivity : Activity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        Profile.syncPcSettings(this)
         applyRotation()
         // a handheld streams at its own screen size unless you chose one (Moonlight's default is 720p);
         // a resolution saved earlier, in either of Moonlight's keys, is left alone
@@ -522,6 +523,7 @@ class HandheldHomeActivity : Activity() {
 
     /** Rebuild the page when something visible changed, keeping focus on the same item. */
     private fun render(force: Boolean = false) {
+        Profile.syncPcSettings(this)
         val sig = signature()
         if (!force && sig == lastSig) return
         lastSig = sig

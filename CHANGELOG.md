@@ -1,5 +1,8 @@
 # Changelog
 
+## 12.2-test161 (2026-10-17)
+- Profiles keep their own PC video settings (resolution, frame rate, bitrate, codec). Switching the General profile saves the current values into the profile being left and loads the saved values for the new one. Auto uses Home for the PC, which only streams on the home network. Xbox settings are not profile-specific yet.
+
 ## 12.2-test160 (2026-10-17)
 - Handheld: Native resolution is now the largest 16:9 size that fits the screen (Retroid Pocket 1240x1080 gives 1240x696), so widescreen games fill the screen instead of leaving black bars.
 
