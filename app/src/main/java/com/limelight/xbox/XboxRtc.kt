@@ -650,7 +650,20 @@ class XboxRtc(
                     rtt = ((m["currentRoundTripTime"] as? Number)?.toDouble() ?: -0.001) * 1000.0
             }
             if (fps > 0 || mbps > 0) videoFlowing = true
-            else if (!videoFlowing && statsLogs++ < 12) {
+            else if (!videoFlowing && statsLogs == 0) {
+                // once: what libwebrtc actually negotiated on the video receiver, and which stats it reports at all
+                statsLogs++
+                report.statsMap.values.forEach { st ->
+                    Log.i(TAG, "stats type=${st.type} id=${st.id} keys=${st.members.keys.joinToString()}")
+                }
+                p.transceivers.filter { it.mediaType == MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO }.forEach { t ->
+                    val rp = t.receiver.parameters
+                    Log.i(TAG, "recv codecs: " + rp.codecs.joinToString { "${it.name}/pt=${it.payloadType} ${it.parameters}" })
+                    Log.i(TAG, "recv encodings ssrc: " + rp.encodings.joinToString { "${it.ssrc}" })
+                }
+            }
+            if (!videoFlowing && statsLogs in 1..12 && fps <= 0 && mbps <= 0) {
+                statsLogs++
                 // diagnostics while the picture is missing: is any video RTP arriving at all?
                 val vid = report.statsMap.values.filter { it.type == "inbound-rtp" && it.members["kind"] == "video" }
                 val v = vid.firstOrNull()?.members
