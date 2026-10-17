@@ -24,7 +24,7 @@ import android.widget.TextView
  * Everything is sized in "design pixels" on a 1920-wide canvas and scaled to the real screen, so a 720p stick and a
  * 4K TV show the same layout. OLED mode swaps to true black, drops large white fills and dims the static chrome.
  */
-class Tv(val ctx: Context, val oled: Boolean) {
+class Tv @JvmOverloads constructor(val ctx: Context, val oled: Boolean, designW: Int = 1920, designH: Int = 0) {
     class Palette(val night: Int, val deep: Int, val raise: Int, val line: Int, val moon: Int, val dust: Int, val soft: Int)
 
     companion object {
@@ -43,7 +43,12 @@ class Tv(val ctx: Context, val oled: Boolean) {
     }
 
     val p = if (oled) OLED else STANDARD
-    private val scale = ctx.resources.displayMetrics.widthPixels.coerceAtLeast(1) / 1920f
+    // TV screens are 16:9, so width alone sets the scale. The handheld passes a design height too and fits both,
+    // so a 20:9 phone or a portrait screen keeps the whole layout on screen.
+    private val scale = ctx.resources.displayMetrics.let { m ->
+        val byW = m.widthPixels.coerceAtLeast(1) / designW.toFloat()
+        if (designH > 0) minOf(byW, m.heightPixels.coerceAtLeast(1) / designH.toFloat()) else byW
+    }
 
     /** design px (1920-wide canvas) -> real px */
     fun px(v: Number): Int = Math.round(v.toFloat() * scale)

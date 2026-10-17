@@ -139,6 +139,15 @@ class FocusGlide(private val host: FrameLayout) : View(host.context) {
     var outset = 0f
     var ghost = false
     var duration = 190L
+    /**
+     * Handheld (Switch) style: a band of [gapWidth] px in [gapColor] inside the ring, so the ring reads as a double
+     * ring standing off the item. 0 (the TV) draws the single ring only.
+     */
+    var gapWidth = 0f
+    var gapColor = 0
+    /** The ring breathes slowly between its colour and halfway to [gapColor] (handheld style). Off on the TV. */
+    var breathe = false
+        set(v) { field = v; if (v) startBreath() else { breath?.cancel(); breath = null; paint.color = strokeColor; invalidate() } }
     /** Return false for views the glide should leave alone (text fields, etc.). */
     var accept: (View) -> Boolean = { true }
 
@@ -150,6 +159,9 @@ class FocusGlide(private val host: FrameLayout) : View(host.context) {
     private var target: View? = null
     private var anim: ValueAnimator? = null
     private var shown = false
+    private var breath: ValueAnimator? = null
+    private var popScale = 1f
+    private val gapPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
 
     private val focusListener = ViewTreeObserver.OnGlobalFocusChangeListener { _, new -> moveTo(new) }
     private val follow = ViewTreeObserver.OnScrollChangedListener { track() }
@@ -180,7 +192,43 @@ class FocusGlide(private val host: FrameLayout) : View(host.context) {
             vto.removeOnGlobalLayoutListener(layoutFollow)
         }
         anim?.cancel()
+        breath?.cancel(); breath = null
         (parent as? ViewGroup)?.removeView(this)
+    }
+
+    private fun startBreath() {
+        breath?.cancel(); breath = null
+        if (reduced()) return
+        breath = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 900
+            repeatMode = ValueAnimator.REVERSE
+            repeatCount = ValueAnimator.INFINITE
+            addUpdateListener { a ->
+                paint.color = mix(strokeColor, gapColor, (a.animatedValue as Float) * 0.5f)
+                if (shown) invalidate()
+            }
+            start()
+        }
+    }
+
+    private fun mix(a: Int, b: Int, t: Float): Int {
+        fun ch(x: Int, s: Int) = (x shr s) and 0xFF
+        fun lerp(s: Int) = (ch(a, s) + (ch(b, s) - ch(a, s)) * t).toInt() and 0xFF
+        return (0xFF shl 24) or (lerp(16) shl 16) or (lerp(8) shl 8) or lerp(0)
+    }
+
+    /** The select answer: the ring swells a little and settles (360 ms). */
+    fun pop() {
+        if (!shown || reduced()) return
+        ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 360
+            addUpdateListener { a ->
+                val t = a.animatedValue as Float
+                popScale = 1f + 0.05f * (if (t < 0.3f) t / 0.3f else (1f - t) / 0.7f)
+                invalidate()
+            }
+            start()
+        }
     }
 
     /** Keep the overlay the last child, after something else was added to the host. */
@@ -266,7 +314,15 @@ class FocusGlide(private val host: FrameLayout) : View(host.context) {
         if (!shown) return
         val r = radius.coerceAtMost(cur.height() / 2f)
         val half = strokeWidth / 2f
+        if (popScale != 1f) { c.save(); c.scale(popScale, popScale, cur.centerX(), cur.centerY()) }
         c.drawRoundRect(cur.left + half, cur.top + half, cur.right - half, cur.bottom - half, r, r, paint)
+        if (gapWidth > 0f) {
+            gapPaint.color = gapColor; gapPaint.strokeWidth = gapWidth
+            val g = strokeWidth + gapWidth / 2f
+            val gr = (r - strokeWidth).coerceAtLeast(0f)
+            c.drawRoundRect(cur.left + g, cur.top + g, cur.right - g, cur.bottom - g, gr, gr, gapPaint)
+        }
+        if (popScale != 1f) c.restore()
     }
 }
 
