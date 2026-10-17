@@ -1050,7 +1050,7 @@ class HandheldHomeActivity : Activity() {
                 val presets = listOf("720p" to "1280x720", "1080p" to "1920x1080", "1440p" to "2560x1440", "4K" to "3840x2160")
                 choice(list, stream, "list_resolution", "Resolution", "Native is this screen: ${native.replace("x", " × ")}",
                         if (presets.any { it.second == native }) presets else presets + ("Native" to native), "1280x720")
-                choice(list, stream, "list_fps", "Frame rate", "MoonCast streams at 60 unless you raise it", listOf("60" to "60", "90" to "90", "120" to "120"), "60")
+                choice(list, stream, "list_fps", "Frame rate", "60 is the smoothest. 30 uses less data and battery", listOf("30" to "30", "60" to "60", "90" to "90", "120" to "120"), "60")
                 bitrate(list)
                 choice(list, stream, "video_format", "Video codec", "H.265 and AV1 look better at the same bitrate",
                         listOf("Auto" to "auto", "H.264" to "neverh265", "H.265" to "forceh265", "AV1" to "forceav1"), "auto")
