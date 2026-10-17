@@ -17,9 +17,17 @@
 
     <!-- Application theme. -->
     <style name="AppTheme" parent="AppBaseTheme">
-        <!-- All customizations that are NOT specific to a particular API-level can go here. -->
+        <!-- MoonCast TV identity: lunar night-sky, copper-eclipse accent, moonlight text -->
         <item name="android:windowActionBar">false</item>
         <item name="android:windowNoTitle">true</item>
+        <item name="android:windowBackground">@drawable/mc_bg</item>
+        <item name="android:colorAccent">@color/mc_eclipse</item>
+        <item name="android:colorPrimary">@color/mc_void</item>
+        <item name="android:colorPrimaryDark">@color/mc_void</item>
+        <item name="android:textColorPrimary">@color/mc_silver</item>
+        <item name="android:textColorSecondary">@color/mc_dust</item>
+        <item name="android:statusBarColor">@color/mc_void</item>
+        <item name="android:navigationBarColor">@color/mc_void</item>
     </style>
 
     <style name="StreamBaseTheme" parent="AppBaseTheme">

@@ -1036,6 +1036,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     protected void onDestroy() {
         super.onDestroy();
 
+        PhoneGamepad.stop();
         if (controllerHandler != null) {
             controllerHandler.destroy();
         }
@@ -2414,6 +2415,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                 connected = true;
                 connecting = false;
                 updatePipAutoEnter();
+
+                // The phone drives this stream as the controller (native receiver flow): feed its pad into our conn.
+                PhoneGamepad.start(conn, null);
 
                 // Hide the mouse cursor now after a short delay.
                 // Doing it before dismissing the spinner seems to be undone
