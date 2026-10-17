@@ -1,5 +1,8 @@
 # Changelog
 
+## 12.2-test165 (2026-10-17)
+- PC stream Quick menu shows Decode delay (average decoder time per frame), so Ultra low latency can be compared on a device.
+
 ## 12.2-test164 (2026-10-17)
 - Handheld: a saved resolution from before the 16:9 fix moves to the new Native, so Native shows in the Resolution list again.
 - Bitrate and frame rate: picking Custom opens the number box straight away (TV and handheld). Range: 2-50 Mbps, 15-60 fps.

@@ -1379,7 +1379,8 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                 q.add(activeWindowVideoStats);
                 long rtt = MoonBridge.getEstimatedRttInfo();
                 com.limelight.home.StreamStats.update(q.getFps().renderedFps, (int)(rtt >> 32),
-                        q.totalFrames > 0 ? (float)q.framesLost / q.totalFrames * 100 : 0f, initialWidth + "x" + initialHeight);
+                        q.totalFrames > 0 ? (float)q.framesLost / q.totalFrames * 100 : 0f, initialWidth + "x" + initialHeight,
+                        q.totalFramesReceived > 0 ? (float)q.decoderTimeMs / q.totalFramesReceived : 0f);
             }
             if (prefs.enablePerfOverlay) {
                 VideoStats lastTwo = new VideoStats();

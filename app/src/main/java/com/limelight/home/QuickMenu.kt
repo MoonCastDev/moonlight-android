@@ -360,7 +360,9 @@ object StreamStats {
     @Volatile var rttMs = 0
     @Volatile var lossPct = 0f
     @Volatile var size = ""
-    @JvmStatic fun update(fps: Float, rttMs: Int, lossPct: Float, size: String) {
-        this.fps = fps; this.rttMs = rttMs; this.lossPct = lossPct; this.size = size
+    /** Average time the decoder spends on one frame, in ms. */
+    @Volatile var decodeMs = 0f
+    @JvmStatic fun update(fps: Float, rttMs: Int, lossPct: Float, size: String, decodeMs: Float) {
+        this.fps = fps; this.rttMs = rttMs; this.lossPct = lossPct; this.size = size; this.decodeMs = decodeMs
     }
 }

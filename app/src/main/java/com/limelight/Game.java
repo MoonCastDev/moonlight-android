@@ -1554,7 +1554,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                             com.limelight.home.QuickMenu.stat(String.format(java.util.Locale.US, "%.0f", com.limelight.home.StreamStats.INSTANCE.getFps()), "Frames per second"),
                             com.limelight.home.QuickMenu.stat(com.limelight.home.StreamStats.INSTANCE.getRttMs() + " ms", "Network delay"),
                             com.limelight.home.QuickMenu.stat((prefConfig.bitrate / 1000) + " Mbps", "Picture quality"),
-                            com.limelight.home.QuickMenu.stat(String.format(java.util.Locale.US, "%.1f%%", com.limelight.home.StreamStats.INSTANCE.getLossPct()), "Lost frames")),
+                            com.limelight.home.QuickMenu.stat(String.format(java.util.Locale.US, "%.1f%%", com.limelight.home.StreamStats.INSTANCE.getLossPct()), "Lost frames"),
+                            com.limelight.home.QuickMenu.stat(String.format(java.util.Locale.US, "%.1f ms", com.limelight.home.StreamStats.INSTANCE.getDecodeMs()), "Decode delay")),
                     items);
         });
     }
