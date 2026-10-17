@@ -359,7 +359,10 @@ class XboxRtc(
         }, MediaConstraints())
         l1.await(10, TimeUnit.SECONDS)
         val offer = made ?: throw IllegalStateException("Offer failed: $error")
-        val munged = SessionDescription(offer.type, capBitrate(stereo(offer.description)))
+        // The Xbox answers H.264 at profile-level-id 42e02a; libwebrtc treats 42e01f and 42e02a as one codec, so an extra
+        // entry in the codec list never reaches the offer (test151). Offer the H.264 at the level the Xbox answers.
+        val level = offer.description.replace("\r", "").replace("profile-level-id=42e01f", "profile-level-id=42e02a")
+        val munged = SessionDescription(offer.type, capBitrate(stereo(level)))
         sectionLines(munged.description, "video").forEach { Log.i(TAG, "offer $it") }
         val l2 = CountDownLatch(1)
         p.setLocalDescription(object : SdpAdapter() {
