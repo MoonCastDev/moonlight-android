@@ -7,7 +7,6 @@ import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 import org.webrtc.DataChannel
-import org.webrtc.DefaultVideoDecoderFactory
 import org.webrtc.DefaultVideoEncoderFactory
 import org.webrtc.EglBase
 import org.webrtc.IceCandidate
@@ -51,6 +50,10 @@ class XboxRtc(
     private val resolution: Int,
     private val language: String,
     private val coop: Boolean,
+    /** Settings, Xbox, Bitrate: a cap in Mbps (0 = let the Xbox decide), sent as b=AS in the offer like XStreaming. */
+    private val maxMbps: Int,
+    /** Settings, Video, Ultra low latency: Artemis' vendor decoder keys on top of Moonlight's. */
+    private val ultraLowLatency: Boolean,
     private val videoSink: VideoSink,
     private val listener: Listener,
 ) {
@@ -197,7 +200,11 @@ class XboxRtc(
             if (answer == null) Thread.sleep(1000)
         }
         if (closed) return
-        setRemote(answer!!)
+        // what the Xbox agreed to: media sections, directions and the video codec it picked
+        answer!!.replace("\r", "").split("\n").filter { it.startsWith("m=") || it == "a=sendonly" || it == "a=recvonly" ||
+                it == "a=sendrecv" || it == "a=inactive" || it.startsWith("a=rtpmap") && (it.contains("H264") || it.contains("opus")) }
+            .forEach { Log.i(TAG, "answer $it") }
+        setRemote(answer)
 
         // Local candidates (gathering finishes quickly on a LAN; don't wait forever)
         gatheringDone.await(5, TimeUnit.SECONDS)
@@ -297,7 +304,7 @@ class XboxRtc(
         }
         val adm = JavaAudioDeviceModule.builder(ctx.applicationContext).setUseStereoOutput(true).createAudioDeviceModule()
         val f = PeerConnectionFactory.builder()
-            .setVideoDecoderFactory(DefaultVideoDecoderFactory(eglBase.eglBaseContext))
+            .setVideoDecoderFactory(XboxDecoderFactory(eglBase.eglBaseContext, ultraLowLatency))
             .setVideoEncoderFactory(DefaultVideoEncoderFactory(eglBase.eglBaseContext, false, false))
             .setAudioDeviceModule(adm)
             .createPeerConnectionFactory()
@@ -345,7 +352,7 @@ class XboxRtc(
         }, MediaConstraints())
         l1.await(10, TimeUnit.SECONDS)
         val offer = made ?: throw IllegalStateException("Offer failed: $error")
-        val munged = SessionDescription(offer.type, stereo(offer.description))
+        val munged = SessionDescription(offer.type, capBitrate(stereo(offer.description)))
         val l2 = CountDownLatch(1)
         p.setLocalDescription(object : SdpAdapter() {
             override fun onSetSuccess() { l2.countDown() }
@@ -364,6 +371,20 @@ class XboxRtc(
         }, SessionDescription(SessionDescription.Type.ANSWER, sdp))
         l.await(10, TimeUnit.SECONDS)
         error?.let { throw IllegalStateException("Answer rejected: $it") }
+    }
+
+    /** XStreaming's _setBitrate: a b=AS line (kbps, Mbps x 1024) in the video section, after its i= / c= lines. */
+    private fun capBitrate(sdp: String): String {
+        if (maxMbps <= 0) return sdp
+        val lines = sdp.replace("\r", "").split("\n").toMutableList()
+        val m = lines.indexOfFirst { it.startsWith("m=video") }
+        if (m < 0) return sdp
+        var i = m + 1
+        while (i < lines.size && (lines[i].startsWith("i=") || lines[i].startsWith("c="))) i++
+        val line = "b=AS:${maxMbps * 1024}"
+        if (i < lines.size && lines[i].startsWith("b=AS:")) lines[i] = line else lines.add(i, line)
+        Log.i(TAG, "video capped at $maxMbps Mbps")
+        return lines.joinToString("\r\n")
     }
 
     /** Opus in stereo with in-band FEC, as XStreaming does (forceStereoAudio). */
@@ -394,6 +415,7 @@ class XboxRtc(
         override fun onRenegotiationNeeded() {}
         override fun onAddTrack(r: RtpReceiver, s: Array<out MediaStream>) {
             val t = r.track() ?: return
+            Log.i(TAG, "track ${t.kind()} arrived")
             work.post {
                 if (t is VideoTrack) { t.addSink(videoSink); videoTrackSeen = true } else audioTrackSeen = true
                 if (videoTrackSeen && audioTrackSeen && !keyframeAsked) { keyframeAsked = true; askKeyframe() }
@@ -444,6 +466,10 @@ class XboxRtc(
         inputStarted = true
         work.post(inputBeat)
         work.postDelayed(frameFeedback, 2000)
+        // Ask for the first picture now that the control channel is open: the request made when the tracks arrived
+        // can come before the channel opens and get lost, and then the Xbox never starts the video (test129).
+        askKeyframe()
+        work.postDelayed(keyframeWatch, 3000)
 
         listOf(
             "/streaming/systemUi/configuration" to JSONObject().put("version", JSONArray(listOf(0, 2, 0)))
@@ -463,6 +489,19 @@ class XboxRtc(
 
     private fun gamepadChanged(index: Int, added: Boolean) =
         JSONObject().put("message", "gamepadChanged").put("gamepadIndex", index).put("wasAdded", added).toString()
+
+    /** Until video flows, ask for a keyframe again every 3 s (up to 5 times). */
+    private var keyframeTries = 0
+    private val keyframeWatch = object : Runnable {
+        override fun run() {
+            if (closed || videoFlowing) return
+            if (keyframeTries++ >= 5) return
+            Log.i(TAG, "no video yet, asking for a keyframe again")
+            askKeyframe()
+            work.postDelayed(this, 3000)
+        }
+    }
+    @Volatile private var videoFlowing = false
 
     private fun askKeyframe() = sendText("control", JSONObject().put("message", "videoKeyframeRequested").put("ifrRequested", false).toString())
 
@@ -582,6 +621,7 @@ class XboxRtc(
                 if (s.type == "candidate-pair" && m["state"] == "succeeded" && m["nominated"] == true)
                     rtt = ((m["currentRoundTripTime"] as? Number)?.toDouble() ?: -0.001) * 1000.0
             }
+            if (fps > 0 || mbps > 0) videoFlowing = true
             cb(Stats(fps, rtt, mbps, loss, w, h))
         }
     }

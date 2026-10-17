@@ -84,6 +84,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
     private val apps = HashMap<String, List<NvApp>>()
     private val rawLists = HashMap<String, String>()
     private val loaders = HashMap<String, CachedAppAssetLoader>()
+    private val heroLabel by lazy { TextView(this) }   // unused label for the hero's box art (see loader())
     private val appPollers = HashMap<String, ComputerManagerService.ApplistPoller>()
 
     // PlayStation consoles the Odin registered through this TV
@@ -385,7 +386,8 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                 val app = runningApp(running)!!
                 card.addView(ImageView(this).apply {
                     scaleType = ImageView.ScaleType.CENTER_CROP
-                    loader(running).populateImageView(app, this, TextView(this@HomeActivity))
+                    // keep the label alive: the loader only holds it weakly
+                    loader(running).populateImageView(app, this, heroLabel)
                 }, tv.flp(760, -1, Gravity.END))
                 card.addView(View(this).apply {
                     background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(tv.p.deep, tv.p.deep, 0x00000000))
@@ -917,17 +919,35 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         }
         when (settingsGroup) {
             "video" -> {
-                choice(list, "list_resolution", "Resolution", "Higher is sharper and needs more bitrate",
-                        listOf("720p" to "1280x720", "1080p" to "1920x1080", "1440p" to "2560x1440", "4K" to "3840x2160"), "1280x720")
+                // Native: this screen's real panel size (its display mode), as in Moonlight/Artemis' "Native (WxH)"
+                val native = nativeResolution()
+                val presets = listOf("720p" to "1280x720", "1080p" to "1920x1080", "1440p" to "2560x1440", "4K" to "3840x2160")
+                choice(list, "list_resolution", "Resolution",
+                        "Higher is sharper and needs more bitrate. Native is this screen: ${native.replace("x", " × ")}",
+                        if (presets.any { it.second == native }) presets else presets + ("Native" to native), "1280x720")
+                val res = stream.getString("list_resolution", "1280x720") ?: "1280x720"
+                val customRes = res !in listOf("1280x720", "1920x1080", "2560x1440", "3840x2160", nativeResolution())
+                action(list, "set:customres", "Custom resolution", "Any size, for example this TV's exact panel. Sunshine scales to it",
+                        if (customRes) res.replace("x", " × ") else "Off") { customResolution(res, customRes) }
                 choice(list, "list_fps", "Frame rate", "MoonCast streams at 60 unless you raise it", listOf("60" to "60", "90" to "90", "120" to "120"), "60")
                 bitrate(list)
+                val kbps = stream.getInt("seekbar_bitrate_kbps", 0)
+                val customRate = kbps != 0 && kbps / 1000 !in listOf(10, 20, 30, 50, 80)
+                action(list, "set:customrate", "Custom bitrate", "Any value between the steps above, in Mbps",
+                        if (customRate) "${kbps / 1000} Mbps" else "Off") { customBitrate(kbps) }
                 choice(list, "video_format", "Video codec", "H.265 and AV1 look better at the same bitrate",
                         listOf("Auto" to "auto", "H.264" to "neverh265", "H.265" to "forceh265", "AV1" to "forceav1"), "auto")
                 toggle(list, "checkbox_enable_hdr", "HDR", "Only when the PC, the game and this TV support it", false)
                 toggle(list, "checkbox_full_range", "Full-range colour", "Deeper blacks, if this TV shows them correctly", false)
-                toggle(list, "checkbox_stretch_video", "Stretch to fill", "Fills the screen when the shape doesn't match", false)
+                choice(list, "list_video_scale_mode", "Picture shape", "When the stream's shape doesn't match this TV: fit with bars, fill and crop, or stretch",
+                        listOf("Fit" to "fit", "Fill" to "fill", "Stretch" to "stretch"),
+                        if (stream.getBoolean("checkbox_stretch_video", false)) "stretch" else "fit")
+                intChoice(list, "seekbar_video_zoom", "Zoom", "Enlarge the picture if this TV cuts off the edges", listOf(100, 102, 104, 106, 108, 110), 100) {
+                    if (it == 100) "Off" else "$it%" }
                 choice(list, "frame_pacing", "Frame pacing", "Trade a little delay for smoother motion",
                         listOf("Lowest delay" to "latency", "Balanced" to "balanced", "Smoothest" to "smoothness"), "latency")
+                toggle(list, "checkbox_ultra_low_latency", "Ultra low latency",
+                        "Experimental. Snapdragon 8 Gen 2 or newer, MediaTek, NVIDIA Shield. This device: ${chipName()}", false)
                 toggle(list, "checkbox_enable_sops", "Let the PC tune game settings", "Changes a game's graphics settings to suit the stream, on PCs that support it", true)
                 toggle(list, "checkbox_unlock_fps", "Unlock frame rate", "Allows rates above what this TV shows, like 120 on a 60 Hz screen. May tear", false)
                 toggle(list, "checkbox_reduce_refresh_rate", "Let the TV lower its refresh rate", "Saves power, adds a little delay", false)
@@ -940,6 +960,8 @@ class HomeActivity : Activity(), PhoneLink.Listener {
             }
             "pads" -> {
                 action(list, "set:pad", "Pair a controller", "Opens this TV's Bluetooth settings. Put the pad in pairing mode first", null) { pairController() }
+                action(list, "set:padtest", "Test a controller", "See every button, stick and trigger live, and try the rumble", null) {
+                    startActivity(Intent(this, PadTestActivity::class.java)) }
                 toggle(list, "checkbox_usb_driver", "USB pad driver", "Makes Xbox pads plugged in by USB work, even where this TV doesn't support them", true)
                 if (stream.getBoolean("checkbox_usb_driver", true))
                     toggle(list, "checkbox_usb_bind_all", "Use it for every USB pad", "Even Xbox pads this TV already supports. Try it if one misbehaves", false)
@@ -995,8 +1017,16 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                         refreshXboxes(true) }
                     info(list, "On the Xbox", "Settings, Devices and connections, Remote features: on. Power mode: Sleep")
                 }
-                choice(list, "xbox_resolution", "Picture", "The Xbox sets quality from this. Auto: 1080p, or 720p on weak Wi-Fi",
+                choice(list, "xbox_resolution", "Picture", "The Xbox sets quality from this. Auto: 720p on weak Wi-Fi, high on a 1440p+ screen, else 1080p",
                         listOf("Auto" to "auto", "720p" to "720", "1080p" to "1080", "1080p high" to "1081"), "auto")
+                xboxBitrate(list)
+                choice(list, "list_video_scale_mode", "Picture shape", "Fit with bars, fill and crop, or stretch. Shared with PC games",
+                        listOf("Fit" to "fit", "Fill" to "fill", "Stretch" to "stretch"),
+                        if (stream.getBoolean("checkbox_stretch_video", false)) "stretch" else "fit")
+                intChoice(list, "seekbar_video_zoom", "Zoom", "Enlarge the picture if this TV cuts off the edges. Shared with PC games",
+                        listOf(100, 102, 104, 106, 108, 110), 100) { if (it == 100) "Off" else "$it%" }
+                toggle(list, "checkbox_ultra_low_latency", "Ultra low latency",
+                        "Experimental. Snapdragon 8 Gen 2 or newer, MediaTek, NVIDIA Shield. This device: ${chipName()}", false)
                 info(list, "Frame rate", "60 fps")
                 choice(list, "xbox_rumble", "Rumble", "How strongly the controller shakes", listOf("Off" to "off", "Weak" to "weak",
                         "Medium" to "medium", "Strong" to "strong"), "strong")
@@ -1538,6 +1568,95 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         }, tv.lp(-2, -2).apply { topMargin = tv.px(24) })
         showOverlay("addpc", FrameLayout(this).apply { addView(card, tv.flp(1000, -2, Gravity.CENTER)) })
         field.requestFocus()
+    }
+
+    /** Settings, Xbox, Bitrate: Auto lets the Xbox decide; a number caps it (XStreaming's "Host stream bitrate"). */
+    private fun xboxBitrate(list: LinearLayout) {
+        val steps = listOf(0, 5, 10, 15, 20, 30)
+        val cur = stream.getInt("xbox_bitrate", 0)
+        settingRow(list, "xbox_bitrate", "Bitrate", "Auto lets the Xbox decide. A cap keeps a weak Wi-Fi from stuttering",
+                true, tv.text(if (cur == 0) "Auto" else "$cur Mbps", 23, tv.p.moon, tv.ui(700))) {
+            val next = steps[(steps.indexOf(steps.firstOrNull { it >= cur } ?: 0) + 1) % steps.size]
+            stream.edit().putInt("xbox_bitrate", next).apply()
+            render(force = true)
+        }
+        val custom = cur != 0 && cur !in steps
+        action(list, "set:xboxrate", "Custom bitrate", "Any cap from 1 to 50 Mbps", if (custom) "$cur Mbps" else "Off") {
+            entryDialog("Xbox bitrate", "A cap in Mbps, from 1 to 50. The Xbox stays at or below it.", "For example 12",
+                    if (cur > 0) cur.toString() else "", true, onSave = { raw ->
+                val v = raw.toIntOrNull()
+                if (v == null || v !in 1..50) "A number from 1 to 50."
+                else { stream.edit().putInt("xbox_bitrate", v).apply(); render(force = true); null }
+            }, clear = if (cur > 0) ({ stream.edit().putInt("xbox_bitrate", 0).apply(); render(force = true) }) else null)
+        }
+    }
+
+    /** This screen's physical resolution, landscape (the display mode, not the app's possibly scaled window). */
+    private fun nativeResolution(): String {
+        val d = windowManager.defaultDisplay
+        var w: Int; var h: Int
+        if (Build.VERSION.SDK_INT >= 23) {
+            val m = d.mode
+            w = m.physicalWidth; h = m.physicalHeight
+        } else {
+            val p = android.graphics.Point(); d.getRealSize(p); w = p.x; h = p.y
+        }
+        if (h > w) { val t = w; w = h; h = t }
+        return "${w and 1.inv()}x${h and 1.inv()}"
+    }
+
+    /** The chip, for the Ultra low latency hint: SoC model on Android 12+, otherwise the board name. */
+    private fun chipName(): String {
+        val soc = if (Build.VERSION.SDK_INT >= 31) "${Build.SOC_MANUFACTURER} ${Build.SOC_MODEL}".trim() else ""
+        return soc.ifBlank { Build.HARDWARE }
+    }
+
+    /** A one-line entry dialog; [onSave] returns an error to show, or null when the value is good. */
+    private fun entryDialog(title: String, sub: String, hint: String, value: String, numbers: Boolean, onSave: (String) -> String?,
+                            clear: (() -> Unit)? = null) {
+        val card = dialogCard()
+        card.addView(tv.text(title, 40, tv.p.moon, tv.display(700)))
+        card.addView(tv.text(sub, 22, tv.p.dust, tv.ui(500), 3), tv.lp(-1, -2).apply { topMargin = tv.px(12) })
+        val field = textField(hint, value)
+        if (numbers) field.inputType = android.text.InputType.TYPE_CLASS_NUMBER
+        card.addView(field, tv.lp(-1, 84).apply { topMargin = tv.px(24) })
+        val status = tv.text("", 21, tv.p.dust, tv.ui(600), 2)
+        card.addView(status, tv.lp(-1, -2).apply { topMargin = tv.px(16) })
+        fun submit() {
+            val err = onSave(field.text.toString().trim())
+            if (err == null) hideOverlay() else status.text = err
+        }
+        field.setOnEditorActionListener { _, _, _ -> submit(); true }
+        card.addView(tv.row().apply {
+            addView(tv.pill("Save", "A", true) { submit() })
+            if (clear != null) addView(tv.pill("Turn off", null, false) { clear(); hideOverlay() })
+            addView(tv.pill("Cancel", "B", false) { hideOverlay() })
+        }, tv.lp(-2, -2).apply { topMargin = tv.px(24) })
+        showOverlay("entry", FrameLayout(this).apply { addView(card, tv.flp(1000, -2, Gravity.CENTER)) })
+        field.requestFocus()
+    }
+
+    private fun customResolution(current: String, isCustom: Boolean) {
+        entryDialog("Custom resolution", "Width x height, for example 1600x900 or 2560x1080. Both even numbers.",
+                "For example 1600x900", if (isCustom) current else "", false, onSave = { raw ->
+            val m = Regex("^(\\d{3,4})\\s*[x×*X ]\\s*(\\d{3,4})$").find(raw)
+            val w = m?.groupValues?.get(1)?.toIntOrNull(); val h = m?.groupValues?.get(2)?.toIntOrNull()
+            when {
+                w == null || h == null -> "Type it as width x height, for example 1600x900."
+                w !in 640..7680 || h !in 360..4320 -> "Between 640x360 and 7680x4320."
+                w % 2 != 0 || h % 2 != 0 -> "Both numbers need to be even."
+                else -> { stream.edit().putString("list_resolution", "${w}x$h").apply(); render(force = true); null }
+            }
+        }, clear = if (isCustom) ({ stream.edit().putString("list_resolution", "1920x1080").apply(); render(force = true) }) else null)
+    }
+
+    private fun customBitrate(kbps: Int) {
+        entryDialog("Custom bitrate", "In Mbps, from 1 to 150. Higher is sharper and needs a faster network.",
+                "For example 25", if (kbps > 0) (kbps / 1000).toString() else "", true, onSave = { raw ->
+            val v = raw.toIntOrNull()
+            if (v == null || v !in 1..150) "A number from 1 to 150."
+            else { stream.edit().putInt("seekbar_bitrate_kbps", v * 1000).apply(); render(force = true); null }
+        }, clear = if (kbps > 0) ({ stream.edit().remove("seekbar_bitrate_kbps").apply(); render(force = true) }) else null)
     }
 
     private fun pairController() {

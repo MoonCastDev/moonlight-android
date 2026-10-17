@@ -957,6 +957,14 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         else {
             // Set the surface to scale based on the aspect ratio of the stream
             streamView.setDesiredAspectRatio((double)prefConfig.width / (double)prefConfig.height);
+            streamView.setFill(prefConfig.fillVideo);
+        }
+
+        // MoonCast: Settings, Video, Zoom. Enlarges the picture for TVs that crop the edges (overscan).
+        if (prefConfig.videoZoomPercent > 100) {
+            float z = prefConfig.videoZoomPercent / 100f;
+            streamView.setScaleX(z);
+            streamView.setScaleY(z);
         }
 
         // Set the desired refresh rate that will get passed into setFrameRate() later

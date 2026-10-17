@@ -233,6 +233,11 @@
             android:screenOrientation="sensorLandscape"
             android:configChanges="mcc|mnc|touchscreen|keyboard|keyboardHidden|navigation|screenLayout|fontScale|uiMode|orientation|screenSize|smallestScreenSize|layoutDirection" />
         <activity
+            android:name=".home.PadTestActivity"
+            android:exported="false"
+            android:theme="@style/StreamTheme"
+            android:screenOrientation="sensorLandscape" />
+        <activity
             android:name=".XboxStreamActivity"
             android:exported="false"
             android:theme="@style/StreamTheme"
