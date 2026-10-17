@@ -151,7 +151,7 @@ public class PhoneLink {
                         + ",\"version\":" + PROTOCOL_VERSION
                         + ",\"id\":" + quote(tvId())
                         + ",\"identityKey\":" + quote(identityKey())
-                        + ",\"paired\":" + (pc != null && pc.serverCert != null) + "}");
+                        + ",\"paired\":" + pairedNow(pc) + "}");
             } else if ("GET".equals(method) && path.startsWith("/status")) {
                 send(s, 200, "{\"state\":" + quote(playState) + ",\"error\":" + quote(playError == null ? "" : playError)
                         + ",\"seq\":" + playSeq + "}");
@@ -259,6 +259,40 @@ public class PhoneLink {
 
     // Show "sent from" on the TV for a moment, then start the stream through the trampoline (it handles the paired
     // PC and the connection).
+    /** The last answer from the PC about this TV's pairing. Null until the first check finishes. */
+    private static volatile Boolean pcAccepts;
+    private static final java.util.concurrent.atomic.AtomicBoolean checking = new java.util.concurrent.atomic.AtomicBoolean();
+
+    /**
+     * Whether this TV can really stream from [pc]. A saved certificate alone is not enough: the PC must still accept this
+     * TV's identity. The PC is asked in the background, so the discovery reply stays quick; it reports the last answer.
+     */
+    private boolean pairedNow(ComputerDetails pc) {
+        if (pc == null || pc.serverCert == null) return false;
+        if (checking.compareAndSet(false, true)) {
+            final ComputerDetails target = pc;
+            new Thread(() -> {
+                try { pcAccepts = pcAcceptsUs(target); } finally { checking.set(false); }
+            }).start();
+        }
+        Boolean last = pcAccepts;
+        return last == null || last;
+    }
+
+    private boolean pcAcceptsUs(ComputerDetails pc) {
+        try {
+            ComputerDetails.AddressTuple addr = pc.localAddress != null ? pc.localAddress : pc.activeAddress;
+            if (addr == null) return false;
+            int httpsPort = pc.httpsPort > 0 ? pc.httpsPort : 47984;
+            com.limelight.nvstream.http.NvHTTP http = new com.limelight.nvstream.http.NvHTTP(addr, httpsPort,
+                    new com.limelight.computers.IdentityManager(ctx).getUniqueId(), pc.serverCert,
+                    com.limelight.binding.PlatformBinding.getCryptoProvider(ctx));
+            return http.getPairState() == com.limelight.nvstream.http.PairingManager.PairState.PAIRED;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     /** The PC a sent identity came with, while its session is open. Null when this TV uses its own pairing. */
     private static volatile String sessionPcUuid;
 
@@ -281,6 +315,7 @@ public class PhoneLink {
                     .generateCertificate(new java.io.ByteArrayInputStream(
                             android.util.Base64.decode(j.getString("serverCert"), android.util.Base64.DEFAULT)));
             pc.pairState = com.limelight.nvstream.http.PairingManager.PairState.PAIRED;
+            pc.httpsPort = 47984;
             pc.state = ComputerDetails.State.ONLINE;
             ComputerDatabaseManager db = new ComputerDatabaseManager(ctx);
             try { db.updateComputer(pc); } finally { db.close(); }
