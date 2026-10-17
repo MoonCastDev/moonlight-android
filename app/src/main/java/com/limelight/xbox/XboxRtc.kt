@@ -208,6 +208,10 @@ class XboxRtc(
                 it == "a=sendrecv" || it == "a=inactive" || it.startsWith("a=rtpmap") && (it.contains("H264") || it.contains("opus")) }
             .forEach { Log.i(TAG, "answer $it") }
         setRemote(answer)
+        // which way each media section was negotiated (a recvonly/inactive video section never gets media)
+        pc?.transceivers?.forEach { t ->
+            Log.i(TAG, "transceiver ${t.mediaType} direction=${t.direction} current=${t.currentDirection}")
+        }
 
         // Local candidates (gathering finishes quickly on a LAN; don't wait forever)
         gatheringDone.await(5, TimeUnit.SECONDS)
@@ -634,8 +638,14 @@ class XboxRtc(
             else if (!videoFlowing && statsLogs++ < 12) {
                 // diagnostics while the picture is missing: is any video RTP arriving at all?
                 val vid = report.statsMap.values.filter { it.type == "inbound-rtp" && it.members["kind"] == "video" }
-                Log.i(TAG, "video in: ${vid.size} inbound-rtp, bytes=${vid.firstOrNull()?.members?.get("bytesReceived")} " +
-                        "packets=${vid.firstOrNull()?.members?.get("packetsReceived")} frames=${vid.firstOrNull()?.members?.get("framesDecoded")}")
+                val v = vid.firstOrNull()?.members
+                val codec = v?.get("codecId")?.let { report.statsMap[it as String]?.members?.get("mimeType") }
+                // padding-only packets (bandwidth probes) count as packets but carry no payload: bytes stay 0
+                Log.i(TAG, "video in: ${vid.size} inbound-rtp, bytes=${v?.get("bytesReceived")} " +
+                        "packets=${v?.get("packetsReceived")} frames=${v?.get("framesDecoded")} " +
+                        "codec=$codec ssrc=${v?.get("ssrc")} pt=${v?.get("payloadType")} " +
+                        "discarded=${v?.get("packetsDiscarded")} plis=${v?.get("pliCount")} nacks=${v?.get("nackCount")} " +
+                        "firs=${v?.get("firCount")} keyFrames=${v?.get("keyFramesDecoded")}")
             }
             cb(Stats(fps, rtt, mbps, loss, w, h))
         }
