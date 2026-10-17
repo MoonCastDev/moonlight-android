@@ -107,7 +107,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
     }
 
     private fun connectInfo(remote: Boolean): ConnectInfo {
-        val host = intent.getStringExtra(EXTRA_HOST) ?: "192.168.100.126"
+        val host = intent.getStringExtra(EXTRA_HOST) ?: ""   // every caller passes the console's host
         val registKey = hex(intent.getStringExtra(EXTRA_REGIST_KEY) ?: "")
         val morning = hex(intent.getStringExtra(EXTRA_MORNING) ?: "")
         val ps5 = intent.getBooleanExtra(EXTRA_PS5, true)
@@ -231,7 +231,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
 
     // Wake the console from standby (harmless if already on), then connect; retry a few times while it powers up.
     private fun connect(surface: android.view.Surface) {
-        val host = intent.getStringExtra(EXTRA_HOST) ?: "192.168.100.126"
+        val host = intent.getStringExtra(EXTRA_HOST) ?: ""   // every caller passes the console's host
         val ps5 = intent.getBooleanExtra(EXTRA_PS5, true)
         // LAN if the console answers here; otherwise over the internet via PSN (no VPN / no port-forward) when the
         // phone sent a PSN token. PSN wakes the console itself when the session starts.

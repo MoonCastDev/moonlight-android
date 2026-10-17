@@ -1142,6 +1142,8 @@ class HandheldHomeActivity : Activity() {
                 action(list, "padtest", "Test a controller", "See every button, stick and trigger live, and try the rumble", null) {
                     startActivity(Intent(this, PadTestActivity::class.java)) }
                 action(list, "padpair", "Pair a controller", "Opens Bluetooth settings. Put the pad in pairing mode first", null) { pairController() }
+                choice(list, prefs, TvControllerActivity.PAD_PREF, "Controller on a TV", "For PC games sent to a TV. Direct is fastest: it skips the TV's Wi-Fi",
+                        listOf("Direct to the PC" to "direct", "Through the TV" to "tv"), "direct")
                 toggle(list, "checkbox_multi_controller", "More than one player", "On a PC each pad is its own player", true)
                 intChoice(list, "seekbar_deadzone", "Stick deadzone", "Raise it if a character drifts on its own", listOf(3, 5, 7, 10, 15), 7) { "$it%" }
                 toggle(list, "checkbox_flip_face_buttons", "Swap A and B", "For Nintendo-style layouts", false)

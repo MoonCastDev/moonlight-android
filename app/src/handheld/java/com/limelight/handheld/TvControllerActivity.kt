@@ -33,6 +33,8 @@ class TvControllerActivity : Activity() {
         const val EXTRA_DELAY = "send_delay_ms"
         private val COMBO = intArrayOf(4, 5, 8, 9)   // LB RB Select Start
         private const val LINK_WAIT_MS = 8000L
+        /** Settings, Controllers: "direct" (to the PC, fastest) or "tv" (through the TV). */
+        const val PAD_PREF = "hh_tv_pad"
     }
 
     private enum class State { SENDING, PLAYING, FAILED }
@@ -57,6 +59,14 @@ class TvControllerActivity : Activity() {
     private var menu = false          // the pad drives the on-screen buttons instead of the game
     private var comboPending = false
     private var attempt = 0
+
+    // PC games: the controller goes straight to the PC as its own controller-only session (DirectPad); if that can't
+    // connect, the TV relays it after all (/pad). PS5 and Xbox always go through the TV.
+    private var direct: DirectPad? = null
+    private var directMode = false
+    private var directEverUp = false
+    private var fellBack: String? = null
+    private val directTimeout = Runnable { if (directMode && direct?.state != DirectPad.State.CONNECTED) fallBack("didn't connect in time") }
 
     // the pad, W3C Standard Gamepad order
     private val b = FloatArray(PadServer.BUTTONS)
@@ -85,6 +95,7 @@ class TvControllerActivity : Activity() {
 
     override fun onDestroy() {
         ui.removeCallbacksAndMessages(null)
+        stopDirect()
         // the controller server stays up (PadLink): a restarted controller screen picks the TV's link straight back up
         if (PadLink.onClients === clientsListener) PadLink.onClients = null
         glide.detach()
@@ -123,18 +134,19 @@ class TvControllerActivity : Activity() {
             everConnected = true
             if (noLink) { noLink = false; if (state == State.PLAYING) setMenu(false) }   // it made it after all: back to the game
         }
-        else if (state == State.PLAYING) { ui.removeCallbacks(linkTimeout); ui.postDelayed(linkTimeout, LINK_WAIT_MS) }
+        else if (state == State.PLAYING && !directMode) { ui.removeCallbacks(linkTimeout); ui.postDelayed(linkTimeout, LINK_WAIT_MS) }
         refresh()
     }
 
     /** Sent, but the TV never connected to the controller (or didn't come back): say so, and offer Try again. */
     private val linkTimeout = Runnable {
-        if (state == State.PLAYING && PadLink.clientCount == 0) { noLink = true; FeelSounds.play(this, FeelSounds.Cue.ERROR); setMenu(true); refresh() }
+        if (state == State.PLAYING && !directMode && PadLink.clientCount == 0) { noLink = true; FeelSounds.play(this, FeelSounds.Cue.ERROR); setMenu(true); refresh() }
     }
 
     private fun send(delayMs: Long, retried: Boolean) {
         val t = target ?: return; val tv0 = tv ?: return
         state = State.SENDING; error = null; noLink = false
+        stopDirect(); fellBack = null
         everConnected = PadLink.clientCount > 0
         ui.removeCallbacks(linkTimeout)
         if (!PadLink.running) padKey = PadLink.keyFor(tv0.id)
@@ -159,7 +171,11 @@ class TvControllerActivity : Activity() {
                     }
                     return@Thread
                 }
-                val err = TvSender.send(this, tv ?: tv0, t, padKey)
+                val tvNow = tv ?: tv0
+                // Settings, Controllers, "Controller on a TV": direct to the PC (needs MoonCast TV version 4 to skip its relay)
+                val useDirect = t.kind == "pc" && !t.pcUuid.isNullOrEmpty() && tvNow.version >= 4 &&
+                        prefs.getString(PAD_PREF, "direct") == "direct"
+                val err = TvSender.send(this, tvNow, t, padKey, useDirect)
                 runOnUiThread {
                     if (mine != attempt || isFinishing) return@runOnUiThread
                     if (err != null) fail(err)
@@ -168,13 +184,64 @@ class TvControllerActivity : Activity() {
                         state = State.PLAYING
                         FeelSounds.play(this, FeelSounds.Cue.LAUNCH)
                         ui.removeCallbacks(linkTimeout)
-                        if (PadLink.clientCount == 0) ui.postDelayed(linkTimeout, LINK_WAIT_MS)
+                        if (useDirect) startDirect(t)
+                        else if (PadLink.clientCount == 0) ui.postDelayed(linkTimeout, LINK_WAIT_MS)
                         setMenu(false)
                         refresh()
                     }
                 }
             }, "tv-send").start()
         }, delayMs)
+    }
+
+    private fun startDirect(t: MoveToTv.Target) {
+        stopDirect()
+        directMode = true; directEverUp = false
+        val d = DirectPad(this, t.pcUuid ?: "", t.appId, t.title)
+        direct = d
+        var connectingSeen = false
+        d.onState = { st ->
+            if (direct === d) {
+                when (st) {
+                    DirectPad.State.CONNECTED -> { directEverUp = true; ui.removeCallbacks(directTimeout); push() }
+                    // the 8 s count starts when the game runs and we try to join it (a cold game start takes longer)
+                    DirectPad.State.CONNECTING -> if (!connectingSeen && !directEverUp) { connectingSeen = true; ui.postDelayed(directTimeout, LINK_WAIT_MS) }
+                    DirectPad.State.FAILED -> fallBack(d.why ?: "failed")
+                    else -> {}
+                }
+                refresh()
+            }
+        }
+        d.start()
+    }
+
+    private fun stopDirect() {
+        ui.removeCallbacks(directTimeout)
+        direct?.let { it.onState = null; it.stop() }
+        direct = null
+        directMode = false
+    }
+
+    /** The direct session can't connect: ask the TV to relay the controller after all, and say so. */
+    private fun fallBack(reason: String) {
+        if (!directMode) return
+        val pc = direct?.pcName ?: "the PC"
+        android.util.Log.i("MoonCast-Controller", "direct controller to $pc: $reason; using the TV's relay")
+        stopDirect()
+        val tv0 = tv ?: return
+        fellBack = "The direct link to $pc didn't connect, so the controller goes through ${tv0.name}."
+        val key = padKey
+        Thread({
+            val ok = TvSender.useRelay(tv0, key)
+            runOnUiThread {
+                if (isFinishing) return@runOnUiThread
+                if (!ok) fellBack = "The direct link to $pc didn't connect, and ${tv0.name} couldn't take the controller over."
+                ui.removeCallbacks(linkTimeout)
+                if (PadLink.clientCount == 0) ui.postDelayed(linkTimeout, LINK_WAIT_MS)
+                refresh()
+            }
+        }, "tv-relay").start()
+        refresh()
     }
 
     private fun fail(msg: String) {
@@ -228,12 +295,19 @@ class TvControllerActivity : Activity() {
         status.text = when (state) {
             State.SENDING -> "Starting ${t.title} on $tvName…"
             State.FAILED -> error ?: "Something went wrong."
-            State.PLAYING -> when {
-                PadLink.clientCount > 0 -> "Controller connected. This ${deviceShort()} is the controller."
+            State.PLAYING -> if (directMode) {
+                val d = direct; val pc = d?.pcName ?: "the PC"
+                when (d?.state) {
+                    DirectPad.State.CONNECTED -> "Controller connected (direct to $pc)"
+                    DirectPad.State.CONNECTING -> if (directEverUp) "Reconnecting to $pc…" else "Connecting the controller to $pc…"
+                    else -> "Waiting for ${t.title} to start on $pc…"
+                }
+            } else when {
+                PadLink.clientCount > 0 -> "Controller connected (through $tvName)"
                 noLink -> "$tvName didn't connect to this ${deviceShort()}'s controller. Check both are on the same Wi-Fi."
                 everConnected -> "Reconnecting to $tvName…"
                 else -> "Waiting for $tvName to connect…"
-            }
+            } + (fellBack?.let { "\n$it" } ?: "")
         }
         if (state == State.PLAYING && noLink) status.setTextColor(Sw.DANGER)
         val focusedLabel = (currentFocus as? TextView)?.text?.toString()
@@ -315,6 +389,7 @@ class TvControllerActivity : Activity() {
         leaving = true
         attempt++
         ui.removeCallbacks(linkTimeout)
+        stopDirect()   // our own session on the PC ends first (a local game needs Moonlight's one connection)
         status.setTextColor(sw.sub); status.text = msg
         val tv0 = tv; val key = padKey
         Thread({
@@ -329,7 +404,10 @@ class TvControllerActivity : Activity() {
 
     // ---------------------------------------------------------------- input -> the TV
 
-    private fun push() { PadLink.update(b, a) }
+    private fun push() {
+        PadLink.update(b, a)
+        if (directMode) direct?.update(b, a)
+    }
 
     private fun isPad(source: Int) = (source and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD ||
             (source and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
@@ -386,7 +464,11 @@ class TvControllerActivity : Activity() {
     private fun checkCombo() {
         if (state != State.PLAYING) return
         if (COMBO.all { b[it] > .5f }) {
-            if (!comboPending) { comboPending = true; PadLink.update(FloatArray(PadServer.BUTTONS), FloatArray(PadServer.AXES)) }
+            if (!comboPending) {
+                comboPending = true
+                val zb = FloatArray(PadServer.BUTTONS); val za = FloatArray(PadServer.AXES)
+                PadLink.update(zb, za); if (directMode) direct?.update(zb, za)
+            }
         }
         if (comboPending && b.all { it == 0f }) { comboPending = false; FeelSounds.play(this, FeelSounds.Cue.OPEN); setMenu(true) }
     }

@@ -1550,7 +1550,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         card.addView(tv.text("Add a PC by its address", 40, tv.p.moon, tv.display(700)))
         card.addView(tv.text("The PC's IP address or name, the one Sunshine runs on. Add :port only if it isn't the usual one.",
                 22, tv.p.dust, tv.ui(500), 3), tv.lp(-1, -2).apply { topMargin = tv.px(12) })
-        val field = textField("For example 192.168.100.3", "")
+        val field = textField("For example 192.168.1.20", "")
         card.addView(field, tv.lp(-1, 84).apply { topMargin = tv.px(24) })
         val status = tv.text("", 21, tv.p.dust, tv.ui(600), 2)
         card.addView(status, tv.lp(-1, -2).apply { topMargin = tv.px(16) })

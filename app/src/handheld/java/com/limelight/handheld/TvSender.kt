@@ -30,13 +30,15 @@ object TvSender : MoveToTv.Handler {
                 ?.takeIf { it.isNotBlank() } ?: Build.MODEL
 
     /** Blocking. Returns null when the TV accepted the game, else what went wrong (the TV's own words when it said). */
-    fun send(ctx: Context, tv: TvFinder.Tv, t: MoveToTv.Target, padKey: String): String? {
+    fun send(ctx: Context, tv: TvFinder.Tv, t: MoveToTv.Target, padKey: String, direct: Boolean = false): String? {
         if (tv.ip.isEmpty()) return "${tv.name} isn't on this network. Open MoonCast on it, on the same Wi-Fi as this device."
         if (t.kind == "xb" && !tv.canXbox) return "Update MoonCast on ${tv.name} to send it an Xbox game."
         val j = JSONObject().put("deviceName", deviceName(ctx)).put("padKey", padKey)
         TvFinder.myIp()?.let { j.put("phoneIp", it) }
         when (t.kind) {
-            "pc" -> j.put("appId", t.appId.toString()).put("appName", t.title)
+            // "pad":"direct": this device opens its own controller-only session on the PC (DirectPad), so the TV must not
+            // relay the pad too. padKey still goes along: it authorizes /stop and /pad (the relay, if direct fails).
+            "pc" -> { j.put("appId", t.appId.toString()).put("appName", t.title); if (direct) j.put("pad", "direct") }
             "ps" -> {
                 val c = Ps5Store.all(ctx).firstOrNull { it.host == t.psHost }
                 val regist = t.registKey ?: c?.registKey; val morning = t.morning ?: c?.morning
@@ -88,6 +90,22 @@ object TvSender : MoveToTv.Handler {
             c.setRequestProperty("Content-Type", "application/json")
             val body = JSONObject().put("padKey", padKey).put("quit", quit).toString()
             c.outputStream.use { it.write(body.toByteArray(StandardCharsets.UTF_8)) }
+            c.responseCode == 200
+        } catch (e: Exception) { false } finally { c?.disconnect() }
+    }
+
+    /** Blocking. The direct controller session failed: ask [tv] to relay the pad after all (POST /pad, version 4+). */
+    fun useRelay(tv: TvFinder.Tv, padKey: String): Boolean {
+        if (tv.ip.isEmpty() || tv.version < 4) return false
+        var c: HttpURLConnection? = null
+        return try {
+            c = URL("http://${tv.ip}:${TvFinder.PORT}/pad").openConnection() as HttpURLConnection
+            c.connectTimeout = 1500; c.readTimeout = 3000
+            c.requestMethod = "POST"; c.doOutput = true
+            c.setRequestProperty("Content-Type", "application/json")
+            val body = JSONObject().put("padKey", padKey)
+            TvFinder.myIp()?.let { body.put("phoneIp", it) }
+            c.outputStream.use { it.write(body.toString().toByteArray(StandardCharsets.UTF_8)) }
             c.responseCode == 200
         } catch (e: Exception) { false } finally { c?.disconnect() }
     }

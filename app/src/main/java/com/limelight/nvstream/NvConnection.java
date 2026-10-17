@@ -48,6 +48,13 @@ public class NvConnection {
     private static Semaphore connectionAllowed = new Semaphore(1);
     private final boolean isMonkey;
     private final Context appContext;
+    private volatile boolean resumeOnly;
+
+    /**
+     * Only join a game that is already running (a second, controller-only session next to another device's stream):
+     * never launch an app and never quit a different one. Fails instead.
+     */
+    public void setResumeOnly(boolean resumeOnly) { this.resumeOnly = resumeOnly; }
 
     public NvConnection(Context appContext, ComputerDetails.AddressTuple host, int httpsPort, String uniqueId, StreamConfiguration config, LimelightCryptoProvider cryptoProvider, X509Certificate serverCert)
     {
@@ -307,6 +314,11 @@ public class NvConnection {
             }
         }
         
+        if (resumeOnly && h.getCurrentGame(serverInfo) != app.getAppId()) {
+            context.connListener.displayMessage("The game isn't running on the PC");
+            return false;
+        }
+
         // If there's a game running, resume it
         if (h.getCurrentGame(serverInfo) != 0) {
             try {

@@ -28,8 +28,9 @@ import java.util.List;
  */
 public class PhoneLink {
     public static final int PORT = 8099;
-    /** What /mc-native reports as "version". 2 = /play accepts xboxId (+ xboxName). 3 = POST /stop. */
-    public static final int PROTOCOL_VERSION = 3;
+    /** What /mc-native reports as "version". 2 = /play accepts xboxId (+ xboxName). 3 = POST /stop.
+     *  4 = /play "pad":"direct" (the sender's controller goes straight to the PC) and POST /pad (relay after all). */
+    public static final int PROTOCOL_VERSION = 4;
 
     // The stream screens open right now (PC, PS5, Xbox), so /stop can end them. Tracked once for the whole app.
     private static final java.util.Set<android.app.Activity> streams =
@@ -144,6 +145,9 @@ public class PhoneLink {
                 if (phoneIp == null || phoneIp.isEmpty()) {
                     try { phoneIp = s.getInetAddress().getHostAddress(); } catch (Exception ignored) { }
                 }
+                // "pad":"direct" (PC games): the sender has its own controller session on the PC, so no relay from here.
+                // Set before the key, which may restart the relay.
+                PhoneGamepad.setDirect("direct".equals(field(json, "pad")) && field(json, "ps5host") == null && field(json, "xboxId") == null);
                 PhoneGamepad.setPhoneHost(phoneIp);
                 PhoneGamepad.setPadKey(field(json, "padKey"));   // key to authorize with the phone's pad server
                 // PS5 Remote Play (native chiaki): the phone sends the console's host + registration keys.
@@ -170,6 +174,18 @@ public class PhoneLink {
                 else {
                     boolean quit = json.replace(" ", "").contains("\"quit\":true");
                     stopStreams(quit);
+                    send(s, 200, "{\"ok\":1}");
+                }
+            } else if ("POST".equals(method) && path.startsWith("/pad")) {
+                // The sender's direct controller session didn't connect: relay its pad through this TV after all.
+                String json = readBody(in, clen, 2048);
+                String key = field(json, "padKey"), mine = PhoneGamepad.padKey();
+                if (mine != null && !mine.isEmpty() && !mine.equals(key)) send(s, 403, "{\"error\":\"not the device that sent this game\"}");
+                else {
+                    String ip = field(json, "phoneIp");
+                    if (ip == null || ip.isEmpty()) ip = s.getInetAddress().getHostAddress();
+                    PhoneGamepad.setPhoneHost(ip);
+                    PhoneGamepad.useRelay();
                     send(s, 200, "{\"ok\":1}");
                 }
             } else if ("POST".equals(method) && path.startsWith("/register")) {
