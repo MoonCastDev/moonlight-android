@@ -58,7 +58,7 @@ class QuickMenu(private val act: Activity) {
         if (switchStyle) { showSwitch(title, subtitle, stats, items); return }
 
         val panel = tv.col().apply {
-            background = tv.round(tv.p.deep, 0)
+            background = tv.round(translucent(tv.p.deep), 0)
             setPadding(tv.px(52), tv.px(64), tv.px(52), tv.px(48))
         }
         panel.addView(tv.text(title, 30, tv.p.moon, tv.display(600), 2))
@@ -120,10 +120,15 @@ class QuickMenu(private val act: Activity) {
     private val light = act.getSharedPreferences("mc_tv", Context.MODE_PRIVATE).getString("hh_theme", "dark") == "light"
     private val sBg = if (light) 0xFFEBEBEB.toInt() else 0xFF2B2D31.toInt()
     private val sPanel = if (light) 0xFFFFFFFF.toInt() else 0xFF36393F.toInt()
+    // the panel is see-through so the game stays visible behind it (alpha only, no blur: Android 9 sticks)
+    private val panelFill = translucent(if (light) 0xFFFFFFFF.toInt() else 0xFF0C111D.toInt())
     private val sInk = if (light) 0xFF2D2D2D.toInt() else 0xFFFFFFFF.toInt()
     private val sSub = if (light) 0xFF6E727A.toInt() else 0xFFB5BAC3.toInt()
     private val sRing = if (light) 0xFF00A9C2.toInt() else 0xFF2FD3E6.toInt()
     private var st: Tv = tv
+
+    /** 80% opaque: the picture shows through the panel. */
+    private fun translucent(c: Int): Int = (0xCC shl 24) or (c and 0xFFFFFF)
 
     private fun showSwitch(title: String, subtitle: String, stats: Stats, items: List<Item>) {
         val dm = act.resources.displayMetrics
@@ -134,8 +139,8 @@ class QuickMenu(private val act: Activity) {
 
         val panel = t.col().apply {
             background = if (upright) android.graphics.drawable.GradientDrawable().apply {
-                setColor(sPanel); val r = t.pxf(36); cornerRadii = floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f) }
-                else android.graphics.drawable.ColorDrawable(sPanel)
+                setColor(panelFill); val r = t.pxf(36); cornerRadii = floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f) }
+                else android.graphics.drawable.ColorDrawable(panelFill)
             setPadding(t.px(44), t.px(if (upright) 26 else 44), t.px(44), t.px(if (upright) 60 else 40))
         }
         if (upright) panel.addView(View(act).apply { background = t.round(if (light) 0xFFCDCFD4.toInt() else 0xFF474B53.toInt(), 5) },
