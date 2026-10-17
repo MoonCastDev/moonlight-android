@@ -122,7 +122,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
         val weak = link in 1..59
         // Home and Away profiles (Profile.kt). Home: Settings resolution (720p on a weak link). Away: "Quality away
         // from home", Auto = by the link, with its own bitrate and codec.
-        val away = Profile.isAway(this, remote)
+        val away = Profile.isAway(this)
         val awayQuality = prefs.getString("ps5_away_quality", "auto")
         val resPreset = when {
             away && awayQuality == "540" -> VideoResolutionPreset.RES_540P

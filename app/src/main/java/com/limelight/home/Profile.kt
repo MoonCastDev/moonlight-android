@@ -11,18 +11,14 @@ import android.preference.PreferenceManager
 object Profile {
     const val PREF = "stream_profile"
 
-    /** "auto", "home" or "away", as chosen in Settings. */
+    /** "home" or "away", as chosen in Settings. Anything saved earlier as "auto" counts as Home. */
     @JvmStatic
     fun mode(ctx: Context): String =
-        PreferenceManager.getDefaultSharedPreferences(ctx).getString(PREF, "auto") ?: "auto"
+        if (PreferenceManager.getDefaultSharedPreferences(ctx).getString(PREF, "home") == "away") "away" else "home"
 
-    /** True when the stream should use the Away settings. [viaPsn] is true when the route is PlayStation Network. */
+    /** True when the stream should use the Away settings. */
     @JvmStatic
-    fun isAway(ctx: Context, viaPsn: Boolean): Boolean = when (mode(ctx)) {
-        "away" -> true
-        "home" -> false
-        else -> viaPsn
-    }
+    fun isAway(ctx: Context): Boolean = mode(ctx) == "away"
 
     /** Streaming settings that belong to a profile (PC, audio and Xbox picture). A switch saves and restores these. */
     private val PC_KEYS = listOf(

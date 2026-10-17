@@ -909,7 +909,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
 
     private fun settingsPage(): View {
         hints("A" to "Change", "LB" to "Previous tab", "RB" to "Next tab", "|" to "", "B" to "Back")
-        val groups = listOf("general" to "General", "video" to "Video", "audio" to "Audio", "pads" to "Controllers", "ps" to "PlayStation",
+        val groups = listOf("video" to "Video", "audio" to "Audio", "pads" to "Controllers", "ps" to "PlayStation",
                 "xbox" to "Xbox", "mk" to "Mouse and keyboard", "screen" to "Screen", "about" to "About and help")
         val row = tv.row(Gravity.TOP)
         val nav = tv.col()
@@ -936,12 +936,10 @@ class HomeActivity : Activity(), PhoneLink.Listener {
             background = tv.round(tv.p.deep, 24, tv.p.line, 1); setPadding(tv.px(24), tv.px(12), tv.px(24), tv.px(12))
         }
         when (settingsGroup) {
-            "general" -> {
-                // One switch for every system: PlayStation, Xbox and PC streaming settings show the rows for this profile.
-                choice(list, Profile.PREF, "Streaming profile", "Home: best quality for your network. Away: lighter settings for PlayStation Network. Auto picks Away only over PlayStation Network. PlayStation, Xbox and PC settings follow this",
-                        listOf("Auto" to "auto", "Home" to "home", "Away" to "away"), "auto")
-            }
             "video" -> {
+                // Home and Away: one switch for PC, PlayStation and Xbox. Each profile keeps its own settings.
+                choice(list, Profile.PREF, "Streaming profile", "Home: best quality on your network. Away: lighter settings for PlayStation Network and slower links",
+                        listOf("Home" to "home", "Away" to "away"), "home")
                 // Native: this screen's real panel size (its display mode), as in Moonlight/Artemis' "Native (WxH)"
                 val native = nativeResolution()
                 val presets = listOf("720p" to "1280x720", "1080p" to "1920x1080", "1440p" to "2560x1440", "4K" to "3840x2160")
@@ -1016,7 +1014,6 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                 // Same four rows for each profile; the General profile decides which set they edit. Auto shows both sets.
                 val mode = Profile.mode(this)
                 if (mode != "away") {
-                    if (mode == "auto") info(list, "At home", "Used when this PS5 is on your home network")
                     choice(list, "ps5_resolution", "Resolution", "The PS5 streams up to 1080p", listOf("720p" to "720", "1080p" to "1080"), "1080")
                     choice(list, "ps5_fps_home", "Frame rate", "60 fps is smoother; 30 fps lets a weak link keep up",
                             listOf("60 fps" to "60", "30 fps" to "30", "Custom" to "custom"), "60")
@@ -1029,7 +1026,6 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                     choice(list, "ps5_codec", "Video codec", "H.265 looks better at the same bitrate", listOf("H.264" to "h264", "H.265" to "h265"), "h265")
                 }
                 if (mode != "home") {
-                    if (mode == "auto") info(list, "Away", "Used over PlayStation Network")
                     choice(list, "ps5_away_quality", "Resolution", "Auto follows this TV's Wi-Fi: 1080p on a strong link, 720p on a weak one",
                             listOf("Auto" to "auto", "540p" to "540", "720p" to "720", "1080p" to "1080"), "auto")
                     choice(list, "away_fps", "Frame rate", "60 fps is smoother; 30 fps lets a weak link keep up",

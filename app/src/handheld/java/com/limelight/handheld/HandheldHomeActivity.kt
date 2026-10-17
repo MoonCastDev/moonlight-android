@@ -1067,7 +1067,7 @@ class HandheldHomeActivity : Activity() {
 
     // ---------------------------------------------------------------- Settings
 
-    private val groups = listOf("general" to "General", "handheld" to "Handheld", "picture" to "Picture", "sound" to "Sound", "pads" to "Controllers",
+    private val groups = listOf("handheld" to "Handheld", "picture" to "Picture", "sound" to "Sound", "pads" to "Controllers",
             "ps" to "PlayStation", "xbox" to "Xbox", "theme" to "Theme", "about" to "About")
 
     private fun settingsPage(): View {
@@ -1112,11 +1112,6 @@ class HandheldHomeActivity : Activity() {
 
     private fun settingsRows(list: LinearLayout, group: String) {
         when (group) {
-            "general" -> {
-                // One switch for every system: PlayStation, Xbox and PC streaming settings show the rows for this profile.
-                choice(list, stream, Profile.PREF, "Streaming profile", "Home: best quality for your network. Away: lighter settings for PlayStation Network. Auto picks Away only over PlayStation Network. PlayStation, Xbox and PC settings follow this",
-                        listOf("Auto" to "auto", "Home" to "home", "Away" to "away"), "auto")
-            }
             "handheld" -> {
                 appToggle(list, "hh_rotate", "Screen turns with the device", "Portrait when you hold it upright", true) { applyRotation() }
                 choice(list, prefs, "hh_battery_res", "On battery, stream at", "Plugged in, the Picture settings apply",
@@ -1125,6 +1120,9 @@ class HandheldHomeActivity : Activity() {
                 toggle(list, "checkbox_ultra_low_latency", "Ultra low latency", "Experimental. This device: ${chipName()}", false)
             }
             "picture" -> {
+                // Home and Away: one switch for PC, PlayStation and Xbox. Each profile keeps its own settings.
+                choice(list, stream, Profile.PREF, "Streaming profile", "Home: best quality on your network. Away: lighter settings for PlayStation Network and slower links",
+                        listOf("Home" to "home", "Away" to "away"), "home")
                 val native = nativeResolution()
                 val presets = listOf("720p" to "1280x720", "1080p" to "1920x1080", "1440p" to "2560x1440", "4K" to "3840x2160")
                 choice(list, stream, "list_resolution", "Resolution", "Native is this screen: ${native.replace("x", " × ")}",
@@ -1170,7 +1168,6 @@ class HandheldHomeActivity : Activity() {
                 // Same four rows for each profile; the General profile decides which set they edit. Auto shows both sets.
                 val mode = Profile.mode(this)
                 if (mode != "away") {
-                    if (mode == "auto") info(list, "At home", "Used when this PS5 is on your home network")
                     choice(list, stream, "ps5_resolution", "Resolution", "The PS5 streams up to 1080p", listOf("720p" to "720", "1080p" to "1080"), "1080")
                     choice(list, stream, "ps5_fps_home", "Frame rate", "60 fps is smoother; 30 fps lets a weak link keep up",
                             listOf("60 fps" to "60", "30 fps" to "30", "Custom" to "custom"), "60")
@@ -1183,7 +1180,6 @@ class HandheldHomeActivity : Activity() {
                     choice(list, stream, "ps5_codec", "Video codec", "H.265 looks better at the same bitrate", listOf("H.264" to "h264", "H.265" to "h265"), "h265")
                 }
                 if (mode != "home") {
-                    if (mode == "auto") info(list, "Away", "Used over PlayStation Network")
                     choice(list, stream, "ps5_away_quality", "Resolution", "Auto follows the Wi-Fi: 1080p strong, 720p weak",
                             listOf("Auto" to "auto", "540p" to "540", "720p" to "720", "1080p" to "1080"), "auto")
                     choice(list, stream, "away_fps", "Frame rate", "60 fps is smoother; 30 fps lets a weak link keep up",
