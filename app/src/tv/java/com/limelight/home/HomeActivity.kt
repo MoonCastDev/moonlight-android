@@ -1618,10 +1618,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
     }
 
     /** The chip, for the Ultra low latency hint: SoC model on Android 12+, otherwise the board name. */
-    private fun chipName(): String {
-        val soc = if (Build.VERSION.SDK_INT >= 31) "${Build.SOC_MANUFACTURER} ${Build.SOC_MODEL}".trim() else ""
-        return soc.ifBlank { Build.HARDWARE }
-    }
+    private fun chipName(): String = com.limelight.home.Chip.name()
 
     /** A one-line entry dialog; [onSave] returns an error to show, or null when the value is good. */
     private fun entryDialog(title: String, sub: String, hint: String, value: String, numbers: Boolean, onSave: (String) -> String?,

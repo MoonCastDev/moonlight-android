@@ -139,15 +139,14 @@ class QuickMenu(private val act: Activity) {
         }
         if (upright) panel.addView(View(act).apply { background = t.round(if (light) 0xFFCDCFD4.toInt() else 0xFF474B53.toInt(), 5) },
                 LinearLayout.LayoutParams(t.px(120), t.px(10)).apply { gravity = Gravity.CENTER_HORIZONTAL; bottomMargin = t.px(30) })
-        panel.addView(t.row().apply {
-            addView(txt(title, 36, sInk, 800), LinearLayout.LayoutParams(0, -2, 1f))
-            addView(txt(subtitle, 24, sSub, 700), t.lp(-2, -2).apply { leftMargin = t.px(16) })
-        })
+        // the game's name on its own line, then what it's on (wrapping to two lines, never cut)
+        panel.addView(txt(title, 36, sInk, 800, 2), t.lp(-1, -2))
+        panel.addView(txt(subtitle, 24, sSub, 700, 2), t.lp(-1, -2).apply { topMargin = t.px(8) })
 
-        val first = stats.get()
+        val first = stats.get().map { short(it) }
         val statRow = t.row()
         statsViews = (0 until minOf(4, first.size)).map { i ->
-            val n = txt(first[i].first, 34, sInk, 800)
+            val n = txt(first[i].first, statSize(first[i].first), sInk, 800).apply { ellipsize = null }
             statRow.addView(t.col().apply {
                 background = t.round(sBg, 10)
                 setPadding(t.px(16), t.px(18), t.px(16), t.px(18))
@@ -198,6 +197,23 @@ class QuickMenu(private val act: Activity) {
         ui.post(tick)
     }
 
+    /** Switch-style stat tiles are narrow: "60" over "fps", "14" over "Mbps", as in the mockup. */
+    private fun short(p: Pair<String, String>): Pair<String, String> {
+        val (v, l) = p
+        return when (l.lowercase()) {
+            "frames per second" -> v to "fps"
+            "network delay" -> v to "delay"
+            "picture quality", "quality" -> if (v.endsWith(" Mbps")) v.removeSuffix(" Mbps") to "Mbps" else v to "quality"
+            "lost frames", "lost packets" -> v to "lost"
+            "playing for" -> v to "playing"
+            "waiting for" -> v to "waiting"
+            else -> v to l.lowercase().substringBefore(' ')
+        }
+    }
+
+    /** Value size that fits a quarter of the panel: big for "60", smaller for "Connected". */
+    private fun statSize(v: String): Int = when { v.length <= 4 -> 34; v.length <= 6 -> 28; v.length <= 8 -> 23; else -> 19 }
+
     /** The selected row in the Switch look: the cyan double ring (a gap in the panel colour, then cyan). */
     private fun switchRow(on: Boolean): android.graphics.drawable.Drawable {
         val t = st
@@ -223,7 +239,13 @@ class QuickMenu(private val act: Activity) {
     private val tick = object : Runnable {
         override fun run() {
             val s = stats?.get() ?: return
-            statsViews.forEachIndexed { i, v -> if (i < s.size) v.text = s[i].first }
+            statsViews.forEachIndexed { i, v ->
+                if (i >= s.size) return@forEachIndexed
+                if (switchStyle) {
+                    val sv = short(s[i]).first
+                    if (v.text.toString() != sv) { v.text = sv; v.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, st.pxf(statSize(sv))) }
+                } else v.text = s[i].first
+            }
             ui.postDelayed(this, 1000)
         }
     }
