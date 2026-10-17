@@ -125,6 +125,6 @@ object TvSender : MoveToTv.Handler {
         Recents.touch(act, t.key)
         // the player already ended its session (MoveToTv.LocalSession); a short pause lets the PC / PS5 / Xbox notice
         // the old client is gone (the TV still retries a PS5 that isn't free yet)
-        open(act, tv, t, when (t.kind) { "pc" -> 500L; "ps" -> 1500L; else -> 1000L })
+        open(act, tv, t, when (t.kind) { "pc" -> 500L; "ps" -> 3000L; else -> 1000L })
     }
 }

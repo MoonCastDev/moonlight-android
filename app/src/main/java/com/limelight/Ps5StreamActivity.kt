@@ -38,6 +38,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
         const val EXTRA_MORNING = "ps5_morning"          // hex, 16 bytes
         const val EXTRA_PS5 = "ps5_is_ps5"
         private const val QUIT_RP_IN_USE = 4
+        private const val IN_USE_WAIT_MS = 30_000L   // how long to wait for another device to let go of Remote Play
         private const val KEY_TOUCHPAD = KeyEvent.KEYCODE_BUTTON_16   // internal: an odd Sony pad's touchpad click
         private val STEP_NAMES = listOf("Found your PS5", "Waking it up", "Signing in", "Starting video")
         private val MENU_COMBO = setOf(KeyEvent.KEYCODE_BUTTON_SELECT, KeyEvent.KEYCODE_BUTTON_START,
@@ -267,7 +268,25 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
                     Log.w(TAG, "attempt ${attempt + 1}: PS5 ended the session before the picture - retrying")
                     Ps5Pad.stop()
                     session = null
-                    try { s.stop(); s.dispose() } catch (e: Exception) {}
+                    synchronized(disposed) { disposed.add(s) }
+                    try { s.stop() } catch (e: Exception) {}
+                    synchronized(sessionLock) { try { s.dispose() } catch (e: Exception) {} }
+                    if (inUse) {
+                        // another device (e.g. a handheld that just moved the game here) is still letting go
+                        inUse = false
+                        if (inUseSince == 0L) inUseSince = System.currentTimeMillis()
+                        if (System.currentTimeMillis() - inUseSince < IN_USE_WAIT_MS) {
+                            showStatus("Waiting for the PS5 to finish with the other device…")
+                            try { Thread.sleep(3000) } catch (e: InterruptedException) { break }
+                            continue   // doesn't count as an attempt
+                        }
+                        Log.i(TAG, "PS5 still in use by another device after ${IN_USE_WAIT_MS / 1000} s")
+                        closed = true
+                        showStatus("Your PS5 is already streaming to another device.\nClose it there, then try again.")
+                        try { Thread.sleep(6000) } catch (e: InterruptedException) { }
+                        runOnUiThread { finish() }
+                        return
+                    }
                     attempt++
                     if (attempt < maxAttempts) {
                         progressStage = 0
@@ -305,6 +324,8 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
     @Volatile private var connected = false                                  // first picture arrived
     @Volatile private var attemptLatch: java.util.concurrent.CountDownLatch? = null  // remote attempt in flight
     @Volatile private var attemptQuit = false
+    @Volatile private var inUse = false          // the last attempt ended with "Remote is already in use"
+    private var inUseSince = 0L
     @Volatile private var progressProc: Process? = null
     @Volatile private var progressStage = 0
 
@@ -366,7 +387,16 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
             is QuitEvent -> {
                 // The PS5 allows ONE Remote Play session: if another device (e.g. the Odin's own player) still has it,
                 // say so instead of closing silently - retrying can't help until that one ends.
-                if (!connected && ev.reason.value == QUIT_RP_IN_USE) {
+                val inUseQuit = ev.reason.value == QUIT_RP_IN_USE || ev.reasonString?.contains("in use", ignoreCase = true) == true
+                if (!connected && inUseQuit && attemptLatch != null) {
+                    // Remote Play is still busy with another device: retry every 3 s for up to 30 s (connect() loop)
+                    Log.i(TAG, "PS5 is busy with another device: waiting for it")
+                    inUse = true
+                    attemptQuit = true
+                    attemptLatch?.countDown()
+                    return
+                }
+                if (!connected && inUseQuit) {
                     Log.i(TAG, "PS5 is already streaming to another device")
                     closed = true
                     attemptLatch?.countDown()

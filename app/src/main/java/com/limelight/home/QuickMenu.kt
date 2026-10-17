@@ -106,6 +106,7 @@ class QuickMenu(private val act: Activity) {
             addView(panel, FrameLayout.LayoutParams(tv.px(660), -1, Gravity.END).apply { })
             panel.isClickable = true
         }
+        noFocus(r)
         (act.window.decorView as ViewGroup).addView(r, ViewGroup.LayoutParams(-1, -1))
         root = r
         paint()
@@ -191,6 +192,7 @@ class QuickMenu(private val act: Activity) {
             else addView(panel, FrameLayout.LayoutParams(t.px(680), -1, Gravity.END))
             panel.isClickable = true
         }
+        noFocus(r)
         (act.window.decorView as ViewGroup).addView(r, ViewGroup.LayoutParams(-1, -1))
         root = r
         paint()
@@ -222,6 +224,21 @@ class QuickMenu(private val act: Activity) {
             setLayerInset(1, t.px(6), t.px(6), t.px(6), t.px(6))
             setLayerInset(2, t.px(11), t.px(11), t.px(11), t.px(11))
         }
+    }
+
+    /**
+     * The menu does its own selection, so none of its views may take Android focus: its rows are clickable (for
+     * touch), which makes them focusable, and the first d-pad press after a touch then only left touch mode and
+     * focused a row - it never reached [onKey] (two presses to move once).
+     */
+    private fun noFocus(r: ViewGroup) {
+        fun walk(v: View) { v.isFocusable = false; v.isFocusableInTouchMode = false; if (v is ViewGroup) for (i in 0 until v.childCount) walk(v.getChildAt(i)) }
+        walk(r)
+        r.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+        // the menu itself holds focus while it's open: with a view focused, Android passes the first d-pad press on
+        // instead of spending it on leaving touch mode (keys still reach the player first, which forwards them here)
+        r.isFocusable = true; r.isFocusableInTouchMode = true
+        ui.post { if (root === r) r.requestFocus() }
     }
 
     /** Close the menu, with its close sound. */
