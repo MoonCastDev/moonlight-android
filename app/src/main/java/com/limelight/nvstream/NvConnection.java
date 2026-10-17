@@ -48,6 +48,23 @@ public class NvConnection {
     private static Semaphore connectionAllowed = new Semaphore(1);
     private final boolean isMonkey;
     private final Context appContext;
+    private volatile boolean resumeOnly;
+
+    /**
+     * Only join a game that is already running (a second, controller-only session next to another device's stream):
+     * never launch an app and never quit a different one. Fails instead.
+     */
+    public void setResumeOnly(boolean resumeOnly) { this.resumeOnly = resumeOnly; }
+
+    private volatile boolean controllersBlocked;
+
+    /**
+     * Send no gamepad at all on this session (no arrival, input, touch, motion or battery events), so it never takes a
+     * pad slot on the PC: another device has its own controller session for that (a handheld sending a game to a TV).
+     * Keyboard and mouse are unaffected. Use with an attached-gamepad mask of 0.
+     */
+    public void setControllersBlocked(boolean blocked) { this.controllersBlocked = blocked; }
+    public boolean controllersBlocked() { return controllersBlocked; }
 
     public NvConnection(Context appContext, ComputerDetails.AddressTuple host, int httpsPort, String uniqueId, StreamConfiguration config, LimelightCryptoProvider cryptoProvider, X509Certificate serverCert)
     {
@@ -307,6 +324,11 @@ public class NvConnection {
             }
         }
         
+        if (resumeOnly && h.getCurrentGame(serverInfo) != app.getAppId()) {
+            context.connListener.displayMessage("The game isn't running on the PC");
+            return false;
+        }
+
         // If there's a game running, resume it
         if (h.getCurrentGame(serverInfo) != 0) {
             try {
@@ -491,7 +513,7 @@ public class NvConnection {
             final short leftStickX, final short leftStickY,
             final short rightStickX, final short rightStickY)
     {
-        if (!isMonkey) {
+        if (!isMonkey && !controllersBlocked) {
             MoonBridge.sendMultiControllerInput(controllerNumber, activeGamepadMask, buttonFlags,
                     leftTrigger, rightTrigger, leftStickX, leftStickY, rightStickX, rightStickY);
         }
@@ -552,12 +574,13 @@ public class NvConnection {
 
     public int sendControllerArrivalEvent(byte controllerNumber, short activeGamepadMask, byte type,
                                           int supportedButtonFlags, short capabilities) {
+        if (controllersBlocked) return 0;
         return MoonBridge.sendControllerArrivalEvent(controllerNumber, activeGamepadMask, type, supportedButtonFlags, capabilities);
     }
 
     public int sendControllerTouchEvent(byte controllerNumber, byte eventType, int pointerId,
                                         float x, float y, float pressure) {
-        if (!isMonkey) {
+        if (!isMonkey && !controllersBlocked) {
             return MoonBridge.sendControllerTouchEvent(controllerNumber, eventType, pointerId, x, y, pressure);
         }
         else {
@@ -567,7 +590,7 @@ public class NvConnection {
 
     public int sendControllerMotionEvent(byte controllerNumber, byte motionType,
                                          float x, float y, float z) {
-        if (!isMonkey) {
+        if (!isMonkey && !controllersBlocked) {
             return MoonBridge.sendControllerMotionEvent(controllerNumber, motionType, x, y, z);
         }
         else {
@@ -576,6 +599,7 @@ public class NvConnection {
     }
 
     public void sendControllerBatteryEvent(byte controllerNumber, byte batteryState, byte batteryPercentage) {
+        if (controllersBlocked) return;
         MoonBridge.sendControllerBatteryEvent(controllerNumber, batteryState, batteryPercentage);
     }
 

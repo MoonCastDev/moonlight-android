@@ -58,7 +58,7 @@ class QuickMenu(private val act: Activity) {
         if (switchStyle) { showSwitch(title, subtitle, stats, items); return }
 
         val panel = tv.col().apply {
-            background = tv.round(tv.p.deep, 0)
+            background = tv.round(translucent(tv.p.deep), 0)
             setPadding(tv.px(52), tv.px(64), tv.px(52), tv.px(48))
         }
         panel.addView(tv.text(title, 30, tv.p.moon, tv.display(600), 2))
@@ -106,6 +106,7 @@ class QuickMenu(private val act: Activity) {
             addView(panel, FrameLayout.LayoutParams(tv.px(660), -1, Gravity.END).apply { })
             panel.isClickable = true
         }
+        noFocus(r)
         (act.window.decorView as ViewGroup).addView(r, ViewGroup.LayoutParams(-1, -1))
         root = r
         paint()
@@ -119,10 +120,15 @@ class QuickMenu(private val act: Activity) {
     private val light = act.getSharedPreferences("mc_tv", Context.MODE_PRIVATE).getString("hh_theme", "dark") == "light"
     private val sBg = if (light) 0xFFEBEBEB.toInt() else 0xFF2B2D31.toInt()
     private val sPanel = if (light) 0xFFFFFFFF.toInt() else 0xFF36393F.toInt()
+    // the panel is see-through so the game stays visible behind it (alpha only, no blur: Android 9 sticks)
+    private val panelFill = translucent(if (light) 0xFFFFFFFF.toInt() else 0xFF0C111D.toInt())
     private val sInk = if (light) 0xFF2D2D2D.toInt() else 0xFFFFFFFF.toInt()
     private val sSub = if (light) 0xFF6E727A.toInt() else 0xFFB5BAC3.toInt()
     private val sRing = if (light) 0xFF00A9C2.toInt() else 0xFF2FD3E6.toInt()
     private var st: Tv = tv
+
+    /** 80% opaque: the picture shows through the panel. */
+    private fun translucent(c: Int): Int = (0xCC shl 24) or (c and 0xFFFFFF)
 
     private fun showSwitch(title: String, subtitle: String, stats: Stats, items: List<Item>) {
         val dm = act.resources.displayMetrics
@@ -133,8 +139,8 @@ class QuickMenu(private val act: Activity) {
 
         val panel = t.col().apply {
             background = if (upright) android.graphics.drawable.GradientDrawable().apply {
-                setColor(sPanel); val r = t.pxf(36); cornerRadii = floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f) }
-                else android.graphics.drawable.ColorDrawable(sPanel)
+                setColor(panelFill); val r = t.pxf(36); cornerRadii = floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f) }
+                else android.graphics.drawable.ColorDrawable(panelFill)
             setPadding(t.px(44), t.px(if (upright) 26 else 44), t.px(44), t.px(if (upright) 60 else 40))
         }
         if (upright) panel.addView(View(act).apply { background = t.round(if (light) 0xFFCDCFD4.toInt() else 0xFF474B53.toInt(), 5) },
@@ -191,6 +197,7 @@ class QuickMenu(private val act: Activity) {
             else addView(panel, FrameLayout.LayoutParams(t.px(680), -1, Gravity.END))
             panel.isClickable = true
         }
+        noFocus(r)
         (act.window.decorView as ViewGroup).addView(r, ViewGroup.LayoutParams(-1, -1))
         root = r
         paint()
@@ -222,6 +229,21 @@ class QuickMenu(private val act: Activity) {
             setLayerInset(1, t.px(6), t.px(6), t.px(6), t.px(6))
             setLayerInset(2, t.px(11), t.px(11), t.px(11), t.px(11))
         }
+    }
+
+    /**
+     * The menu does its own selection, so none of its views may take Android focus: its rows are clickable (for
+     * touch), which makes them focusable, and the first d-pad press after a touch then only left touch mode and
+     * focused a row - it never reached [onKey] (two presses to move once).
+     */
+    private fun noFocus(r: ViewGroup) {
+        fun walk(v: View) { v.isFocusable = false; v.isFocusableInTouchMode = false; if (v is ViewGroup) for (i in 0 until v.childCount) walk(v.getChildAt(i)) }
+        walk(r)
+        r.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+        // the menu itself holds focus while it's open: with a view focused, Android passes the first d-pad press on
+        // instead of spending it on leaving touch mode (keys still reach the player first, which forwards them here)
+        r.isFocusable = true; r.isFocusableInTouchMode = true
+        ui.post { if (root === r) r.requestFocus() }
     }
 
     /** Close the menu, with its close sound. */

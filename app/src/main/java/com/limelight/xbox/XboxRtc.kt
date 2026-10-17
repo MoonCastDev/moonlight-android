@@ -107,8 +107,10 @@ class XboxRtc(
 
     fun start() = work.post { try { run() } catch (e: Exception) { if (!closed) { Log.w(TAG, "session failed", e); listener.onFailed(e.message ?: e.javaClass.simpleName) } } }
 
-    fun stop() {
-        if (closed) return
+    /** End the session. [done] (optional) runs on the worker once everything is closed. */
+    @JvmOverloads
+    fun stop(done: Runnable? = null) {
+        if (closed) { done?.run(); return }
         closed = true
         work.removeCallbacksAndMessages(null)
         work.post {
@@ -118,6 +120,7 @@ class XboxRtc(
             try { pc?.dispose() } catch (e: Exception) { }
             try { factory?.dispose() } catch (e: Exception) { }
             worker.quitSafely()
+            done?.run()
         }
     }
 
@@ -200,11 +203,15 @@ class XboxRtc(
             if (answer == null) Thread.sleep(1000)
         }
         if (closed) return
-        // what the Xbox agreed to: media sections, directions and the video codec it picked
-        answer!!.replace("\r", "").split("\n").filter { it.startsWith("m=") || it == "a=sendonly" || it == "a=recvonly" ||
-                it == "a=sendrecv" || it == "a=inactive" || it.startsWith("a=rtpmap") && (it.contains("H264") || it.contains("opus")) }
-            .forEach { Log.i(TAG, "answer $it") }
+        // what the Xbox agreed to: the whole video section of the answer, so codec parameters (fmtp: profile, mode)
+        // can be checked against the offer. A payload type whose parameters don't match the offer is never mapped.
+        sectionLines(answer!!, "video").forEach { Log.i(TAG, "answer $it") }
+        sectionLines(answer, "audio").filter { it.startsWith("a=rtpmap") || it.startsWith("a=sendrecv") }.forEach { Log.i(TAG, "answer $it") }
         setRemote(answer)
+        // which way each media section was negotiated (a recvonly/inactive video section never gets media)
+        pc?.transceivers?.forEach { t ->
+            Log.i(TAG, "transceiver ${t.mediaType} direction=${t.direction} current=${t.currentDirection}")
+        }
 
         // Local candidates (gathering finishes quickly on a LAN; don't wait forever)
         gatheringDone.await(5, TimeUnit.SECONDS)
@@ -352,7 +359,11 @@ class XboxRtc(
         }, MediaConstraints())
         l1.await(10, TimeUnit.SECONDS)
         val offer = made ?: throw IllegalStateException("Offer failed: $error")
-        val munged = SessionDescription(offer.type, capBitrate(stereo(offer.description)))
+        // The Xbox answers H.264 at profile-level-id 42e02a; libwebrtc treats 42e01f and 42e02a as one codec, so an extra
+        // entry in the codec list never reaches the offer (test151). Offer the H.264 at the level the Xbox answers.
+        val level = offer.description.replace("\r", "").replace("profile-level-id=42e01f", "profile-level-id=42e02a")
+        val munged = SessionDescription(offer.type, capBitrate(stereo(level)))
+        sectionLines(munged.description, "video").forEach { Log.i(TAG, "offer $it") }
         val l2 = CountDownLatch(1)
         p.setLocalDescription(object : SdpAdapter() {
             override fun onSetSuccess() { l2.countDown() }
@@ -360,6 +371,17 @@ class XboxRtc(
         }, munged)
         l2.await(10, TimeUnit.SECONDS)
         return munged
+    }
+
+    /** The lines of one media section (video, audio...) of an SDP, without the \r. */
+    private fun sectionLines(sdp: String, kind: String): List<String> {
+        val out = ArrayList<String>()
+        var inside = false
+        for (l in sdp.replace("\r", "").split("\n")) {
+            if (l.startsWith("m=")) inside = l.startsWith("m=$kind ")
+            if (inside && l.isNotBlank()) out.add(l)
+        }
+        return out
     }
 
     private fun setRemote(sdp: String) {
@@ -495,13 +517,19 @@ class XboxRtc(
     private val keyframeWatch = object : Runnable {
         override fun run() {
             if (closed || videoFlowing) return
-            if (keyframeTries++ >= 5) return
+            if (keyframeTries++ >= 5) {
+                // ~18 s with no video bytes from the Xbox: end this session (the console keeps it otherwise) and say so
+                Log.w(TAG, "no video after ${keyframeTries * 3} s: the Xbox accepted the session but sent no picture")
+                listener.onFailed("The Xbox connected but sent no picture.")
+                return
+            }
             Log.i(TAG, "no video yet, asking for a keyframe again")
             askKeyframe()
             work.postDelayed(this, 3000)
         }
     }
     @Volatile private var videoFlowing = false
+    private var statsLogs = 0
 
     private fun askKeyframe() = sendText("control", JSONObject().put("message", "videoKeyframeRequested").put("ifrRequested", false).toString())
 
@@ -622,6 +650,31 @@ class XboxRtc(
                     rtt = ((m["currentRoundTripTime"] as? Number)?.toDouble() ?: -0.001) * 1000.0
             }
             if (fps > 0 || mbps > 0) videoFlowing = true
+            else if (!videoFlowing && statsLogs == 0) {
+                // once: what libwebrtc actually negotiated on the video receiver, and which stats it reports at all
+                statsLogs++
+                report.statsMap.values.forEach { st ->
+                    Log.i(TAG, "stats type=${st.type} id=${st.id} keys=${st.members.keys.joinToString()}")
+                }
+                p.transceivers.filter { it.mediaType == MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO }.forEach { t ->
+                    val rp = t.receiver.parameters
+                    Log.i(TAG, "recv codecs: " + rp.codecs.joinToString { "${it.name}/pt=${it.payloadType} ${it.parameters}" })
+                    Log.i(TAG, "recv encodings ssrc: " + rp.encodings.joinToString { "${it.ssrc}" })
+                }
+            }
+            if (!videoFlowing && statsLogs in 1..12 && fps <= 0 && mbps <= 0) {
+                statsLogs++
+                // diagnostics while the picture is missing: is any video RTP arriving at all?
+                val vid = report.statsMap.values.filter { it.type == "inbound-rtp" && it.members["kind"] == "video" }
+                val v = vid.firstOrNull()?.members
+                val codec = v?.get("codecId")?.let { report.statsMap[it as String]?.members?.get("mimeType") }
+                // padding-only packets (bandwidth probes) count as packets but carry no payload: bytes stay 0
+                Log.i(TAG, "video in: ${vid.size} inbound-rtp, bytes=${v?.get("bytesReceived")} " +
+                        "packets=${v?.get("packetsReceived")} frames=${v?.get("framesDecoded")} " +
+                        "codec=$codec ssrc=${v?.get("ssrc")} pt=${v?.get("payloadType")} " +
+                        "discarded=${v?.get("packetsDiscarded")} plis=${v?.get("pliCount")} nacks=${v?.get("nackCount")} " +
+                        "firs=${v?.get("firCount")} keyFrames=${v?.get("keyFramesDecoded")}")
+            }
             cb(Stats(fps, rtt, mbps, loss, w, h))
         }
     }

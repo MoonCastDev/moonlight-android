@@ -48,6 +48,7 @@ import com.limelight.home.Feel
 import com.limelight.home.FeelSounds
 import com.limelight.home.FocusGlide
 import com.limelight.home.Launch
+import com.limelight.home.MoveToTv
 import com.limelight.home.PadTestActivity
 import com.limelight.home.Ps5Store
 import com.limelight.home.Psn
@@ -72,8 +73,8 @@ import java.util.concurrent.Executors
 /**
  * MoonCast handheld home, in the Switch style of mooncast-handheld-v2.html: one row of big game tiles (what you played
  * last first), a row of round buttons, a hint bar. Upright it becomes a phone layout with a dock. This app is always
- * the sender: games play here, and "Play on a TV" will send them to a MoonCast TV (issue #26). It never listens for
- * other devices.
+ * the sender: games play here, or go to a MoonCast TV ([TvFinder] finds them, [TvSender] sends, and
+ * [TvControllerActivity] makes this device the TV's controller). It never receives games from other devices.
  *
  * Moonlight's own pieces do the work, as on the TV: ComputerManagerService finds PCs, ServerHelper starts PC games,
  * Ps5StreamActivity plays a PS5 and XboxStreamActivity an Xbox.
@@ -148,14 +149,58 @@ class HandheldHomeActivity : Activity() {
         // a resolution saved earlier, in either of Moonlight's keys, is left alone
         if (!stream.contains("list_resolution") && !stream.contains("list_resolution_fps"))
             stream.edit().putString("list_resolution", nativeResolution()).apply()
+        MoveToTv.handler = TvSender   // the players' Quick menu offers "Move to <TV>" through this
         buildShell()
         bindService(Intent(this, ComputerManagerService::class.java), conn, Context.BIND_AUTO_CREATE)
+        takeIntent(intent)
         (getSystemService(Context.INPUT_SERVICE) as InputManager).registerInputDeviceListener(pads, ui)
     }
+
+    override fun onNewIntent(i: Intent) {
+        super.onNewIntent(i)
+        takeIntent(i)
+    }
+
+    /** Controller mode's "Play here instead": start that game here once it's known (PCs may still be loading). */
+    private var pendingPlay: String? = null
+    private fun takeIntent(i: Intent?) {
+        val k = i?.getStringExtra(EXTRA_PLAY_HERE) ?: return
+        i.removeExtra(EXTRA_PLAY_HERE)
+        pendingPlay = k
+        ui.post { runPending() }
+    }
+
+    private var pendingSince = 0L
+    private val pendingTimeout = Runnable { runPending(force = true) }
+
+    /**
+     * Start the pending game once its PC's state is known: right after resuming, the PC list still holds the state
+     * from before the poll (often "offline"), so wait for the first poll since resume, up to 6 s.
+     */
+    private fun runPending(force: Boolean = false) {
+        val k = pendingPlay ?: return
+        if (pendingSince == 0L) {
+            pendingSince = android.os.SystemClock.elapsedRealtime()
+            toast("Starting on this ${deviceShort()}…")
+            ui.postDelayed(pendingTimeout, 6000)
+        }
+        val g = gameFor(k)
+        val pc = g?.pc
+        if (!force && (g == null || (pc != null && (polledAt[pc.uuid] ?: 0L) < resumedAt))) return   // onComputer tries again
+        ui.removeCallbacks(pendingTimeout)
+        pendingPlay = null; pendingSince = 0L
+        if (g == null) { toast("Couldn't find that game here yet. Try it from the home."); return }
+        playHere(g)   // after 6 s without a fresh answer it just tries (only a poll that says offline asks to wake it)
+    }
+    private val polledAt = HashMap<String, Long>()   // PC uuid -> when its state last came in
+    private var resumedAt = 0L
 
     override fun onResume() {
         super.onResume()
         resumed = true
+        resumedAt = android.os.SystemClock.elapsedRealtime()
+        TvFinder.onChange = { render() }
+        if (System.currentTimeMillis() - TvFinder.lastSweepAt > 90_000) TvFinder.sweep(this) else TvFinder.check(this)
         consoles = Ps5Store.all(this)
         xboxes = Xbox.consoles(this)
         refreshXboxes()
@@ -163,12 +208,14 @@ class HandheldHomeActivity : Activity() {
         ui.post(tick)
         holdMulticast(true)
         render(force = true)
+        runPending()
         // back from a stream: put the ring back on the focused item once it's laid out
         ui.postDelayed({ currentFocus?.let { glide.moveTo(it) } }, 120)
     }
 
     override fun onPause() {
         resumed = false
+        TvFinder.onChange = null
         holdMulticast(false)
         stopPolling()
         ui.removeCallbacks(tick)
@@ -253,6 +300,7 @@ class HandheldHomeActivity : Activity() {
         startPolling()
     }
     private var lastKick = 0L
+    private var tvCheckAt = 0L
 
     private fun stopPolling() {
         appPollers.values.forEach { it.stop() }
@@ -272,6 +320,10 @@ class HandheldHomeActivity : Activity() {
         override fun run() {
             updateStatus()
             probeConsoles()
+            // MoonCast TVs: the known ones every half minute, a full sweep every two minutes (a couple of seconds' work)
+            val now = System.currentTimeMillis()
+            if (now - TvFinder.lastSweepAt > 120_000) TvFinder.sweep(this@HandheldHomeActivity)
+            else if (now - tvCheckAt > 30_000) { tvCheckAt = now; TvFinder.check(this@HandheldHomeActivity) }
             // no PC yet: give discovery a fresh start every half minute
             if (pcs.isEmpty() && android.os.SystemClock.elapsedRealtime() - lastKick > 30_000) {
                 lastKick = android.os.SystemClock.elapsedRealtime(); if (polling) lookAgain() }
@@ -298,6 +350,8 @@ class HandheldHomeActivity : Activity() {
     private fun onComputer(d: ComputerDetails) {
         val uuid = d.uuid ?: return
         pcs[uuid] = d
+        // UNKNOWN = the service timed out its old poll data and hasn't asked the PC again yet
+        if (d.state != ComputerDetails.State.UNKNOWN) polledAt[uuid] = android.os.SystemClock.elapsedRealtime()
         val raw = d.rawAppList
         if (raw != null && raw != rawLists[uuid]) {
             rawLists[uuid] = raw
@@ -312,6 +366,7 @@ class HandheldHomeActivity : Activity() {
             binder?.let { b -> appPollers[uuid] = b.createAppListPoller(b.getComputer(uuid) ?: d).also { it.start() } }
         }
         render()
+        runPending()
     }
 
     private fun probeConsoles() {
@@ -461,6 +516,7 @@ class HandheldHomeActivity : Activity() {
         consoles.forEach { append(it.host).append(it.name).append(psStatus[it.host]?.power).append(psStatus[it.host]?.runningApp) }
         xboxes.forEach { append(it.id).append(it.name).append(it.powerState) }
         if (portrait && page == Page.HOME) append(selKey)
+        append(TvFinder.target(this@HandheldHomeActivity)?.let { it.id + it.name + TvFinder.isHere(it) })
     }
 
     /** Rebuild the page when something visible changed, keeping focus on the same item. */
@@ -531,8 +587,13 @@ class HandheldHomeActivity : Activity() {
                 background = sw.round(sw.panel, 32)
                 setPadding(sw.px(18), 0, sw.px(26), 0)
                 addView(View(this@HandheldHomeActivity).apply { background = sw.round(0, 5, sw.ink, 3) }, sw.lp(30, 20).apply { rightMargin = sw.px(12) })
-                addView(sw.text(if (portrait) "This ${deviceShort()}" else "Playing on this ${deviceShort()}", 24, sw.ink, 700))
-                setOnClickListener { playWhere(gameFor(selKey)) }
+                val tv = TvFinder.target(this@HandheldHomeActivity)
+                addView(sw.text(when {
+                    tv != null -> "Playing on ${tv.name}" + if (TvFinder.isHere(tv)) "" else " (not found)"
+                    portrait -> "This ${deviceShort()}"
+                    else -> "Playing on this ${deviceShort()}"
+                }, 24, sw.ink, 700))
+                setOnClickListener { playWhere(null) }
                 isFocusable = false   // a tap target only; the pad starts on the games
                 isSoundEffectsEnabled = !FeelSounds.enabled(this@HandheldHomeActivity)
             }, sw.lp(-2, 64))
@@ -581,7 +642,7 @@ class HandheldHomeActivity : Activity() {
         foot.addView(padName)
         foot.addView(sw.grow())
         val h = when (page) {
-            Page.HOME -> listOf("Y" to "Play on TV", "A" to "Start")
+            Page.HOME -> listOf("Y" to (if (TvFinder.target(this) != null) "Play here" else "Play on TV"), "A" to "Start")
             Page.GAMES -> listOf("L R" to "Tabs", "X" to (if (sortAz) "Recent first" else "A to Z"), "B" to "Back", "A" to "Start")
             Page.CONSOLES -> listOf("B" to "Back", "A" to "Open")
             Page.SETTINGS -> listOf("B" to "Back", "A" to "OK")
@@ -652,7 +713,7 @@ class HandheldHomeActivity : Activity() {
         hero = heroTile
         col.addView(part(heroTile), sw.lp(-1, 560).apply { topMargin = sw.px(26) })
         col.addView(part(sw.row().apply {
-            addView(pill("pill:here", "Play here", true) { gameFor(selKey)?.let { play(it) } ?: go(Page.CONSOLES) }, LinearLayout.LayoutParams(0, sw.px(112), 1f))
+            addView(pill("pill:here", "Play here", true) { gameFor(selKey)?.let { playHere(it) } ?: go(Page.CONSOLES) }, LinearLayout.LayoutParams(0, sw.px(112), 1f))
             addView(pill("pill:tv", "Play on TV", false) { playWhere(gameFor(selKey)) }, LinearLayout.LayoutParams(0, sw.px(112), 1f).apply { leftMargin = sw.px(20) })
         }), sw.lp(-1, 112).apply { topMargin = sw.px(40) })
         col.addView(part(sw.text("Recent", 34, sw.ink, 800)), sw.lp(-2, -2).apply { topMargin = sw.px(56) })
@@ -685,11 +746,11 @@ class HandheldHomeActivity : Activity() {
     private fun roundAction(icon: String) {
         when (icon) {
             "consoles" -> go(Page.CONSOLES)
-            "tv" -> playWhere(gameFor(selKey))
+            "tv" -> playWhere(null)
             "pad" -> controllers()
             "net" -> ServerHelper.doNetworkTest(this)
             "gear" -> go(Page.SETTINGS)
-            "power" -> { FeelSounds.play(this, FeelSounds.Cue.BACK); finishAndRemoveTask() }
+            "power" -> { FeelSounds.play(this, FeelSounds.Cue.BACK); PadLink.stop(); finishAndRemoveTask() }
         }
     }
 
@@ -753,7 +814,13 @@ class HandheldHomeActivity : Activity() {
     /** Focus moved: the name above the row, the round button's label, the colour wash and the selected game follow. */
     private fun onFocus(v: View?) {
         syncLabels(v)
-        val t = v?.tag as? String ?: return
+        val t = v?.tag as? String
+        // the name above the row belongs to a game tile: hide it while focus is anywhere else (the round buttons)
+        gnameBox?.let { box ->
+            val show = t != null && t.startsWith("g:") || v == null || v.isInTouchMode
+            box.animate().cancel(); box.animate().alpha(if (show) 1f else 0f).setDuration(150).start()
+        }
+        if (t == null) return
         if (t.startsWith("g:") || t == "hero") {
             if (t.startsWith("g:") && t != "g:all" && t != "g:add") selKey = t.removePrefix("g:")
             (v.getTag(R.id.hh_tint) as? Int)?.let { if (it != 0) wash.color = it }
@@ -985,7 +1052,7 @@ class HandheldHomeActivity : Activity() {
         val pc = g.pc ?: return; val app = g.app ?: return
         val running = app.appId == pc.runningGameId
         dialog(app.appName, "On ${pc.name}" + (if (running) ". Running now." else "."), listOfNotNull(
-                Opt("▶", Sw.LIVE, if (running) "Resume here" else "Play here") { play(g) },
+                Opt("▶", Sw.LIVE, if (running) "Resume here" else "Play here") { playHere(g) },
                 Opt("TV", sw.ring, "Play on a TV") { playWhere(g) },
                 if (running) Opt("✕", Sw.DANGER, "Quit game", "Closes it on the PC") { quit(pc, app) } else null,
                 Opt("–", Sw.PC, "Hide from All games", "Show it again from Moonlight's app list") {
@@ -1075,6 +1142,8 @@ class HandheldHomeActivity : Activity() {
                 action(list, "padtest", "Test a controller", "See every button, stick and trigger live, and try the rumble", null) {
                     startActivity(Intent(this, PadTestActivity::class.java)) }
                 action(list, "padpair", "Pair a controller", "Opens Bluetooth settings. Put the pad in pairing mode first", null) { pairController() }
+                choice(list, prefs, TvControllerActivity.PAD_PREF, "Controller on a TV", "For PC games sent to a TV. Direct is fastest: it skips the TV's Wi-Fi",
+                        listOf("Direct to the PC" to "direct", "Through the TV" to "tv"), "direct")
                 toggle(list, "checkbox_multi_controller", "More than one player", "On a PC each pad is its own player", true)
                 intChoice(list, "seekbar_deadzone", "Stick deadzone", "Raise it if a character drifts on its own", listOf(3, 5, 7, 10, 15), 7) { "$it%" }
                 toggle(list, "checkbox_flip_face_buttons", "Swap A and B", "For Nintendo-style layouts", false)
@@ -1237,10 +1306,16 @@ class HandheldHomeActivity : Activity() {
         ui.postDelayed(hideSnack, if (s.length > 60) 5000L else 3500L)
     }
 
+    /** A: plays where games go now, this device or the TV picked in "Play on" (the top chip says which). */
     private fun play(g: Game) {
+        val tv = TvFinder.target(this)
+        if (tv != null) sendToTv(g, tv) else playHere(g)
+    }
+
+    private fun playHere(g: Game) {
         when {
             g.pc != null && g.app != null -> {
-                if (!online(g.pc)) {
+                if (g.pc.state == ComputerDetails.State.OFFLINE) {   // only when a poll says so (UNKNOWN = not asked yet)
                     confirm("${g.pc.name} is offline", "Wake it, then start ${g.app.appName} once it's online.", "Wake it") { wake(g.pc) }
                     return
                 }
@@ -1259,15 +1334,93 @@ class HandheldHomeActivity : Activity() {
         startActivity(Launch.xboxIntent(this, c))
     }
 
-    /** "Play on a TV": sending to a MoonCast TV is issue #26. For now this lists where it can play, which is here. */
-    private fun playWhere(g: Game?) {
-        val res = (stream.getString("list_resolution", null) ?: nativeResolution()).substringAfter('x') + "p"
-        val fps = stream.getString("list_fps", "60") ?: "60"
-        dialog("Where should it play?",
-                (if (g != null) "${g.title}. " else "") + "Sending a game to a MoonCast TV is coming soon. Until then it plays here.",
-                listOf(Opt("▭", Sw.PC, "This ${deviceShort()}", "$res, $fps fps", "Now", g != null) { g?.let { play(it) } },
-                        Opt("TV", sw.ring, "A MoonCast TV", "Coming soon. This ${deviceShort()} will be the controller", null, false)),
-                if (g != null) listOf("Cancel" to {}, "Play" to { play(g) }) else listOf("OK" to {}))
+    /**
+     * "Play on": this device or a MoonCast TV. With a game it plays there now; without one (the top chip, the round
+     * button) it picks where games go when you press A. TVs are looked for again each time it opens.
+     */
+    private fun playWhere(g: Game?, sweep: Boolean = true) {
+        // what the stream will actually use: Moonlight's own reading of the saved resolution and frame rate
+        val pc = com.limelight.preferences.PreferenceConfiguration.readPreferences(this)
+        val res = "${minOf(pc.width, pc.height)}p"
+        val fps = pc.fps.toString()
+        val cur = TvFinder.target(this)
+        val tvs = TvFinder.known(this)
+        val opts = ArrayList<Opt>()
+        opts += Opt("▭", Sw.PC, "This ${deviceShort()}", "$res, $fps fps", if (cur == null) "Now" else null) {
+            TvFinder.setTarget(this, null)
+            if (g != null) playHere(g) else { toast("Games play on this ${deviceShort()}"); render(force = true) }
+        }
+        tvs.forEach { tv ->
+            val found = TvFinder.isHere(tv)
+            val xboxNo = g?.xb != null && (!tv.canXbox || !tv.xbox)
+            val sub = when {
+                !found -> "Not on this network"
+                xboxNo && !tv.canXbox -> "Update MoonCast on this TV to send it an Xbox"
+                xboxNo -> "Sign in to Xbox on this TV first"
+                g?.pc != null && tv.pc.isEmpty() -> "Ready. No PC paired on it yet"
+                tv.pc.isNotEmpty() -> "Ready. Plays PC games from ${tv.pc}"
+                else -> "Ready"
+            }
+            opts += Opt("TV", sw.ring, tv.name, sub, if (cur?.id == tv.id) "Now" else if (found) "Ready" else null, found && !xboxNo) {
+                TvFinder.setTarget(this, tv)
+                if (g != null) sendToTv(g, tv) else { toast("Games play on ${tv.name}. This ${deviceShort()} is the controller"); render(force = true) }
+            }
+        }
+        val body = (if (g != null) "${g.title}. " else "") + when {
+            tvs.isEmpty() && sweep -> "Looking for MoonCast TVs on this network…"
+            tvs.isEmpty() -> "No MoonCast TV found. Open MoonCast on the TV, on the same Wi-Fi as this ${deviceShort()}."
+            else -> "On a TV, this ${deviceShort()} is the controller."
+        }
+        dialog(if (g != null) "Where should it play?" else "Play on", body, opts, listOf("Close" to {}))
+        whereOpen = g ?: NO_GAME
+        if (sweep) {
+            val before = tvs.filter { TvFinder.isHere(it) }.map { it.id }.toSet()
+            TvFinder.sweep(this) {
+                val again = whereOpen ?: return@sweep
+                if (overlayKind != "dialog") return@sweep
+                val now = TvFinder.known(this).filter { TvFinder.isHere(it) }.map { it.id }.toSet()
+                // reopen with what was found (the overlay stays up, so focus still returns where it was)
+                if (now != before || tvs.isEmpty()) playWhere(again.takeIf { it !== NO_GAME }, sweep = false)
+            }
+        }
+    }
+    private var whereOpen: Game? = null
+    private val NO_GAME = Game("", "", "", "", false)
+
+    /** Y: switch between this device and the last TV. With no TV yet, the "Play on" list opens. */
+    private fun toggleTarget() {
+        val last = TvFinder.lastTv(this)
+        when {
+            TvFinder.target(this) != null -> { TvFinder.setTarget(this, null); toast("Games play on this ${deviceShort()}") }
+            last != null -> { TvFinder.setTarget(this, last)
+                toast("Games play on ${last.name}" + if (TvFinder.isHere(last)) "" else ". It isn't on this network right now") }
+            else -> { playWhere(focusedGame() ?: gameFor(selKey)); return }
+        }
+        FeelSounds.play(this, FeelSounds.Cue.TOGGLE)
+        render(force = true)
+    }
+
+    /** Send [g] to [tv]; controller mode shows the progress (and the TV's answer if it can't). */
+    private fun sendToTv(g: Game, tv: TvFinder.Tv) {
+        val t = when {
+            g.pc != null && g.app != null -> {
+                if (!online(g.pc)) {
+                    confirm("${g.pc.name} is offline", "Wake it, then send ${g.app.appName} to ${tv.name} once it's online.", "Wake it") { wake(g.pc) }
+                    return
+                }
+                MoveToTv.Target("pc", g.app.appName, g.pc.uuid, g.pc.name, g.app.appId)
+            }
+            g.ps != null -> MoveToTv.Target("ps", g.ps.name, psHost = g.ps.host, registKey = g.ps.registKey, morning = g.ps.morning, isPs5 = g.ps.ps5)
+            g.xb != null -> {
+                if (!tv.canXbox) return toast("Update MoonCast on ${tv.name} to send it an Xbox game.")
+                if (TvFinder.isHere(tv) && !tv.xbox) return toast("Sign in to Xbox on ${tv.name} first. It plays your Xbox with its own sign-in.")
+                MoveToTv.Target("xb", g.xb.name, xboxId = g.xb.id)
+            }
+            else -> return
+        }
+        Recents.touch(this, g.key)
+        FeelSounds.play(this, FeelSounds.Cue.LAUNCH)
+        TvSender.open(this, tv, t)
     }
 
     private fun controllers() {
@@ -1658,6 +1811,7 @@ class HandheldHomeActivity : Activity() {
                     .hideSoftInputFromWindow(window.decorView.windowToken, 0)
         } catch (e: Exception) { }
         overlayKind = null
+        whereOpen = null
         overlay.removeAllViews()
         overlay.visibility = View.GONE
         main.descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
@@ -1707,8 +1861,7 @@ class HandheldHomeActivity : Activity() {
     override fun dispatchKeyEvent(e: KeyEvent): Boolean {
         if (e.action == KeyEvent.ACTION_DOWN && overlayKind == null && e.repeatCount == 0) {
             when (e.keyCode) {
-                KeyEvent.KEYCODE_BUTTON_Y -> if (page == Page.HOME || page == Page.GAMES) {
-                    playWhere(focusedGame() ?: gameFor(selKey)); return true }
+                KeyEvent.KEYCODE_BUTTON_Y -> if (page == Page.HOME || page == Page.GAMES) { toggleTarget(); return true }
                 KeyEvent.KEYCODE_BUTTON_X -> if (page == Page.GAMES) {
                     sortAz = !sortAz; FeelSounds.play(this, FeelSounds.Cue.TOGGLE); render(force = true); return true }
                 KeyEvent.KEYCODE_BUTTON_L1, KeyEvent.KEYCODE_BUTTON_R1 -> {
@@ -1808,6 +1961,7 @@ class HandheldHomeActivity : Activity() {
     }
 
     companion object {
+        const val EXTRA_PLAY_HERE = "play_here"
         private const val REQ_PSN_REGISTER = 41
         private const val REQ_PSN = 42
     }

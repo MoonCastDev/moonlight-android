@@ -7,6 +7,7 @@ import android.os.Looper;
 
 import com.limelight.computers.ComputerDatabaseManager;
 import com.limelight.home.Ps5Store;
+import com.limelight.home.Xbox;
 import com.limelight.nvstream.http.ComputerDetails;
 
 import java.io.BufferedReader;
@@ -27,6 +28,42 @@ import java.util.List;
  */
 public class PhoneLink {
     public static final int PORT = 8099;
+    /** What /mc-native reports as "version". 2 = /play accepts xboxId (+ xboxName). 3 = POST /stop.
+     *  4 = /play "pad":"direct" (the sender's controller goes straight to the PC) and POST /pad (relay after all).
+     *  5 = with "pad":"direct" the TV's stream registers no gamepad at all, so the sender's session is pad 0.
+     *  6 = GET /status: how the stream the last /play started is going ({"state","error","seq"}). */
+    public static final int PROTOCOL_VERSION = 6;
+
+    // GET /status: "idle", "starting" (after /play), "playing" or "failed" with the player's own words
+    private static volatile String playState = "idle";
+    private static volatile String playError = null;
+    private static volatile int playSeq = 0;
+
+    // The stream screens open right now (PC, PS5, Xbox), so /stop can end them. Tracked once for the whole app.
+    private static final java.util.Set<android.app.Activity> streams =
+            java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
+    private static boolean tracking;
+
+    private static synchronized void track(Context app) {
+        if (tracking || !(app instanceof android.app.Application)) return;
+        tracking = true;
+        com.limelight.home.StreamReport.setListener((state, msg) -> {
+            playState = state; playError = "failed".equals(state) ? msg : null;
+            return kotlin.Unit.INSTANCE;
+        });
+        ((android.app.Application) app).registerActivityLifecycleCallbacks(new android.app.Application.ActivityLifecycleCallbacks() {
+            private boolean isStream(android.app.Activity a) {
+                return a instanceof Game || a instanceof Ps5StreamActivity || a instanceof XboxStreamActivity;
+            }
+            @Override public void onActivityCreated(android.app.Activity a, android.os.Bundle b) { if (isStream(a)) synchronized (streams) { streams.add(a); } }
+            @Override public void onActivityDestroyed(android.app.Activity a) { synchronized (streams) { streams.remove(a); } }
+            @Override public void onActivityStarted(android.app.Activity a) { }
+            @Override public void onActivityResumed(android.app.Activity a) { }
+            @Override public void onActivityPaused(android.app.Activity a) { }
+            @Override public void onActivityStopped(android.app.Activity a) { }
+            @Override public void onActivitySaveInstanceState(android.app.Activity a, android.os.Bundle b) { }
+        });
+    }
 
     /** What the home screen shows while a sent game starts. Called on the main thread. */
     public interface Listener {
@@ -47,6 +84,7 @@ public class PhoneLink {
     public PhoneLink(Context ctx, Listener listener) {
         this.ctx = ctx.getApplicationContext();
         this.listener = listener;
+        track(this.ctx);
     }
 
     public void start() { new Thread(this::serve, "mc-phone-link").start(); }
@@ -101,9 +139,18 @@ public class PhoneLink {
             String from = "your phone";
             if ("GET".equals(method) && path.startsWith("/mc-native")) {
                 ComputerDetails pc = firstComputer();
+                // version 2: /play takes xboxId too. "xbox" = this TV is signed in to Xbox (it plays with its own sign-in).
+                // "id" stays the same when the TV's address changes, so a handheld can remember it.
                 send(s, 200, "{\"mooncast_native\":1,\"name\":" + quote(android.os.Build.MODEL)
-                        + ",\"pc\":" + quote(pc == null ? "" : pc.name) + "}");
+                        + ",\"pc\":" + quote(pc == null ? "" : pc.name)
+                        + ",\"xbox\":" + Xbox.INSTANCE.signedIn(ctx)
+                        + ",\"version\":" + PROTOCOL_VERSION
+                        + ",\"id\":" + quote(tvId()) + "}");
+            } else if ("GET".equals(method) && path.startsWith("/status")) {
+                send(s, 200, "{\"state\":" + quote(playState) + ",\"error\":" + quote(playError == null ? "" : playError)
+                        + ",\"seq\":" + playSeq + "}");
             } else if ("POST".equals(method) && path.startsWith("/play")) {
+                playSeq++; playState = "starting"; playError = null;
                 String json = readBody(in, clen, 16384);   // read it all: a PSN token makes it bigger than one read
                 String appId = field(json, "appId"), appName = field(json, "appName");
                 String sender = field(json, "deviceName");
@@ -113,6 +160,9 @@ public class PhoneLink {
                 if (phoneIp == null || phoneIp.isEmpty()) {
                     try { phoneIp = s.getInetAddress().getHostAddress(); } catch (Exception ignored) { }
                 }
+                // "pad":"direct" (PC games): the sender has its own controller session on the PC, so no relay from here.
+                // Set before the key, which may restart the relay.
+                PhoneGamepad.setDirect("direct".equals(field(json, "pad")) && field(json, "ps5host") == null && field(json, "xboxId") == null);
                 PhoneGamepad.setPhoneHost(phoneIp);
                 PhoneGamepad.setPadKey(field(json, "padKey"));   // key to authorize with the phone's pad server
                 // PS5 Remote Play (native chiaki): the phone sends the console's host + registration keys.
@@ -122,8 +172,37 @@ public class PhoneLink {
                             field(json, "psnToken"), field(json, "duid"), field(json, "accountId"), from))
                         send(s, 200, "{\"ok\":1}");
                     else send(s, 400, "{\"error\":\"ps5 launch failed\"}");
+                } else if (field(json, "xboxId") != null) {
+                    // Xbox: this TV plays it with its OWN Xbox sign-in; the sender is only the controller.
+                    String err = playXbox(field(json, "xboxId"), field(json, "xboxName"), from);
+                    if (err == null) send(s, 200, "{\"ok\":1}");
+                    else send(s, 400, "{\"error\":" + quote(err) + "}");
                 } else if (appId != null && play(appId, appName, from)) send(s, 200, "{\"ok\":1}");
                 else send(s, 400, "{\"error\":\"no app id, or no paired PC\"}");
+            } else if ("POST".equals(method) && path.startsWith("/stop")) {
+                // The sender takes its game back (Play here instead) or stops: end the stream it started here and go
+                // home. Disconnect only; {"quit":true} quits the game on the PC too. Only the sender of the last
+                // /play may do this (it presents the same padKey).
+                String json = readBody(in, clen, 2048);
+                String key = field(json, "padKey"), mine = PhoneGamepad.padKey();
+                if (mine != null && !mine.isEmpty() && !mine.equals(key)) send(s, 403, "{\"error\":\"not the device that sent this game\"}");
+                else {
+                    boolean quit = json.replace(" ", "").contains("\"quit\":true");
+                    stopStreams(quit);
+                    send(s, 200, "{\"ok\":1}");
+                }
+            } else if ("POST".equals(method) && path.startsWith("/pad")) {
+                // The sender's direct controller session didn't connect: relay its pad through this TV after all.
+                String json = readBody(in, clen, 2048);
+                String key = field(json, "padKey"), mine = PhoneGamepad.padKey();
+                if (mine != null && !mine.isEmpty() && !mine.equals(key)) send(s, 403, "{\"error\":\"not the device that sent this game\"}");
+                else {
+                    String ip = field(json, "phoneIp");
+                    if (ip == null || ip.isEmpty()) ip = s.getInetAddress().getHostAddress();
+                    PhoneGamepad.setPhoneHost(ip);
+                    PhoneGamepad.useRelay();
+                    send(s, 200, "{\"ok\":1}");
+                }
             } else if ("POST".equals(method) && path.startsWith("/register")) {
                 // Register a PlayStation (the PIN "Link Device" flow): host + PSN account id (base64) + 8-digit pin.
                 String json = readBody(in, clen, 2048);
@@ -171,6 +250,7 @@ public class PhoneLink {
         if (pc == null) return false;
         main.post(() -> listener.onIncoming(appName == null ? "Your game" : appName, from));
         main.postDelayed(() -> {
+            replaceStreams();
             Intent i = new Intent(ctx, ShortcutTrampoline.class);
             i.putExtra(AppView.UUID_EXTRA, pc.uuid);
             i.putExtra(AppView.NAME_EXTRA, pc.name);
@@ -182,13 +262,66 @@ public class PhoneLink {
         return true;
     }
 
+    /** A new /play replaces whatever player is open (even one showing an error): close it, the new one starts fresh. */
+    private static void replaceStreams() {
+        java.util.List<android.app.Activity> list;
+        synchronized (streams) { list = new java.util.ArrayList<>(streams); }
+        for (android.app.Activity a : list) if (!a.isFinishing()) a.finish();
+    }
+
+    /** Finish every stream screen (PC, PS5, Xbox) and bring the home back. */
+    private void stopStreams(boolean quit) {
+        main.post(() -> {
+            java.util.List<android.app.Activity> list;
+            synchronized (streams) { list = new java.util.ArrayList<>(streams); }
+            for (android.app.Activity a : list) {
+                if (a.isFinishing()) continue;
+                if (quit && a instanceof Game) ((Game) a).quitOnHostAndFinish();
+                else a.finish();   // disconnect: the game keeps running (a PS5 stays on)
+            }
+            PhoneGamepad.stop();
+            Intent home = new Intent(ctx, com.limelight.home.HomeActivity.class);
+            home.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            try { ctx.startActivity(home); } catch (Exception ignored) { }
+        });
+    }
+
+    /** Start an Xbox the sender named, if this TV's Xbox account has it. Returns an error for the sender, or null. */
+    private String playXbox(String id, String name, String from) {
+        if (!Xbox.INSTANCE.signedIn(ctx)) return "Sign in to Xbox on this TV first";
+        Xbox.Console found = null;
+        for (Xbox.Console c : Xbox.INSTANCE.consoles(ctx)) if (c.getId().equals(id)) found = c;
+        if (found == null) {   // a console added since the TV last looked: ask Xbox network once
+            try { for (Xbox.Console c : Xbox.INSTANCE.refreshConsoles(ctx)) if (c.getId().equals(id)) found = c; }
+            catch (Exception ignored) { }
+        }
+        if (found == null) return "This TV's Xbox account doesn't have " + (name == null || name.isEmpty() ? "that Xbox" : name);
+        final Xbox.Console c = found;
+        XboxStreamActivity.setRemotePad(XboxPhonePad.INSTANCE);
+        main.post(() -> listener.onIncoming(c.getName(), from));
+        main.postDelayed(() -> {
+            replaceStreams();
+            Intent i = com.limelight.home.Launch.xboxIntent(ctx, c);
+            i.putExtra(XboxStreamActivity.EXTRA_REMOTE_PAD, true);
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            ctx.startActivity(i);
+        }, 700);
+        return null;
+    }
+
+    /** Same for the life of this install; lets a handheld recognise this TV after its address changes. */
+    private String tvId() {
+        String a = android.provider.Settings.Secure.getString(ctx.getContentResolver(), android.provider.Settings.Secure.ANDROID_ID);
+        return a == null ? "" : Integer.toHexString(a.hashCode());
+    }
+
     private boolean playPs5(String host, String registKey, String morning, String ps5,
                             String psnToken, String duid, String accountId, String from) {
         if (registKey == null || morning == null) return false;
         final boolean isPs5 = ps5 == null || !"false".equalsIgnoreCase(ps5);
         Ps5Store.INSTANCE.save(ctx, new Ps5Store.Console(host, "PS5", registKey, morning, isPs5));
         main.post(() -> { listener.onConsolesChanged(); listener.onIncoming("PlayStation 5", from); });
-        main.postDelayed(() -> ctx.startActivity(ps5Intent(ctx, host, registKey, morning, isPs5, psnToken, duid, accountId)), 700);
+        main.postDelayed(() -> { replaceStreams(); ctx.startActivity(ps5Intent(ctx, host, registKey, morning, isPs5, psnToken, duid, accountId)); }, 700);
         return true;
     }
 

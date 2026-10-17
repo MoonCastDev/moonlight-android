@@ -30,7 +30,7 @@ import com.metallic.chiaki.lib.VideoResolutionPreset
  *   EXTRA_HOST, EXTRA_REGIST_KEY (hex), EXTRA_MORNING (hex), EXTRA_PS5.
  * The phone stays the controller: [Ps5Pad] feeds its pad into session.setControllerState.
  */
-class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
+class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home.MoveToTv.LocalSession {
     companion object {
         private const val TAG = "MoonCast-PS5"
         const val EXTRA_HOST = "ps5_host"
@@ -38,6 +38,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
         const val EXTRA_MORNING = "ps5_morning"          // hex, 16 bytes
         const val EXTRA_PS5 = "ps5_is_ps5"
         private const val QUIT_RP_IN_USE = 4
+        private const val IN_USE_WAIT_MS = 30_000L   // how long to wait for another device to let go of Remote Play
         private const val KEY_TOUCHPAD = KeyEvent.KEYCODE_BUTTON_16   // internal: an odd Sony pad's touchpad click
         private val STEP_NAMES = listOf("Found your PS5", "Waking it up", "Signing in", "Starting video")
         private val MENU_COMBO = setOf(KeyEvent.KEYCODE_BUTTON_SELECT, KeyEvent.KEYCODE_BUTTON_START,
@@ -107,7 +108,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
     }
 
     private fun connectInfo(remote: Boolean): ConnectInfo {
-        val host = intent.getStringExtra(EXTRA_HOST) ?: "192.168.100.126"
+        val host = intent.getStringExtra(EXTRA_HOST) ?: ""   // every caller passes the console's host
         val registKey = hex(intent.getStringExtra(EXTRA_REGIST_KEY) ?: "")
         val morning = hex(intent.getStringExtra(EXTRA_MORNING) ?: "")
         val ps5 = intent.getBooleanExtra(EXTRA_PS5, true)
@@ -231,7 +232,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
 
     // Wake the console from standby (harmless if already on), then connect; retry a few times while it powers up.
     private fun connect(surface: android.view.Surface) {
-        val host = intent.getStringExtra(EXTRA_HOST) ?: "192.168.100.126"
+        val host = intent.getStringExtra(EXTRA_HOST) ?: ""   // every caller passes the console's host
         val ps5 = intent.getBooleanExtra(EXTRA_PS5, true)
         // LAN if the console answers here; otherwise over the internet via PSN (no VPN / no port-forward) when the
         // phone sent a PSN token. PSN wakes the console itself when the session starts.
@@ -267,7 +268,26 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
                     Log.w(TAG, "attempt ${attempt + 1}: PS5 ended the session before the picture - retrying")
                     Ps5Pad.stop()
                     session = null
-                    try { s.stop(); s.dispose() } catch (e: Exception) {}
+                    synchronized(disposed) { disposed.add(s) }
+                    try { s.stop() } catch (e: Exception) {}
+                    synchronized(sessionLock) { try { s.dispose() } catch (e: Exception) {} }
+                    if (inUse) {
+                        // another device (e.g. a handheld that just moved the game here) is still letting go
+                        inUse = false
+                        if (inUseSince == 0L) inUseSince = System.currentTimeMillis()
+                        if (System.currentTimeMillis() - inUseSince < IN_USE_WAIT_MS) {
+                            showStatus("Waiting for the PS5 to finish with the other device…")
+                            try { Thread.sleep(3000) } catch (e: InterruptedException) { break }
+                            continue   // doesn't count as an attempt
+                        }
+                        Log.i(TAG, "PS5 still in use by another device after ${IN_USE_WAIT_MS / 1000} s")
+                        closed = true
+                        showStatus("Your PS5 is already streaming to another device.\nClose it there, then try again.")
+                        com.limelight.home.StreamReport.failed("Your PS5 is busy with another device. Close it there, then try again.")
+                        try { Thread.sleep(6000) } catch (e: InterruptedException) { }
+                        runOnUiThread { finish() }
+                        return
+                    }
                     attempt++
                     if (attempt < maxAttempts) {
                         progressStage = 0
@@ -295,6 +315,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
             Log.e(TAG, "PS5 did not connect")
             stopProgressWatch()
             showStatus("Couldn't reach your PlayStation.\nCheck it's in rest mode (not off) and try again.")
+            com.limelight.home.StreamReport.failed("Couldn't reach the PlayStation. Check it's in rest mode (not off).")
             try { Thread.sleep(4000) } catch (e: InterruptedException) { }
             runOnUiThread { finish() }
         }
@@ -305,6 +326,8 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
     @Volatile private var connected = false                                  // first picture arrived
     @Volatile private var attemptLatch: java.util.concurrent.CountDownLatch? = null  // remote attempt in flight
     @Volatile private var attemptQuit = false
+    @Volatile private var inUse = false          // the last attempt ended with "Remote is already in use"
+    private var inUseSince = 0L
     @Volatile private var progressProc: Process? = null
     @Volatile private var progressStage = 0
 
@@ -361,17 +384,28 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
         when (ev) {
             is ConnectedEvent -> {
                 Log.i(TAG, "PS5 connected"); connected = true
+                com.limelight.home.StreamReport.playing()
                 stopProgressWatch(); showStatus(null); attemptLatch?.countDown()
             }
             is QuitEvent -> {
                 // The PS5 allows ONE Remote Play session: if another device (e.g. the Odin's own player) still has it,
                 // say so instead of closing silently - retrying can't help until that one ends.
-                if (!connected && ev.reason.value == QUIT_RP_IN_USE) {
+                val inUseQuit = ev.reason.value == QUIT_RP_IN_USE || ev.reasonString?.contains("in use", ignoreCase = true) == true
+                if (!connected && inUseQuit && attemptLatch != null) {
+                    // Remote Play is still busy with another device: retry every 3 s for up to 30 s (connect() loop)
+                    Log.i(TAG, "PS5 is busy with another device: waiting for it")
+                    inUse = true
+                    attemptQuit = true
+                    attemptLatch?.countDown()
+                    return
+                }
+                if (!connected && inUseQuit) {
                     Log.i(TAG, "PS5 is already streaming to another device")
                     closed = true
                     attemptLatch?.countDown()
                     stopProgressWatch()
                     showStatus("Your PS5 is already streaming to another device.\nClose it there, then try again.")
+                    com.limelight.home.StreamReport.failed("Your PS5 is busy with another device. Close it there, then try again.")
                     Thread({ try { Thread.sleep(6000) } catch (e: InterruptedException) { }; runOnUiThread { finish() } }, "ps5-inuse").start()
                     return
                 }
@@ -391,6 +425,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
                     // never got a picture: say why instead of dropping back to the home screen without a word
                     stopProgressWatch()
                     showStatus("Couldn't reach your PlayStation.\nCheck it's on or in rest mode (not fully off), then try again.")
+                    com.limelight.home.StreamReport.failed("Couldn't reach the PlayStation. Check it's on or in rest mode (not fully off).")
                     Thread({ try { Thread.sleep(6000) } catch (e: InterruptedException) { }; runOnUiThread { if (!menu.isShowing) finish() } }, "ps5-noconnect").start()
                     return
                 }
@@ -614,13 +649,18 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
     private fun openMenu() {
         lastShown = -1.0; lastLossPct = 0.0
         if (isFinishing) return
+        // handheld only: hand the PS5 over to the last MoonCast TV
+        val move = com.limelight.home.MoveToTv.item(this, com.limelight.home.MoveToTv.Target("ps", "PlayStation 5",
+            psHost = intent.getStringExtra(EXTRA_HOST), registKey = intent.getStringExtra(EXTRA_REGIST_KEY),
+            morning = intent.getStringExtra(EXTRA_MORNING), isPs5 = intent.getBooleanExtra(EXTRA_PS5, true)))
         menu.show("PlayStation 5",
             (if (streamRemote) "Over PlayStation Network. " else "On your home network. ") + com.limelight.home.QuickMenu.COMBO_LABEL + " opens this menu",
             { liveStats() },
-            listOf(
+            listOfNotNull(
                 com.limelight.home.QuickMenu.Item("PS", "PS button", "L2 + Start", false) { tap(ControllerState.BUTTON_PS) },
                 com.limelight.home.QuickMenu.Item("▢", "Touchpad", "Select + Start", false) { tap(ControllerState.BUTTON_TOUCHPAD) },
                 com.limelight.home.QuickMenu.Item("✚", "Controllers", "${com.limelight.home.QuickMenu.pads().size} connected", false) { controllers() },
+                move,
                 com.limelight.home.QuickMenu.Item("←", "Disconnect", disconnectHint(), false) { leave() },
                 com.limelight.home.QuickMenu.Item("Zz", "Put PS5 to rest", "Ends the game", true) { rest() }))
     }
@@ -695,17 +735,50 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
     }
 
     override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, ht: Int) {}
-    override fun surfaceDestroyed(holder: SurfaceHolder) { if (!closed) session?.setSurface(null) }
+    // setSurface(null) waits for chiaki's decoder lock, which a running session can hold for a long time: on the UI
+    // thread that froze the app (ANR when "Move to TV" covered the player). Do it on a worker, and never on a session
+    // that is being torn down (see [teardown]).
+    override fun surfaceDestroyed(holder: SurfaceHolder) {
+        val s = session ?: return
+        if (closed) return
+        Thread({ synchronized(sessionLock) { if (!closed && synchronized(disposed) { s !in disposed }) try { s.setSurface(null) } catch (e: Exception) { } } },
+            "ps5-surface").start()
+    }
 
-    override fun onDestroy() {
+    private val sessionLock = Any()
+    private val disposed = java.util.Collections.newSetFromMap(java.util.WeakHashMap<Session, Boolean>())
+
+    /**
+     * End the session off the UI thread (Session.dispose() joins native threads and can block). stop() first, without
+     * the lock, so a surface call stuck on the decoder lock gets released; dispose() under the lock, so no surface
+     * call can run on a freed session. [done] runs on the main thread afterwards.
+     */
+    private fun teardown(done: Runnable?) {
         closed = true
         attemptLatch?.countDown()   // release a remote attempt that's waiting for its first picture
         stopProgressWatch()
         val s = session
         session = null
-        // Tear down off the UI thread: Session.dispose() joins native threads and can block, which would freeze the
-        // app's main looper and stop the receiver from launching the next stream.
-        Thread({ Ps5Pad.stop(); if (s != null) try { s.stop(); s.dispose() } catch (e: Exception) {} }, "ps5-teardown").start()
+        Thread({
+            Ps5Pad.stop()
+            if (s != null) {
+                synchronized(disposed) { disposed.add(s) }
+                try { s.stop() } catch (e: Exception) { }
+                synchronized(sessionLock) { try { s.dispose() } catch (e: Exception) { } }
+            }
+            if (done != null) android.os.Handler(android.os.Looper.getMainLooper()).post(done)
+        }, "ps5-teardown").start()
+    }
+
+    /** "Move to TV": the PS5 takes one Remote Play client, so this one must be gone before the TV connects. */
+    override fun endLocalSession(done: Runnable) {
+        showStatus("Handing your PS5 over to the TV…")
+        if (closed && session == null) { done.run(); return }
+        teardown(done)
+    }
+
+    override fun onDestroy() {
+        if (!closed || session != null) teardown(null)
         super.onDestroy()
     }
 }

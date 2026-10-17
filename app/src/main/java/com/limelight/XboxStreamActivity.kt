@@ -24,11 +24,31 @@ import org.webrtc.SurfaceViewRenderer
  * ([Xbox.streamAuth]), wakes the console, draws the picture and turns this device's controllers into Xbox pads.
  *   EXTRA_CONSOLE_ID: the console's id from Xbox.consoles(); EXTRA_NAME: its name, for the screen.
  */
-class XboxStreamActivity : Activity() {
+class XboxStreamActivity : Activity(), com.limelight.home.MoveToTv.LocalSession {
+    /**
+     * A controller on another device (the handheld that sent this game to this TV). The TV app provides it; it
+     * calls the sink with W3C Standard Gamepad state: 17 buttons (0..1) and 4 axes (-1..1, Y down-positive).
+     */
+    interface RemotePad {
+        fun start(sink: (buttons: DoubleArray, axes: DoubleArray) -> Unit)
+        fun stop()
+    }
+
     companion object {
         private const val TAG = "MoonCast-Xbox"
         const val EXTRA_CONSOLE_ID = "xbox_console_id"
         const val EXTRA_NAME = "xbox_name"
+        /** Set when a phone/handheld sent this game to a TV: its controller arrives over the network (see [RemotePad]). */
+        const val EXTRA_REMOTE_PAD = "xbox_remote_pad"
+
+        @JvmStatic var remotePad: RemotePad? = null
+
+        private val W3C_KEYS = intArrayOf(KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_BUTTON_B, KeyEvent.KEYCODE_BUTTON_X,
+            KeyEvent.KEYCODE_BUTTON_Y, KeyEvent.KEYCODE_BUTTON_L1, KeyEvent.KEYCODE_BUTTON_R1, 0, 0,
+            KeyEvent.KEYCODE_BUTTON_SELECT, KeyEvent.KEYCODE_BUTTON_START, KeyEvent.KEYCODE_BUTTON_THUMBL,
+            KeyEvent.KEYCODE_BUTTON_THUMBR, KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
+            KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_BUTTON_MODE)
+
         private val MENU_COMBO = setOf(KeyEvent.KEYCODE_BUTTON_SELECT, KeyEvent.KEYCODE_BUTTON_START,
             KeyEvent.KEYCODE_BUTTON_L1, KeyEvent.KEYCODE_BUTTON_R1)
     }
@@ -52,7 +72,7 @@ class XboxStreamActivity : Activity() {
                 com.limelight.preferences.GlPreferences.readPreferences(this).glRenderer)
         val r = SurfaceViewRenderer(this).also { renderer = it }
         r.init(egl.eglBaseContext, object : RendererCommon.RendererEvents {
-            override fun onFirstFrameRendered() { firstFrame = true; showStatus(null) }
+            override fun onFirstFrameRendered() { firstFrame = true; main.removeCallbacks(pictureWatchdog); showStatus(null); com.limelight.home.StreamReport.playing() }
             override fun onFrameResolutionChanged(w: Int, h: Int, rotation: Int) {
                 Log.i(TAG, "picture ${w}x$h"); runOnUiThread { applyShape(w, h) }
             }
@@ -68,6 +88,7 @@ class XboxStreamActivity : Activity() {
             addView(r, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
             addView(status, FrameLayout.LayoutParams(-1, -1))
         })
+        main.postDelayed(pictureWatchdog, 60_000)
         Thread { connect() }.start()
     }
 
@@ -94,9 +115,9 @@ class XboxStreamActivity : Activity() {
             val session = XboxRtc(this, egl, consoleId, auth.baseUri, auth.gsToken, auth.connectToken, res,
                     prefs.getString("xbox_language", "en-US") ?: "en-US", coop, prefs.getInt("xbox_bitrate", 0),
                     prefs.getBoolean("checkbox_ultra_low_latency", false), renderer!!, object : XboxRtc.Listener {
-                override fun onStatus(text: String) { if (!firstFrame) showStatus(text) }
-                override fun onConnected() { runOnUiThread { if (!started) { started = true; send(); pollStats() } } }
-                override fun onFailed(reason: String) { showStatus("The Xbox stream stopped.\n$reason") }
+                override fun onStatus(text: String) { if (!firstFrame && !retrying) showStatus(text) }
+                override fun onConnected() { runOnUiThread { if (!started) { started = true; send(); startStatsPoll(); startRemotePad() } } }
+                override fun onFailed(reason: String) { failed(reason) }
                 override fun onRumble(gamepad: Int, weak: Double, strong: Double, durationMs: Int) {
                     runOnUiThread { rumble(gamepad, durationMs, weak, strong) }
                 }
@@ -106,9 +127,66 @@ class XboxStreamActivity : Activity() {
             session.start()
         } catch (e: Exception) {
             Log.w(TAG, "connect failed", e)
-            showStatus(if (!Xbox.signedIn(this)) "Sign in to Xbox first: Settings, Xbox."
-                    else "Couldn't start Xbox Remote Play. Check the Xbox is on or asleep, with remote features on.\n\n${e.message ?: ""}".trim())
+            if (!Xbox.signedIn(this)) { showStatus("Sign in to Xbox first: Settings, Xbox."); com.limelight.home.StreamReport.failed("Sign in to Xbox on this TV first.") }
+            else failed(e.message ?: e.javaClass.simpleName)
         }
+    }
+
+    // ---- a console that isn't ready yet: wake it and try again ----
+    // Microsoft answers "Xccs : ErrorCallingWNS : Send command failed : State WaitingForServerToRegister" (and similar)
+    // while the console is in standby and hasn't registered with Xbox network's streaming service yet.
+    private var firstFailAt = 0L
+    private var pollingStats = false
+    private val main by lazy { android.os.Handler(mainLooper) }
+    /** A start that never reaches the picture (the console accepts the session but sends nothing): end it, say so. */
+    private val pictureWatchdog = Runnable {
+        if (!firstFrame && !closed && !retrying) endSession("Your Xbox didn't start the picture in time. Try again, or turn the Xbox off and on.")
+    }
+
+    /** Stop the console session (so it isn't left running) and show the plain-language reason. */
+    private fun endSession(msg: String) {
+        main.removeCallbacks(pictureWatchdog)
+        started = false
+        Thread({ try { rtc?.stop() } catch (e: Throwable) { }; rtc = null }, "xbox-end").start()
+        showStatus(msg)
+        com.limelight.home.StreamReport.failed(msg)
+    }
+    @Volatile private var retrying = false
+
+    private fun notReady(reason: String): Boolean {
+        val r = reason.lowercase()
+        return listOf("waitingforservertoregister", "errorcallingwns", "xccs", "connectedstandby", "not registered",
+                "offline", "unavailable", "notready", "not ready").any { r.contains(it) }
+    }
+
+    /** The session failed: before the first picture, retry a console that isn't ready (wake every 5 s, ~60 s). */
+    private fun failed(reason: String) {
+        if (closed) return
+        Log.w(TAG, "xbox failed: $reason")
+        val now = System.currentTimeMillis()
+        if (firstFailAt == 0L) firstFailAt = now
+        if (!firstFrame && notReady(reason) && now - firstFailAt < 60_000) {
+            main.removeCallbacks(pictureWatchdog)
+            if (retrying) return
+            retrying = true
+            showStatus("Waking your Xbox…")
+            Thread({
+                try { rtc?.stop() } catch (e: Throwable) { }
+                rtc = null
+                started = false
+                try { Xbox.wake(this, consoleId) } catch (e: Exception) { Log.w(TAG, "wake: $e") }
+                try { Thread.sleep(5000) } catch (e: InterruptedException) { }
+                retrying = false
+                if (!closed) { main.postDelayed(pictureWatchdog, 60_000); connect() }
+            }, "xbox-retry").start()
+            return
+        }
+        val msg = when {
+            notReady(reason) -> "Your Xbox didn't answer. Turn it on, or check Settings > Devices & connections > Remote features on the Xbox."
+            reason.contains("no picture") -> "Your Xbox connected but sent no picture. Turn the Xbox off and on, then try again."
+            else -> "The Xbox stream stopped. $reason"
+        }
+        endSession(msg)
     }
 
     private fun screenHeight(): Int {
@@ -143,8 +221,19 @@ class XboxStreamActivity : Activity() {
 
     override fun onStop() { super.onStop(); if (!isChangingConfigurations) finish() }
 
+    /** "Move to TV": the Xbox session here is fully closed before the TV starts its own. */
+    override fun endLocalSession(done: Runnable) {
+        closed = true
+        sendNeutral()
+        val r = rtc
+        if (r == null) { done.run(); return }
+        val main = android.os.Handler(mainLooper)
+        try { r.stop { main.post(done) } } catch (e: Throwable) { done.run() }
+    }
+
     override fun onDestroy() {
         closed = true
+        if (remoteOn) try { remotePad?.stop() } catch (e: Throwable) { }
         try { rtc?.stop() } catch (e: Throwable) { }
         try { renderer?.release() } catch (e: Throwable) { }
         try { egl.release() } catch (e: Throwable) { }
@@ -268,6 +357,29 @@ class XboxStreamActivity : Activity() {
         return super.dispatchGenericMotionEvent(e)
     }
 
+    // ---- the sender's controller (a handheld that sent this game to the TV) -> player 1 ----
+    private var remoteOn = false
+
+    private fun startRemotePad() {
+        if (!intent.getBooleanExtra(EXTRA_REMOTE_PAD, false)) return
+        val rp = remotePad ?: return
+        remoteOn = true
+        rp.start { b, a -> runOnUiThread { if (!closed) applyRemote(b, a) } }
+    }
+
+    private fun applyRemote(b: DoubleArray, a: DoubleArray) {
+        if (menu.isShowing) return
+        val p = pads.getOrPut(-3) { Pad(0) }
+        p.held.clear()
+        for (i in W3C_KEYS.indices) if (W3C_KEYS[i] != 0 && i < b.size && b[i] > .5) p.held.add(W3C_KEYS[i])
+        fun ax(i: Int) = if (i < a.size) a[i].toFloat().coerceIn(-1f, 1f) else 0f
+        p.lx = ax(0); p.ly = ax(1); p.rx = ax(2); p.ry = ax(3)
+        p.lt = if (b.size > 6) b[6].toFloat().coerceIn(0f, 1f) else 0f
+        p.rt = if (b.size > 7) b[7].toFloat().coerceIn(0f, 1f) else 0f
+        p.hatX = 0f; p.hatY = 0f
+        send()
+    }
+
     /** Hand every pad's latest state to the session; it sends them 62.5 times a second. */
     private fun send() {
         val r = rtc ?: return
@@ -327,6 +439,8 @@ class XboxStreamActivity : Activity() {
     // Live numbers from WebRTC's own stats, refreshed every second (and logged every 5 s for diagnosis)
     @Volatile private var last: XboxRtc.Stats? = null
     private var statTicks = 0
+    private fun startStatsPoll() { if (!pollingStats) { pollingStats = true; pollStats() } }
+
     private fun pollStats() {
         val h = android.os.Handler(mainLooper)
         h.post(object : Runnable {
@@ -358,8 +472,11 @@ class XboxStreamActivity : Activity() {
     private fun openMenu() {
         if (isFinishing) return
         sendNeutral()
-        menu.show(consoleName, "Xbox Remote Play. " + QuickMenu.COMBO_LABEL + " opens this menu", { liveStats() }, listOf(
+        // handheld only: hand the Xbox over to the last MoonCast TV (it signs in with its own Xbox account)
+        val move = com.limelight.home.MoveToTv.item(this, com.limelight.home.MoveToTv.Target("xb", consoleName, xboxId = consoleId))
+        menu.show(consoleName, "Xbox Remote Play. " + QuickMenu.COMBO_LABEL + " opens this menu", { liveStats() }, listOfNotNull(
             QuickMenu.Item("⊗", "Xbox button", "Opens the guide", false) { tapGuide() },
+            move,
             QuickMenu.Item("←", "Disconnect", "The game keeps running", false) { finish() },
             QuickMenu.Item("⏻", "Turn off the Xbox", "Ends the game", true) { turnOff() }))
     }

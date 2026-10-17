@@ -25,52 +25,138 @@ import java.security.SecureRandom;
 class PhoneGamepad {
     private static final String TAG = "MoonCast-PhonePad";
     private static final int PAD_PORT = 8099;        // the phone's PadServer
+    private static final long GIVE_UP_MS = 30000;     // stop retrying after this long without reaching the sender
 
     private static volatile PhoneGamepad current;
+    private static volatile NvConnection lastConn;    // the stream it feeds, until that stream stops (stop())
+    // The sender drives the PC directly with its own controller-only session (/play "pad":"direct"): the next stream
+    // registers no gamepad and gets no relay, or the game would get the pad twice (or the TV would take pad 0).
+    // /pad turns the relay on later if the direct session can't connect.
+    private static volatile boolean direct;
     private static volatile String phoneHost;         // set from the /play socket's remote address
     private static volatile String padKey;            // the phone's pad-server session key (for /pad?k=...)
 
     private final NvConnection conn;
-    private final String host;
+    private volatile String host;
     private volatile boolean running = true;
-    private Socket sock;
+    private volatile boolean quick;    // reconnect right away (the sender's key or address changed), no 1 s wait
+    private volatile Socket sock;
 
     private PhoneGamepad(NvConnection conn, String host) { this.conn = conn; this.host = host; }
 
     /** Remember where the phone is, from the address that POSTed /play. */
-    static void setPhoneHost(String ip) { if (ip != null && !ip.isEmpty()) phoneHost = ip; }
+    static void setPhoneHost(String ip) {
+        if (ip == null || ip.isEmpty()) return;
+        boolean changed = !ip.equals(phoneHost);
+        phoneHost = ip;
+        PhoneGamepad p = current;
+        if (changed && p != null) { p.host = ip; p.kick(); }
+    }
 
     /** The last phone address that drove a /play (used by the PS5 pad relay too). */
     static String phoneHost() { return phoneHost; }
 
     /** The phone's pad-server session key, passed in /play; the relay presents it so the pad server authorizes us. */
-    static void setPadKey(String k) { padKey = k; }
+    static void setPadKey(String k) {
+        boolean changed = k == null ? padKey != null : !k.equals(padKey);
+        padKey = k;
+        // a new key from a new /play: the running link presents the old one and would only notice at the read timeout
+        PhoneGamepad p = current;
+        if (changed && p != null) p.kick();
+        else if (p == null) revive();
+    }
+
+    // A new /play while the stream is still up but the link gave up (the sender was away for a while): start again.
+    private static synchronized void revive() {
+        NvConnection c = lastConn;
+        if (current == null && c != null && !c.controllersBlocked()) { start(c, null); }
+    }
+
+    /** Drop the current link and connect again at once (with the latest key and address). */
+    private void kick() {
+        quick = true;
+        try { Socket s = sock; if (s != null) s.close(); } catch (Exception ignored) { }
+    }
     static String padKey() { return padKey; }
 
     /** Start feeding this connection from the phone's pad (uses the last known phone address, or an override). */
+    /** /play said the sender's controller goes straight to the PC (true), or through us (false). */
+    private static volatile int playGen;   // counts /play requests
+
+    /** Which /play the stream being created belongs to (see [streamEnded]). */
+    static int playGen() { return playGen; }
+
+    static synchronized void setDirect(boolean d) {
+        playGen++;
+        direct = d;
+        if (!d) return;
+        // a relay from an earlier send would feed the same pad a second time: end it, keep the stream it fed
+        PhoneGamepad p = current; current = null;
+        if (p != null) { p.running = false; try { if (p.sock != null) p.sock.close(); } catch (Exception ignored) { } }
+    }
+
+    /** The next stream (the one /play starts) leaves the gamepads to the sender's direct session. */
+    static boolean isDirect() { return direct; }
+
+    /** The stream that /play started is over: streams started on the TV itself use its own controllers. */
+    static void streamEnded(int gen) { if (gen == playGen) direct = false; }   // a newer /play keeps its own setting
+
+    /** The sender asks for the relay after all (its direct session failed): start it on the running stream. */
+    static synchronized void useRelay() {
+        direct = false;
+        NvConnection c = lastConn;
+        if (c != null) c.setControllersBlocked(false);   // the relay's input goes through this stream now
+        revive();
+    }
+
     static synchronized void start(NvConnection conn, String overrideHost) {
         stop();
+        // the stream itself knows (Game blocked its controllers when /play said direct): a stream of the TV's own isn't
+        // affected by a flag left from an earlier send
+        if (conn != null && conn.controllersBlocked()) { lastConn = conn; Log.i(TAG, "sender's controller goes direct to the PC: no relay"); return; }
         String h = overrideHost != null && !overrideHost.isEmpty() ? overrideHost : phoneHost;
         if (conn == null || h == null || h.isEmpty()) { Log.w(TAG, "no phone address yet - controller not started"); return; }
         PhoneGamepad p = new PhoneGamepad(conn, h);
         current = p;
+        lastConn = conn;
         new Thread(p::run, "phone-gamepad").start();
     }
 
+    /** The stream [c] ended: stop the relay only if it feeds that stream (a newer stream may already have its own). */
+    static synchronized void stopFor(NvConnection c) {
+        PhoneGamepad p = current;
+        if (p != null && p.conn == c) stop();
+        else if (lastConn == c) lastConn = null;
+    }
+
     static synchronized void stop() {
+        lastConn = null;
         PhoneGamepad p = current; current = null;
         if (p != null) { p.running = false; try { if (p.sock != null) p.sock.close(); } catch (Exception ignored) { } }
     }
 
     private void run() {
+        long failingSince = 0;   // when the sender stopped answering (0 = the last link worked)
         while (running) {
-            try { session(); } catch (Exception e) { Log.w(TAG, "phone pad link: " + e); }
+            boolean linked = false;
+            try { linked = session(); } catch (Exception e) { Log.w(TAG, "phone pad link: " + e); }
             if (!running) break;
+            long now = System.currentTimeMillis();
+            if (linked) failingSince = 0;
+            else if (failingSince == 0) failingSince = now;
+            else if (now - failingSince > GIVE_UP_MS) {   // the sender's pad server is gone (it stopped, or left the Wi-Fi)
+                Log.i(TAG, "phone pad: no answer for " + (GIVE_UP_MS / 1000) + " s, giving up");
+                synchronized (PhoneGamepad.class) { if (current == this) current = null; }
+                running = false;
+                break;
+            }
+            if (quick) { quick = false; continue; }
             try { Thread.sleep(1000); } catch (InterruptedException e) { break; }   // reconnect if the phone drops
         }
     }
 
-    private void session() throws Exception {
+    /** One link. True when it got through the handshake (so a later drop is a reconnect, not a dead sender). */
+    private boolean session() throws Exception {
         Socket s = new Socket();
         s.connect(new InetSocketAddress(host, PAD_PORT), 2000);
         s.setTcpNoDelay(true);
@@ -91,6 +177,7 @@ class PhoneGamepad {
         out.flush();
         // read response headers until blank line
         if (!readHeaders(in)) throw new Exception("handshake refused");
+        boolean linked = true;
 
         // introduce ourselves so the phone sends pad states here (not expecting a web gamepad page)
         sendText(out, "{\"hello\":{\"id\":\"mctv-native\",\"kind\":\"mctv-native\"}}");
@@ -107,6 +194,7 @@ class PhoneGamepad {
             // release every button on ANY exit (incl. a read timeout), so nothing sticks while we reconnect
             conn.sendControllerInput((short) 0, (short) 0x1, 0, (byte) 0, (byte) 0, (short) 0, (short) 0, (short) 0, (short) 0);
         }
+        return linked;
     }
 
     // {"pads":[{"b":[..17..],"a":[..4..]}, ...]} -> pad 0 into the stream

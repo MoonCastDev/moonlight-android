@@ -91,8 +91,10 @@ import java.util.Locale;
 public class Game extends Activity implements SurfaceHolder.Callback,
         OnGenericMotionListener, OnTouchListener, NvConnectionListener, EvdevListener,
         OnSystemUiVisibilityChangeListener, GameGestures, StreamView.InputCallbacks,
-        PerfOverlayListener, UsbDriverService.UsbDriverStateListener, View.OnKeyListener {
+        PerfOverlayListener, UsbDriverService.UsbDriverStateListener, View.OnKeyListener,
+        com.limelight.home.MoveToTv.LocalSession {
     private int lastButtonState = 0;
+    private int playGen = -1;   // the /play this stream came from (PhoneGamepad), for clearing "pad direct" when it ends
 
     // Only 2 touches are supported
     private final TouchContext[] touchContextMap = new TouchContext[2];
@@ -435,6 +437,11 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             // If we're using OSC, always set at least gamepad 1.
             gamepadMask |= 1;
         }
+        // A handheld sent this game with "pad":"direct": its own controller-only session on the PC is player 1, so this
+        // stream registers no gamepad at all (not even the TV remote), or it would take pad 0 from the handheld.
+        final boolean padsElsewhere = PhoneGamepad.isDirect();
+        playGen = PhoneGamepad.playGen();
+        if (padsElsewhere) gamepadMask = 0;
 
         // Set to the optimal mode for streaming
         float displayRefreshRate = prepareDisplayForRendering();
@@ -486,6 +493,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                 new ComputerDetails.AddressTuple(host, port),
                 httpsPort, uniqueId, config,
                 PlatformBinding.getCryptoProvider(this), serverCert);
+        conn.setControllersBlocked(padsElsewhere);
         controllerHandler = new ControllerHandler(this, conn, this, prefConfig);
         keyboardTranslator = new KeyboardTranslator();
 
@@ -1044,7 +1052,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     protected void onDestroy() {
         super.onDestroy();
 
-        PhoneGamepad.stop();
+        PhoneGamepad.stopFor(conn);
+        PhoneGamepad.streamEnded(playGen);   // a later stream from the TV's own home has its controllers again
         if (controllerHandler != null) {
             controllerHandler.destroy();
         }
@@ -1532,6 +1541,11 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             java.util.List<com.limelight.home.QuickMenu.Item> items = new java.util.ArrayList<>();
             items.add(new com.limelight.home.QuickMenu.Item("⌨", "Keyboard", "On-screen", false, this::toggleKeyboard).asToggle());
             items.add(new com.limelight.home.QuickMenu.Item("✚", "Controllers", com.limelight.home.QuickMenu.pads().size() + " connected", false, this::showControllers));
+            // handheld only: send the game to the last MoonCast TV (it ends this stream, the game keeps running)
+            com.limelight.home.QuickMenu.Item move = com.limelight.home.MoveToTv.item(Game.this, new com.limelight.home.MoveToTv.Target(
+                    "pc", appName != null ? appName : "Your game", getIntent().getStringExtra(EXTRA_PC_UUID), pcName,
+                    getIntent().getIntExtra(EXTRA_APP_ID, 0), null, null, null, true, null));
+            if (move != null) items.add(move);
             items.add(new com.limelight.home.QuickMenu.Item("←", "Disconnect", "The game keeps running", false, this::finish));
             items.add(new com.limelight.home.QuickMenu.Item("✕", "Quit game", null, true, this::quitOnHostAndFinish));
             quickMenu.show(appName != null ? appName : "Your game",
@@ -1559,8 +1573,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                 java.util.Collections::emptyList, items);
     }
 
-    // Quit the game on the PC (not just this stream), then leave.
-    private void quitOnHostAndFinish() {
+    // Quit the game on the PC (not just this stream), then leave. Public for the TV's /stop {"quit":true}.
+    public void quitOnHostAndFinish() {
         final Intent i = getIntent();
         new Thread(() -> {
             try {
@@ -2321,7 +2335,11 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     public void stageComplete(String stage) {
     }
 
-    private void stopConnection() {
+    private void stopConnection() { stopConnection(null); }
+
+    /** Stop the stream; [done] runs on the main thread once the PC was told (null: don't wait). */
+    private void stopConnection(final Runnable done) {
+        PhoneGamepad.stopFor(conn);
         if (connecting || connected) {
             connecting = connected = false;
             updatePipAutoEnter();
@@ -2339,13 +2357,22 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             new Thread() {
                 public void run() {
                     conn.stop();
+                    if (done != null) runOnUiThread(done);
                 }
             }.start();
         }
+        else if (done != null) runOnUiThread(done);
+    }
+
+    // "Move to TV" (handheld): end this stream (disconnect, the game keeps running) before the TV joins it.
+    @Override
+    public void endLocalSession(Runnable done) {
+        stopConnection(done);
     }
 
     @Override
     public void stageFailed(final String stage, final int portFlags, final int errorCode) {
+        com.limelight.home.StreamReport.failed("Couldn't start the game on the PC (" + stage + ", error " + errorCode + ").");
         // Perform a connection test if the failure could be due to a blocked port
         // This does network I/O, so don't do it on the main thread.
         final int portTestResult = MoonBridge.testClientConnectivity(ServerHelper.CONNECTION_TEST_SERVER, 443, portFlags);
@@ -2386,6 +2413,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
     @Override
     public void connectionTerminated(final int errorCode) {
+        PhoneGamepad.stopFor(conn);   // the stream is over: stop pulling the sender's controller
+        if (errorCode != MoonBridge.ML_ERROR_GRACEFUL_TERMINATION)
+            com.limelight.home.StreamReport.failed("The stream from the PC stopped (error " + errorCode + ").");
         // Perform a connection test if the failure could be due to a blocked port
         // This does network I/O, so don't do it on the main thread.
         final int portFlags = MoonBridge.getPortFlagsFromTerminationErrorCode(errorCode);
@@ -2499,6 +2529,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
     @Override
     public void connectionStarted() {
+        com.limelight.home.StreamReport.playing();
         runOnUiThread(new Runnable() {
             @Override
             public void run() {

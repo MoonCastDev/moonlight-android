@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- MoonCast handheld: the SENDER. Never listens for other devices; it plays here or sends to a MoonCast TV. -->
+<!-- MoonCast handheld: the SENDER. It plays here or sends a game to a MoonCast TV; it never receives games (its only
+     listener is the controller it serves to the TV it sent a game to, while controller mode is open). -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
         <!-- The handheld home (Switch style). Moonlight's PC list (PcView) stays reachable from Consoles. -->
@@ -16,5 +17,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- Controller mode: a game plays on a MoonCast TV, this device serves its controller (ws :8099/pad) -->
+        <activity
+            android:name=".handheld.TvControllerActivity"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:theme="@style/StreamTheme"
+            android:resizeableActivity="true"
+            android:configChanges="orientation|screenSize|keyboardHidden|keyboard|navigation|uiMode|density|smallestScreenSize|screenLayout" />
     </application>
 </manifest>
