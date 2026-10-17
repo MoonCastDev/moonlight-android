@@ -858,8 +858,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
 
     private fun playXbox(c: Xbox.Console) {
         FeelSounds.play(this, FeelSounds.Cue.LAUNCH)
-        startActivity(Intent(this, com.limelight.XboxStreamActivity::class.java)
-                .putExtra(com.limelight.XboxStreamActivity.EXTRA_CONSOLE_ID, c.id).putExtra(com.limelight.XboxStreamActivity.EXTRA_NAME, c.name))
+        startActivity(Launch.xboxIntent(this, c))
     }
 
     /** Microsoft's device-code sign-in: the TV shows a code, you type it at microsoft.com/link on a phone. */
@@ -1335,23 +1334,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         render(force = true)
     }
 
-    private fun playPs(c: Ps5Store.Console) {
-        if (power(c) != Ps5Store.Power.NOT_FOUND || !Psn.signedIn(this)) {
-            if (power(c) == Ps5Store.Power.NOT_FOUND)
-                return toast("${c.name} isn't on this network. Sign in to PlayStation Network in Settings to play it from here.")
-            FeelSounds.play(this, FeelSounds.Cue.LAUNCH)
-            startActivity(PhoneLink.ps5Intent(this, c.host, c.registKey, c.morning, c.ps5, null, null, null))
-            return
-        }
-        // away from home: reach it through PlayStation Network (the player still tries the home network first)
-        Thread {
-            val r = Psn.remoteFor(this, c.name)
-            runOnUiThread {
-                if (r == null) toast("PlayStation Network doesn't list ${c.name} for Remote Play. Check Remote Play is on in its settings.")
-                else { FeelSounds.play(this, FeelSounds.Cue.LAUNCH); startActivity(PhoneLink.ps5Intent(this, c.host, c.registKey, c.morning, c.ps5, r.first, r.second, r.third)) }
-            }
-        }.start()
-    }
+    private fun playPs(c: Ps5Store.Console) = Launch.playPs(this, c, power(c)) { toast(it) }
 
     private fun wakePs(c: Ps5Store.Console) {
         Thread {

@@ -195,16 +195,7 @@ public class PhoneLink {
     /** The intent that starts a native PS5 Remote Play session. The PSN fields are only for play away from home. */
     public static Intent ps5Intent(Context ctx, String host, String registKey, String morning, boolean isPs5,
                                    String psnToken, String duid, String accountId) {
-        Intent i = new Intent(ctx, Ps5StreamActivity.class);
-        i.putExtra(Ps5StreamActivity.EXTRA_HOST, host);
-        i.putExtra(Ps5StreamActivity.EXTRA_REGIST_KEY, registKey);
-        i.putExtra(Ps5StreamActivity.EXTRA_MORNING, morning);
-        i.putExtra(Ps5StreamActivity.EXTRA_PS5, isPs5);
-        if (psnToken != null && !psnToken.isEmpty()) i.putExtra(Ps5StreamActivity.EXTRA_PSN_TOKEN, psnToken);
-        if (duid != null && !duid.isEmpty()) i.putExtra(Ps5StreamActivity.EXTRA_DUID, duid);
-        if (accountId != null && !accountId.isEmpty()) i.putExtra(Ps5StreamActivity.EXTRA_ACCOUNT_ID, accountId);
-        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        return i;
+        return com.limelight.home.Launch.ps5Intent(ctx, host, registKey, morning, isPs5, psnToken, duid, accountId);
     }
 
     private static String field(String json, String key) {

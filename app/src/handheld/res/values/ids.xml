@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- handheld home: a tile's name and wash colour, kept on the view -->
+    <item name="hh_title" type="id" />
+    <item name="hh_tint" type="id" />
+</resources>

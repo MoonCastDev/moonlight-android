@@ -1,10 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- MoonCast handheld: the SENDER. Never listens for other devices; it plays here or sends to a MoonCast TV.
-     Until the handheld home is built, it opens Moonlight's PC list. -->
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
+<!-- MoonCast handheld: the SENDER. Never listens for other devices; it plays here or sends to a MoonCast TV. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
-        <activity android:name=".PcView" tools:node="merge">
+        <!-- The handheld home (Switch style). Moonlight's PC list (PcView) stays reachable from Consoles. -->
+        <activity
+            android:name=".handheld.HandheldHomeActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:theme="@style/StreamTheme"
+            android:resizeableActivity="true"
+            android:windowSoftInputMode="adjustPan"
+            android:configChanges="orientation|screenSize|keyboardHidden|keyboard|navigation|uiMode|density|smallestScreenSize|screenLayout">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
