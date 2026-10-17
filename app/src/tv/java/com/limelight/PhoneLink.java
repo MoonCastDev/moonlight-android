@@ -285,6 +285,7 @@ public class PhoneLink {
             ComputerDatabaseManager db = new ComputerDatabaseManager(ctx);
             try { db.updateComputer(pc); } finally { db.close(); }
             sessionPcUuid = pc.uuid;
+            com.limelight.computers.ComputerManagerService.addSessionComputer(pc);
             return true;
         } catch (Exception e) {
             endSessionIdentity(ctx);
@@ -306,7 +307,10 @@ public class PhoneLink {
             ComputerDatabaseManager db = new ComputerDatabaseManager(c);
             try {
                 ComputerDetails pc = db.getComputerByUUID(uuid);
-                if (pc != null) db.deleteComputer(pc);
+                if (pc != null) {
+                    com.limelight.computers.ComputerManagerService.removeSessionComputer(pc);
+                    db.deleteComputer(pc);
+                }
             } finally { db.close(); }
         }
     }

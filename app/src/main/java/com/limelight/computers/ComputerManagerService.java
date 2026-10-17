@@ -714,7 +714,23 @@ public class ComputerManagerService extends Service {
     }
 
     @Override
+    /** The running service, so a PC added for a session (identity transfer) can join its list without a restart. */
+    private static volatile ComputerManagerService running;
+
+    /** Adds a PC to the running service's list. It is polled and can be started at once. */
+    public static void addSessionComputer(ComputerDetails pc) {
+        ComputerManagerService svc = running;
+        if (svc != null) svc.addTuple(pc);
+    }
+
+    /** Takes a session PC out of the running service's list. */
+    public static void removeSessionComputer(ComputerDetails pc) {
+        ComputerManagerService svc = running;
+        if (svc != null) svc.removeComputer(pc);
+    }
+
     public void onCreate() {
+        running = this;
         // Bind to the discovery service
         bindService(new Intent(this, DiscoveryService.class),
                 discoveryServiceConnection, Service.BIND_AUTO_CREATE);
@@ -775,6 +791,7 @@ public class ComputerManagerService extends Service {
 
     @Override
     public void onDestroy() {
+        running = null;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             ConnectivityManager connMgr = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
             connMgr.unregisterNetworkCallback(networkCallback);
