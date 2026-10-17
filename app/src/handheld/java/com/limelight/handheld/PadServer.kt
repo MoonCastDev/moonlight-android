@@ -31,9 +31,12 @@ import java.util.concurrent.TimeUnit
  *
  * A PS5 relay also takes UDP on the TV's :8100 ({"seq","k","pads"}, resent every 50 ms), which is not held back by a
  * lost TCP segment on a jittery Wi-Fi; it is sent to relays that said hello as "mctv-ps5". Only a client presenting
- * this session's pad key is accepted. This is part of the SENDER: it serves the controller; it never receives games.
+ * a pad key from [keys] (one per TV, see [PadLink]) is accepted. This is part of the SENDER: it serves the controller;
+ * it never receives games.
  */
-class PadServer(private val key: String) {
+class PadServer {
+    /** The pad keys handed to TVs in /play; a TV presents its own in /pad?k=. */
+    val keys = java.util.concurrent.CopyOnWriteArraySet<String>()
     companion object {
         const val PORT = 8099
         const val UDP_PORT = 8100
@@ -42,7 +45,7 @@ class PadServer(private val key: String) {
         const val AXES = 4
     }
 
-    private class Client(val sock: Socket, val out: OutputStream, val ip: String) { @Volatile var kind: String? = null }
+    private class Client(val sock: Socket, val out: OutputStream, val ip: String, val key: String) { @Volatile var kind: String? = null }
 
     private val clients = CopyOnWriteArrayList<Client>()
     private var server: ServerSocket? = null
@@ -62,6 +65,8 @@ class PadServer(private val key: String) {
     /** Called (on a background thread) when the number of connected TVs changes. */
     @Volatile var onClients: ((Int) -> Unit)? = null
     val clientCount get() = clients.size
+
+    val isRunning get() = running
 
     fun start() {
         if (running) return
@@ -137,8 +142,11 @@ class PadServer(private val key: String) {
             val targets = clients.filter { it.kind == "mctv-ps5" }
             if (targets.isNotEmpty()) try {
                 val sock = udp ?: DatagramSocket().also { udp = it }
-                val bytes = ("{\"seq\":" + (++seq) + ",\"k\":\"" + key + "\"," + json.substring(1)).toByteArray(StandardCharsets.UTF_8)
-                for (c in targets) sock.send(DatagramPacket(bytes, bytes.size, InetAddress.getByName(c.ip), UDP_PORT))
+                val n = ++seq
+                for (c in targets) {
+                    val bytes = ("{\"seq\":" + n + ",\"k\":\"" + c.key + "\"," + json.substring(1)).toByteArray(StandardCharsets.UTF_8)
+                    sock.send(DatagramPacket(bytes, bytes.size, InetAddress.getByName(c.ip), UDP_PORT))
+                }
             } catch (e: Exception) { Log.w(TAG, "udp pad: $e") }
         }
     }
@@ -160,13 +168,13 @@ class PadServer(private val key: String) {
             val given = Regex("[?&]k=([^&\\s]+)").find(path)?.groupValues?.get(1) ?: ""
             val wsKey = Regex("(?im)^Sec-WebSocket-Key:\\s*(\\S+)").find(head)?.groupValues?.get(1)
             if (!path.startsWith("/pad") || wsKey == null ||
-                    !MessageDigest.isEqual(given.toByteArray(StandardCharsets.US_ASCII), key.toByteArray(StandardCharsets.US_ASCII))) {
+                    keys.none { MessageDigest.isEqual(given.toByteArray(StandardCharsets.US_ASCII), it.toByteArray(StandardCharsets.US_ASCII)) }) {
                 out.write("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray(StandardCharsets.US_ASCII))
                 out.flush(); s.close(); return
             }
             val accept = Base64.encodeToString(MessageDigest.getInstance("SHA-1").digest(
                     (wsKey + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").toByteArray(StandardCharsets.US_ASCII)), Base64.NO_WRAP)
-            val c = Client(s, out, s.inetAddress.hostAddress ?: "")
+            val c = Client(s, out, s.inetAddress.hostAddress ?: "", given)
             synchronized(out) {
                 out.write(("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" +
                         "Sec-WebSocket-Accept: $accept\r\n\r\n").toByteArray(StandardCharsets.US_ASCII))

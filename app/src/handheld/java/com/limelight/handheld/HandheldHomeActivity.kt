@@ -729,7 +729,7 @@ class HandheldHomeActivity : Activity() {
             "pad" -> controllers()
             "net" -> ServerHelper.doNetworkTest(this)
             "gear" -> go(Page.SETTINGS)
-            "power" -> { FeelSounds.play(this, FeelSounds.Cue.BACK); finishAndRemoveTask() }
+            "power" -> { FeelSounds.play(this, FeelSounds.Cue.BACK); PadLink.stop(); finishAndRemoveTask() }
         }
     }
 
@@ -793,7 +793,13 @@ class HandheldHomeActivity : Activity() {
     /** Focus moved: the name above the row, the round button's label, the colour wash and the selected game follow. */
     private fun onFocus(v: View?) {
         syncLabels(v)
-        val t = v?.tag as? String ?: return
+        val t = v?.tag as? String
+        // the name above the row belongs to a game tile: hide it while focus is anywhere else (the round buttons)
+        gnameBox?.let { box ->
+            val show = t != null && t.startsWith("g:") || v == null || v.isInTouchMode
+            box.animate().cancel(); box.animate().alpha(if (show) 1f else 0f).setDuration(150).start()
+        }
+        if (t == null) return
         if (t.startsWith("g:") || t == "hero") {
             if (t.startsWith("g:") && t != "g:all" && t != "g:add") selKey = t.removePrefix("g:")
             (v.getTag(R.id.hh_tint) as? Int)?.let { if (it != 0) wash.color = it }
@@ -1310,8 +1316,10 @@ class HandheldHomeActivity : Activity() {
      * button) it picks where games go when you press A. TVs are looked for again each time it opens.
      */
     private fun playWhere(g: Game?, sweep: Boolean = true) {
-        val res = (stream.getString("list_resolution", null) ?: nativeResolution()).substringAfter('x') + "p"
-        val fps = stream.getString("list_fps", "60") ?: "60"
+        // what the stream will actually use: Moonlight's own reading of the saved resolution and frame rate
+        val pc = com.limelight.preferences.PreferenceConfiguration.readPreferences(this)
+        val res = "${minOf(pc.width, pc.height)}p"
+        val fps = pc.fps.toString()
         val cur = TvFinder.target(this)
         val tvs = TvFinder.known(this)
         val opts = ArrayList<Opt>()

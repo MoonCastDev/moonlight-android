@@ -31,20 +31,39 @@ class PhoneGamepad {
     private static volatile String padKey;            // the phone's pad-server session key (for /pad?k=...)
 
     private final NvConnection conn;
-    private final String host;
+    private volatile String host;
     private volatile boolean running = true;
-    private Socket sock;
+    private volatile boolean quick;    // reconnect right away (the sender's key or address changed), no 1 s wait
+    private volatile Socket sock;
 
     private PhoneGamepad(NvConnection conn, String host) { this.conn = conn; this.host = host; }
 
     /** Remember where the phone is, from the address that POSTed /play. */
-    static void setPhoneHost(String ip) { if (ip != null && !ip.isEmpty()) phoneHost = ip; }
+    static void setPhoneHost(String ip) {
+        if (ip == null || ip.isEmpty()) return;
+        boolean changed = !ip.equals(phoneHost);
+        phoneHost = ip;
+        PhoneGamepad p = current;
+        if (changed && p != null) { p.host = ip; p.kick(); }
+    }
 
     /** The last phone address that drove a /play (used by the PS5 pad relay too). */
     static String phoneHost() { return phoneHost; }
 
     /** The phone's pad-server session key, passed in /play; the relay presents it so the pad server authorizes us. */
-    static void setPadKey(String k) { padKey = k; }
+    static void setPadKey(String k) {
+        boolean changed = k == null ? padKey != null : !k.equals(padKey);
+        padKey = k;
+        // a new key from a new /play: the running link presents the old one and would only notice at the read timeout
+        PhoneGamepad p = current;
+        if (changed && p != null) p.kick();
+    }
+
+    /** Drop the current link and connect again at once (with the latest key and address). */
+    private void kick() {
+        quick = true;
+        try { Socket s = sock; if (s != null) s.close(); } catch (Exception ignored) { }
+    }
     static String padKey() { return padKey; }
 
     /** Start feeding this connection from the phone's pad (uses the last known phone address, or an override). */
@@ -66,6 +85,7 @@ class PhoneGamepad {
         while (running) {
             try { session(); } catch (Exception e) { Log.w(TAG, "phone pad link: " + e); }
             if (!running) break;
+            if (quick) { quick = false; continue; }
             try { Thread.sleep(1000); } catch (InterruptedException e) { break; }   // reconnect if the phone drops
         }
     }

@@ -32,6 +32,7 @@ class TvControllerActivity : Activity() {
         const val EXTRA_TV = "tv_id"
         const val EXTRA_DELAY = "send_delay_ms"
         private val COMBO = intArrayOf(4, 5, 8, 9)   // LB RB Select Start
+        private const val LINK_WAIT_MS = 8000L
     }
 
     private enum class State { SENDING, PLAYING, FAILED }
@@ -48,8 +49,9 @@ class TvControllerActivity : Activity() {
 
     private var target: MoveToTv.Target? = null
     private var tv: TvFinder.Tv? = null
-    private var server: PadServer? = null
     private var padKey = ""
+    private var everConnected = false   // a TV connected to the controller since this send
+    private var noLink = false          // sent, but no TV connected within LINK_WAIT_MS
     private var state = State.SENDING
     private var error: String? = null
     private var menu = false          // the pad drives the on-screen buttons instead of the game
@@ -83,7 +85,8 @@ class TvControllerActivity : Activity() {
 
     override fun onDestroy() {
         ui.removeCallbacksAndMessages(null)
-        server?.stop(); server = null
+        // the controller server stays up (PadLink): a restarted controller screen picks the TV's link straight back up
+        if (PadLink.onClients === clientsListener) PadLink.onClients = null
         glide.detach()
         super.onDestroy()
     }
@@ -103,21 +106,38 @@ class TvControllerActivity : Activity() {
         val tv0 = TvFinder.byId(this, i.getStringExtra(EXTRA_TV))
         if (t == null || tv0 == null) { finish(); return }
         target = t; tv = tv0
-        server?.stop()
-        padKey = TvSender.newPadKey()
-        server = PadServer(padKey).also { s ->
-            s.onClients = { runOnUiThread { refresh() } }
-            s.start()   // up before /play: the TV connects to it as soon as it starts the game
-        }
-        b.fill(0f); a.fill(0f)
+        // one server for the app, one key per TV: a re-send reuses both, so the TV's open link keeps working
+        PadLink.onClients = clientsListener
+        padKey = PadLink.keyFor(tv0.id)   // starts the server if needed: up before /play, the TV connects right after
+        b.fill(0f); a.fill(0f); push()
         title.text = t.title
         attempt++
         send(i.getLongExtra(EXTRA_DELAY, 0L), retried = false)
     }
 
+    private val clientsListener: (Int) -> Unit = { n -> runOnUiThread { onLink(n) } }
+
+    private fun onLink(n: Int) {
+        if (n > 0) {
+            ui.removeCallbacks(linkTimeout)
+            everConnected = true
+            if (noLink) { noLink = false; if (state == State.PLAYING) setMenu(false) }   // it made it after all: back to the game
+        }
+        else if (state == State.PLAYING) { ui.removeCallbacks(linkTimeout); ui.postDelayed(linkTimeout, LINK_WAIT_MS) }
+        refresh()
+    }
+
+    /** Sent, but the TV never connected to the controller (or didn't come back): say so, and offer Try again. */
+    private val linkTimeout = Runnable {
+        if (state == State.PLAYING && PadLink.clientCount == 0) { noLink = true; FeelSounds.play(this, FeelSounds.Cue.ERROR); setMenu(true); refresh() }
+    }
+
     private fun send(delayMs: Long, retried: Boolean) {
         val t = target ?: return; val tv0 = tv ?: return
-        state = State.SENDING; error = null
+        state = State.SENDING; error = null; noLink = false
+        everConnected = PadLink.clientCount > 0
+        ui.removeCallbacks(linkTimeout)
+        if (!PadLink.running) padKey = PadLink.keyFor(tv0.id)
         setMenu(true)
         refresh()
         val mine = attempt
@@ -145,6 +165,8 @@ class TvControllerActivity : Activity() {
                         TvFinder.setLast(this, tv0)
                         state = State.PLAYING
                         FeelSounds.play(this, FeelSounds.Cue.LAUNCH)
+                        ui.removeCallbacks(linkTimeout)
+                        if (PadLink.clientCount == 0) ui.postDelayed(linkTimeout, LINK_WAIT_MS)
                         setMenu(false)
                         refresh()
                     }
@@ -204,13 +226,18 @@ class TvControllerActivity : Activity() {
         status.text = when (state) {
             State.SENDING -> "Starting ${t.title} on $tvName…"
             State.FAILED -> error ?: "Something went wrong."
-            State.PLAYING -> if ((server?.clientCount ?: 0) > 0) "This ${deviceShort()} is the controller."
-                             else "Waiting for $tvName to connect to this ${deviceShort()}'s controller…"
+            State.PLAYING -> when {
+                PadLink.clientCount > 0 -> "Controller connected. This ${deviceShort()} is the controller."
+                noLink -> "$tvName didn't connect to this ${deviceShort()}'s controller. Check both are on the same Wi-Fi."
+                everConnected -> "Reconnecting to $tvName…"
+                else -> "Waiting for $tvName to connect…"
+            }
         }
+        if (state == State.PLAYING && noLink) status.setTextColor(Sw.DANGER)
         val focusedLabel = (currentFocus as? TextView)?.text?.toString()
         buttons.removeAllViews()
         val list = ArrayList<Pair<String, () -> Unit>>()
-        if (state == State.FAILED) list += "Try again" to { attempt++; send(0, retried = false) }
+        if (state == State.FAILED || (state == State.PLAYING && noLink)) list += "Try again" to { attempt++; send(0, retried = false) }
         list += "Play here instead" to { playHere() }
         list += (if (state == State.FAILED) "Back" else "Stop") to { stopAndLeave() }
         list.forEachIndexed { i, (label, fn) ->
@@ -257,7 +284,7 @@ class TvControllerActivity : Activity() {
 
     private fun playHere() {
         val t = target ?: return
-        server?.stop(); server = null
+        PadLink.stop()
         attempt++
         startActivity(Intent(this, HandheldHomeActivity::class.java).putExtra(HandheldHomeActivity.EXTRA_PLAY_HERE, t.key)
                 .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
@@ -265,7 +292,7 @@ class TvControllerActivity : Activity() {
     }
 
     private fun stopAndLeave() {
-        server?.stop(); server = null
+        PadLink.stop()
         attempt++
         FeelSounds.play(this, FeelSounds.Cue.BACK)
         finish()
@@ -273,7 +300,7 @@ class TvControllerActivity : Activity() {
 
     // ---------------------------------------------------------------- input -> the TV
 
-    private fun push() { server?.update(b, a) }
+    private fun push() { PadLink.update(b, a) }
 
     private fun isPad(source: Int) = (source and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD ||
             (source and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
@@ -324,7 +351,7 @@ class TvControllerActivity : Activity() {
     private fun checkCombo() {
         if (state != State.PLAYING) return
         if (COMBO.all { b[it] > .5f }) {
-            if (!comboPending) { comboPending = true; server?.update(FloatArray(PadServer.BUTTONS), FloatArray(PadServer.AXES)) }
+            if (!comboPending) { comboPending = true; PadLink.update(FloatArray(PadServer.BUTTONS), FloatArray(PadServer.AXES)) }
         }
         if (comboPending && b.all { it == 0f }) { comboPending = false; FeelSounds.play(this, FeelSounds.Cue.OPEN); setMenu(true) }
     }
