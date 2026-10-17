@@ -151,6 +151,9 @@ class HandheldHomeActivity : Activity() {
         // a resolution saved earlier, in either of Moonlight's keys, is left alone
         if (!stream.contains("list_resolution") && !stream.contains("list_resolution_fps"))
             stream.edit().putString("list_resolution", nativeResolution()).apply()
+        // Native used to be the raw panel size, which no longer matches the list: move that saved value to the new Native.
+        if (stream.getString("list_resolution", null) == rawNativeSize())
+            stream.edit().putString("list_resolution", nativeResolution()).apply()
         MoveToTv.handler = TvSender   // the players' Quick menu offers "Move to <TV>" through this
         buildShell()
         bindService(Intent(this, ComputerManagerService::class.java), conn, Context.BIND_AUTO_CREATE)
@@ -1170,11 +1173,13 @@ class HandheldHomeActivity : Activity() {
                 if (mode != "away") {
                     choice(list, stream, "ps5_resolution", "Resolution", "The PS5 streams up to 1080p", listOf("720p" to "720", "1080p" to "1080"), "1080")
                     choice(list, stream, "ps5_fps_home", "Frame rate", "60 fps is smoother; 30 fps lets a weak link keep up",
-                            listOf("60 fps" to "60", "30 fps" to "30", "Custom" to "custom"), "60")
+                            listOf("60 fps" to "60", "30 fps" to "30", "Custom" to "custom"), "60",
+                            onPick = { if (it == "custom") customDialog(stream, "ps5_fps_home", "Custom frame rate", "fps", 15, 60, 60) })
                     if (stream.getString("ps5_fps_home", "60") == "custom")
                         customNumber(list, stream, "ps5_fps_home", "Custom frame rate", "15 to 60 fps. The PS5 may cap it at 60", "fps", 15, 60, 60)
                     choice(list, stream, "ps5_bitrate_home", "Bitrate", "Auto: 30 Mbps on fast Wi-Fi, 20 otherwise",
-                            listOf("Auto" to "auto", "10" to "10", "15" to "15", "20" to "20", "30" to "30", "Custom" to "custom"), "auto")
+                            listOf("Auto" to "auto", "10" to "10", "15" to "15", "20" to "20", "30" to "30", "Custom" to "custom"), "auto",
+                            onPick = { if (it == "custom") customDialog(stream, "ps5_bitrate_home", "Custom bitrate", "Mbps", 2, 50, 20) })
                     if (stream.getString("ps5_bitrate_home", "auto") == "custom")
                         customNumber(list, stream, "ps5_bitrate_home", "Custom bitrate", "2 to 50 Mbps", "Mbps", 2, 50, 20)
                     choice(list, stream, "ps5_codec", "Video codec", "H.265 looks better at the same bitrate", listOf("H.264" to "h264", "H.265" to "h265"), "h265")
@@ -1183,11 +1188,13 @@ class HandheldHomeActivity : Activity() {
                     choice(list, stream, "ps5_away_quality", "Resolution", "Auto follows the Wi-Fi: 1080p strong, 720p weak",
                             listOf("Auto" to "auto", "540p" to "540", "720p" to "720", "1080p" to "1080"), "auto")
                     choice(list, stream, "away_fps", "Frame rate", "60 fps is smoother; 30 fps lets a weak link keep up",
-                            listOf("60 fps" to "60", "30 fps" to "30", "Custom" to "custom"), "60")
+                            listOf("60 fps" to "60", "30 fps" to "30", "Custom" to "custom"), "60",
+                            onPick = { if (it == "custom") customDialog(stream, "away_fps", "Custom frame rate", "fps", 15, 60, 60) })
                     if (stream.getString("away_fps", "60") == "custom")
                         customNumber(list, stream, "away_fps", "Custom frame rate", "15 to 60 fps. The PS5 may cap it at 60", "fps", 15, 60, 60)
                     choice(list, stream, "away_bitrate", "Bitrate", "Auto: capped by the Wi-Fi link",
-                            listOf("Auto" to "auto", "8" to "8", "10" to "10", "15" to "15", "Custom" to "custom"), "auto")
+                            listOf("Auto" to "auto", "8" to "8", "10" to "10", "15" to "15", "Custom" to "custom"), "auto",
+                            onPick = { if (it == "custom") customDialog(stream, "away_bitrate", "Custom bitrate", "Mbps", 2, 50, 10) })
                     if (stream.getString("away_bitrate", "auto") == "custom")
                         customNumber(list, stream, "away_bitrate", "Custom bitrate", "2 to 50 Mbps", "Mbps", 2, 50, 10)
                     choice(list, stream, "away_codec", "Video codec", "H.265 looks better at the same bitrate", listOf("H.264" to "h264", "H.265" to "h265"), "h265")
@@ -1264,26 +1271,33 @@ class HandheldHomeActivity : Activity() {
     /** A Custom value for a choice row: tapping it asks for a number, and saving a number switches the row to Custom. */
     private fun customNumber(list: LinearLayout, store: SharedPreferences, key: String, title: String, sub: String, unit: String, min: Int, max: Int, def: Int) {
         val cur = store.getString(key + "_custom", def.toString()) ?: def.toString()
-        action(list, "$key-custom", title, sub, "$cur $unit") {
-            entry(title, "$min to $max $unit. Used when this row is set to Custom", unit, cur, true) { v ->
-                val n = v.trim().toIntOrNull()
-                if (n == null || n !in min..max) "Enter a number from $min to $max"
-                else {
-                    store.edit().putString(key + "_custom", n.toString()).putString(key, "custom").apply()
-                    render(force = true)
-                    null
-                }
+        action(list, "$key-custom", title, sub, "$cur $unit") { customDialog(store, key, title, unit, min, max, def) }
+    }
+
+    /** Asks for a Custom number and saves it; the row switches to Custom. */
+    private fun customDialog(store: SharedPreferences, key: String, title: String, unit: String, min: Int, max: Int, def: Int) {
+        val cur = store.getString(key + "_custom", def.toString()) ?: def.toString()
+        entry(title, "$min to $max $unit", unit, cur, true) { v ->
+            val n = v.trim().toIntOrNull()
+            if (n == null || n !in min..max) "Enter a number from $min to $max"
+            else {
+                store.edit().putString(key + "_custom", n.toString()).putString(key, "custom").apply()
+                render(force = true)
+                null
             }
         }
     }
 
-    private fun choice(list: LinearLayout, store: SharedPreferences, key: String, title: String, sub: String, options: List<Pair<String, String>>, def: String) {
+    private fun choice(list: LinearLayout, store: SharedPreferences, key: String, title: String, sub: String, options: List<Pair<String, String>>, def: String,
+                       onPick: ((String) -> Unit)? = null) {
         val cur = store.getString(key, def)
         val label = options.firstOrNull { it.second == cur }?.first ?: cur ?: ""
         srow(list, key, title, sub, value(label)) {
             val i = options.indexOfFirst { it.second == cur }
-            store.edit().putString(key, options[(i + 1) % options.size].second).apply()
+            val next = options[(i + 1) % options.size].second
+            store.edit().putString(key, next).apply()
             render(force = true)
+            onPick?.invoke(next)
         }
     }
 
@@ -1882,6 +1896,16 @@ class HandheldHomeActivity : Activity() {
                 return d.name.ifBlank { "Controller" }
         }
         return "Touch screen"
+    }
+
+    /** The panel's own size, landscape, even numbers: what Native used to be. */
+    private fun rawNativeSize(): String {
+        @Suppress("DEPRECATION") val d = windowManager.defaultDisplay
+        var w: Int; var h: Int
+        if (Build.VERSION.SDK_INT >= 23) { val m = d.mode; w = m.physicalWidth; h = m.physicalHeight }
+        else { val p = android.graphics.Point(); @Suppress("DEPRECATION") d.getRealSize(p); w = p.x; h = p.y }
+        if (h > w) { val t = w; w = h; h = t }
+        return "${w and 1.inv()}x${h and 1.inv()}"
     }
 
     private fun nativeResolution(): String {
