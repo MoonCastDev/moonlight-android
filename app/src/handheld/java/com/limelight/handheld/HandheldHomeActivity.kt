@@ -1892,7 +1892,11 @@ class HandheldHomeActivity : Activity() {
         if (Build.VERSION.SDK_INT >= 23) { val m = d.mode; w = m.physicalWidth; h = m.physicalHeight }
         else { val p = android.graphics.Point(); @Suppress("DEPRECATION") d.getRealSize(p); w = p.x; h = p.y }
         if (h > w) { val t = w; w = h; h = t }
-        return "${w and 1.inv()}x${h and 1.inv()}"
+        // The largest 16:9 size that fits this screen (even numbers, for the encoder). Most games are 16:9, so this
+        // fills the screen instead of leaving bars on a near-square panel such as the 1240x1080 Retroid.
+        val h169 = (w * 9 / 16) and 1.inv()
+        if (h169 <= h) return "${w and 1.inv()}x$h169"
+        return "${(h * 16 / 9) and 1.inv()}x${h and 1.inv()}"
     }
 
     private fun chipName(): String = com.limelight.home.Chip.name()
