@@ -139,6 +139,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
     }
 
     override fun onDestroy() {
+        com.limelight.PhoneLink.endSessionIdentity(this)
         probes.shutdownNow()
         glide.detach()
         loaders.values.forEach { it.cancelBackgroundLoads(); it.cancelForegroundLoads(); it.freeCacheMemory() }

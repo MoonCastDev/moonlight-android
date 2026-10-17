@@ -58,8 +58,11 @@ public class AndroidCryptoProvider implements LimelightCryptoProvider {
     public AndroidCryptoProvider(Context c) {
         String dataPath = c.getFilesDir().getAbsolutePath();
 
-        certFile = new File(dataPath + File.separator + "client.crt");
-        keyFile = new File(dataPath + File.separator + "client.key");
+        // A session identity (sent by another MoonCast device, removed when the session ends) takes precedence.
+        File sessionCert = new File(dataPath + File.separator + "session-client.crt");
+        File sessionKey = new File(dataPath + File.separator + "session-client.key");
+        certFile = sessionCert.isFile() ? sessionCert : new File(dataPath + File.separator + "client.crt");
+        keyFile = sessionKey.isFile() ? sessionKey : new File(dataPath + File.separator + "client.key");
     }
 
     private byte[] loadFileToBytes(File f) {

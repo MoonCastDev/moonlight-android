@@ -3,6 +3,10 @@ package com.limelight.identity;
 import android.content.Context;
 import android.util.Base64;
 
+import com.limelight.nvstream.http.ComputerDetails;
+
+import org.json.JSONObject;
+
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 
 import java.io.File;
@@ -87,19 +91,34 @@ public final class IdentityTransfer {
     }
 
     /**
-     * This device's Sunshine client identity, sealed for a receiver. [receiverKeyB64] is the receiver's published key.
-     * Returns base64 of the encrypted blob, or null if this device has no identity yet (it has never paired).
+     * This device's Sunshine client identity and one PC's details, sealed for a receiver. [receiverKeyB64] is the
+     * receiver's published key. Returns base64 of the encrypted blob, or null if this device has no identity or the PC
+     * has no certificate yet (it has never paired).
      */
-    public static String sealIdentity(Context ctx, String receiverKeyB64) {
+    public static String sealIdentity(Context ctx, String receiverKeyB64, ComputerDetails pc) {
         try {
             byte[] cert = readFile(new File(ctx.getFilesDir(), "client.crt"));
             byte[] key = readFile(new File(ctx.getFilesDir(), "client.key"));
-            if (cert == null || key == null) return null;
+            if (cert == null || key == null || pc == null || pc.serverCert == null) return null;
+            ComputerDetails.AddressTuple addr = pc.localAddress != null ? pc.localAddress : pc.activeAddress;
+            if (addr == null) return null;
+            JSONObject j = new JSONObject()
+                    .put("cert", Base64.encodeToString(cert, Base64.NO_WRAP))
+                    .put("key", Base64.encodeToString(key, Base64.NO_WRAP))
+                    .put("uuid", pc.uuid).put("name", pc.name)
+                    .put("address", addr.address).put("port", addr.port)
+                    .put("serverCert", Base64.encodeToString(pc.serverCert.getEncoded(), Base64.NO_WRAP));
             byte[] recvRaw = Base64.decode(receiverKeyB64, Base64.DEFAULT);
-            return Base64.encodeToString(encrypt(recvRaw, pack(cert, key)), Base64.NO_WRAP);
+            return Base64.encodeToString(encrypt(recvRaw, j.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8)), Base64.NO_WRAP);
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /** Opens a blob from [sealIdentity] on the receiver. Returns the JSON: cert, key, uuid, name, address, port, serverCert. */
+    public static JSONObject openIdentity(PrivateKey receiverPriv, byte[] receiverRawPub, String blobB64) throws Exception {
+        byte[] plain = decrypt(receiverPriv, receiverRawPub, Base64.decode(blobB64, Base64.DEFAULT));
+        return new JSONObject(new String(plain, java.nio.charset.StandardCharsets.UTF_8));
     }
 
     private static byte[] readFile(File f) throws java.io.IOException {

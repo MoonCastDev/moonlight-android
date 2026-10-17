@@ -41,8 +41,11 @@ object TvSender : MoveToTv.Handler {
             "pc" -> {
                 j.put("appId", t.appId.toString()).put("appName", t.title); if (direct) j.put("pad", "direct")
                 // A TV with no pairing gets this device's identity, sealed to the TV's key (identity transfer).
-                if (!tv.paired && tv.identityKey.isNotEmpty())
-                    com.limelight.identity.IdentityTransfer.sealIdentity(ctx, tv.identityKey)?.let { j.put("identity", it) }
+                if (!tv.paired && tv.identityKey.isNotEmpty()) {
+                    val pc = com.limelight.computers.ComputerDatabaseManager(ctx).let { db ->
+                        try { db.getComputerByUUID(t.pcUuid ?: "") } finally { db.close() } }
+                    com.limelight.identity.IdentityTransfer.sealIdentity(ctx, tv.identityKey, pc)?.let { j.put("identity", it) }
+                }
             }
             "ps" -> {
                 val c = Ps5Store.all(ctx).firstOrNull { it.host == t.psHost }
