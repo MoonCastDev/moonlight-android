@@ -25,8 +25,10 @@ import java.security.SecureRandom;
 class PhoneGamepad {
     private static final String TAG = "MoonCast-PhonePad";
     private static final int PAD_PORT = 8099;        // the phone's PadServer
+    private static final long GIVE_UP_MS = 30000;     // stop retrying after this long without reaching the sender
 
     private static volatile PhoneGamepad current;
+    private static volatile NvConnection lastConn;    // the stream it feeds, until that stream stops (stop())
     private static volatile String phoneHost;         // set from the /play socket's remote address
     private static volatile String padKey;            // the phone's pad-server session key (for /pad?k=...)
 
@@ -57,6 +59,13 @@ class PhoneGamepad {
         // a new key from a new /play: the running link presents the old one and would only notice at the read timeout
         PhoneGamepad p = current;
         if (changed && p != null) p.kick();
+        else if (p == null) revive();
+    }
+
+    // A new /play while the stream is still up but the link gave up (the sender was away for a while): start again.
+    private static synchronized void revive() {
+        NvConnection c = lastConn;
+        if (current == null && c != null) { start(c, null); }
     }
 
     /** Drop the current link and connect again at once (with the latest key and address). */
@@ -73,24 +82,38 @@ class PhoneGamepad {
         if (conn == null || h == null || h.isEmpty()) { Log.w(TAG, "no phone address yet - controller not started"); return; }
         PhoneGamepad p = new PhoneGamepad(conn, h);
         current = p;
+        lastConn = conn;
         new Thread(p::run, "phone-gamepad").start();
     }
 
     static synchronized void stop() {
+        lastConn = null;
         PhoneGamepad p = current; current = null;
         if (p != null) { p.running = false; try { if (p.sock != null) p.sock.close(); } catch (Exception ignored) { } }
     }
 
     private void run() {
+        long failingSince = 0;   // when the sender stopped answering (0 = the last link worked)
         while (running) {
-            try { session(); } catch (Exception e) { Log.w(TAG, "phone pad link: " + e); }
+            boolean linked = false;
+            try { linked = session(); } catch (Exception e) { Log.w(TAG, "phone pad link: " + e); }
             if (!running) break;
+            long now = System.currentTimeMillis();
+            if (linked) failingSince = 0;
+            else if (failingSince == 0) failingSince = now;
+            else if (now - failingSince > GIVE_UP_MS) {   // the sender's pad server is gone (it stopped, or left the Wi-Fi)
+                Log.i(TAG, "phone pad: no answer for " + (GIVE_UP_MS / 1000) + " s, giving up");
+                synchronized (PhoneGamepad.class) { if (current == this) current = null; }
+                running = false;
+                break;
+            }
             if (quick) { quick = false; continue; }
             try { Thread.sleep(1000); } catch (InterruptedException e) { break; }   // reconnect if the phone drops
         }
     }
 
-    private void session() throws Exception {
+    /** One link. True when it got through the handshake (so a later drop is a reconnect, not a dead sender). */
+    private boolean session() throws Exception {
         Socket s = new Socket();
         s.connect(new InetSocketAddress(host, PAD_PORT), 2000);
         s.setTcpNoDelay(true);
@@ -111,6 +134,7 @@ class PhoneGamepad {
         out.flush();
         // read response headers until blank line
         if (!readHeaders(in)) throw new Exception("handshake refused");
+        boolean linked = true;
 
         // introduce ourselves so the phone sends pad states here (not expecting a web gamepad page)
         sendText(out, "{\"hello\":{\"id\":\"mctv-native\",\"kind\":\"mctv-native\"}}");
@@ -127,6 +151,7 @@ class PhoneGamepad {
             // release every button on ANY exit (incl. a read timeout), so nothing sticks while we reconnect
             conn.sendControllerInput((short) 0, (short) 0x1, 0, (byte) 0, (byte) 0, (short) 0, (short) 0, (short) 0, (short) 0);
         }
+        return linked;
     }
 
     // {"pads":[{"b":[..17..],"a":[..4..]}, ...]} -> pad 0 into the stream

@@ -1564,8 +1564,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                 java.util.Collections::emptyList, items);
     }
 
-    // Quit the game on the PC (not just this stream), then leave.
-    private void quitOnHostAndFinish() {
+    // Quit the game on the PC (not just this stream), then leave. Public for the TV's /stop {"quit":true}.
+    public void quitOnHostAndFinish() {
         final Intent i = getIntent();
         new Thread(() -> {
             try {
@@ -2327,6 +2327,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     }
 
     private void stopConnection() {
+        PhoneGamepad.stop();
         if (connecting || connected) {
             connecting = connected = false;
             updatePipAutoEnter();
@@ -2391,6 +2392,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
     @Override
     public void connectionTerminated(final int errorCode) {
+        PhoneGamepad.stop();   // the stream is over: stop pulling the sender's controller
         // Perform a connection test if the failure could be due to a blocked port
         // This does network I/O, so don't do it on the main thread.
         final int portFlags = MoonBridge.getPortFlagsFromTerminationErrorCode(errorCode);

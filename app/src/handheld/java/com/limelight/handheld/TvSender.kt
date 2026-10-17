@@ -73,6 +73,25 @@ object TvSender : MoveToTv.Handler {
         } finally { c?.disconnect() }
     }
 
+    /**
+     * Blocking. Ask [tv] to end the stream we started there and go back to its home (POST /stop, MoonCast TV version
+     * 3 and later). [quit] also quits the game on the PC; otherwise it keeps running. False when the TV can't
+     * (older MoonCast, or it didn't answer).
+     */
+    fun stop(tv: TvFinder.Tv, padKey: String, quit: Boolean = false): Boolean {
+        if (tv.ip.isEmpty() || tv.version < 3) return false
+        var c: HttpURLConnection? = null
+        return try {
+            c = URL("http://${tv.ip}:${TvFinder.PORT}/stop").openConnection() as HttpURLConnection
+            c.connectTimeout = 1500; c.readTimeout = 3000
+            c.requestMethod = "POST"; c.doOutput = true
+            c.setRequestProperty("Content-Type", "application/json")
+            val body = JSONObject().put("padKey", padKey).put("quit", quit).toString()
+            c.outputStream.use { it.write(body.toByteArray(StandardCharsets.UTF_8)) }
+            c.responseCode == 200
+        } catch (e: Exception) { false } finally { c?.disconnect() }
+    }
+
     /** Open controller mode for [t] on [tv]; it sends the game after [delayMs] (time for a local stream to end). */
     fun open(act: Activity, tv: TvFinder.Tv, t: MoveToTv.Target, delayMs: Long = 0) {
         act.startActivity(t.put(Intent(act, TvControllerActivity::class.java))

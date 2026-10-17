@@ -144,7 +144,9 @@ class TvControllerActivity : Activity() {
         ui.postDelayed({
             Thread({
                 // the TV's address may have changed: look for it again before giving up
-                if (!retried && TvFinder.ask(tv0.ip) == null) {
+                val live = TvFinder.ask(tv0.ip)
+                if (live != null && live.id == tv0.id) tv = live   // fresh name, Xbox sign-in and version (for /stop)
+                if (!retried && live == null) {
                     runOnUiThread {
                         if (mine != attempt) return@runOnUiThread
                         status.text = "Looking for ${tv0.name} on this network…"
@@ -157,7 +159,7 @@ class TvControllerActivity : Activity() {
                     }
                     return@Thread
                 }
-                val err = TvSender.send(this, tv0, t, padKey)
+                val err = TvSender.send(this, tv ?: tv0, t, padKey)
                 runOnUiThread {
                     if (mine != attempt || isFinishing) return@runOnUiThread
                     if (err != null) fail(err)
@@ -255,12 +257,21 @@ class TvControllerActivity : Activity() {
         buttons.alpha = if (menu || state != State.PLAYING) 1f else 0.45f
         if (menu) {
             val again = (0 until buttons.childCount).map { buttons.getChildAt(it) }.firstOrNull { (it as? TextView)?.text?.toString() == focusLabel }
-            (again ?: buttons.getChildAt(0))?.let { v -> v.requestFocus(); ui.post { glide.moveTo(v) } }
+            // "Play here instead" (or Try again) unless a button already had it. The Back key doesn't leave touch
+            // mode, and in touch mode nothing takes focus and the ring stays hidden, so leave it here explicitly.
+            (again ?: buttons.getChildAt(0))?.let { v -> focusOn(v) }
         } else {
             currentFocus?.clearFocus()
             glide.hide()
         }
         dim(state == State.PLAYING && !menu && prefs.getBoolean("hh_dim_on_tv", true))
+    }
+
+    /** Focus [v] with the ring on it, leaving touch mode first (requestFocusFromTouch). */
+    private fun focusOn(v: View) {
+        if (!v.requestFocusFromTouch()) v.requestFocus()
+        glide.moveTo(v)
+        ui.post { if (v.isFocused) glide.moveTo(v) }   // again after layout, for buttons that were just rebuilt
     }
 
     private fun setMenu(on: Boolean) {
@@ -282,20 +293,38 @@ class TvControllerActivity : Activity() {
     private fun deviceShort(): String =
         if (android.os.Build.MANUFACTURER.equals("AYN", true) || android.os.Build.MODEL.contains("Odin", true)) "Odin" else "device"
 
+    /** Take the game back: the TV ends its stream first (Sunshine may let both play at once), then it starts here. */
     private fun playHere() {
         val t = target ?: return
-        PadLink.stop()
-        attempt++
-        startActivity(Intent(this, HandheldHomeActivity::class.java).putExtra(HandheldHomeActivity.EXTRA_PLAY_HERE, t.key)
-                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
-        finish()
+        leave("Moving ${t.title} to this ${deviceShort()}…") {
+            startActivity(Intent(this, HandheldHomeActivity::class.java).putExtra(HandheldHomeActivity.EXTRA_PLAY_HERE, t.key)
+                    .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+        }
     }
 
+    /** Stop: the TV ends its stream (the game keeps running on the PC), and this device stops being its controller. */
     private fun stopAndLeave() {
-        PadLink.stop()
-        attempt++
         FeelSounds.play(this, FeelSounds.Cue.BACK)
-        finish()
+        if (state != State.PLAYING) { PadLink.stop(); attempt++; finish(); return }   // nothing is playing on the TV yet
+        leave("Stopping on ${tv?.name ?: "the TV"}…") { }
+    }
+
+    private var leaving = false
+    private fun leave(msg: String, then: () -> Unit) {
+        if (leaving) return
+        leaving = true
+        attempt++
+        ui.removeCallbacks(linkTimeout)
+        status.setTextColor(sw.sub); status.text = msg
+        val tv0 = tv; val key = padKey
+        Thread({
+            if (tv0 != null && state == State.PLAYING) TvSender.stop(tv0, key)
+            runOnUiThread {
+                PadLink.stop()
+                then()
+                finish()
+            }
+        }, "tv-stop").start()
     }
 
     // ---------------------------------------------------------------- input -> the TV
@@ -325,7 +354,13 @@ class TvControllerActivity : Activity() {
         if (menu) {
             when (code) {
                 KeyEvent.KEYCODE_BUTTON_B, KeyEvent.KEYCODE_BACK -> { if (e.action == KeyEvent.ACTION_UP) onBack(); return true }
-                KeyEvent.KEYCODE_BUTTON_A -> { if (e.action == KeyEvent.ACTION_UP) { glide.pop(); currentFocus?.performClick() }; return true }
+                KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
+                    if (e.action == KeyEvent.ACTION_UP) {
+                        val f = currentFocus?.takeIf { it.parent === buttons } ?: buttons.getChildAt(0)
+                        if (f != null) { if (!f.isFocused) focusOn(f); glide.pop(); f.performClick() }
+                    }
+                    return true
+                }
             }
             val dir = com.limelight.home.Feel.direction(code)
             if (dir != 0 && e.action == KeyEvent.ACTION_DOWN) { moveFocus(dir); return true }
@@ -367,9 +402,11 @@ class TvControllerActivity : Activity() {
 
     private fun moveFocus(dir: Int) {
         val cur = currentFocus
-        if (cur == null || cur.parent !== buttons) { buttons.getChildAt(0)?.let { it.requestFocus(); glide.moveTo(it) }; return }
-        val next = cur.focusSearch(dir)
-        if (next != null && next !== cur && next.parent === buttons && next.requestFocus()) { FeelSounds.focus(next); glide.moveTo(next) }
+        if (cur == null || cur.parent !== buttons) { buttons.getChildAt(0)?.let { focusOn(it) }; return }
+        val i = buttons.indexOfChild(cur)
+        val n = when (dir) { View.FOCUS_LEFT -> i - 1; View.FOCUS_RIGHT -> i + 1; else -> -1 }
+        val next = if (n in 0 until buttons.childCount) buttons.getChildAt(n) else null
+        if (next != null) { focusOn(next); FeelSounds.focus(next) }
         else com.limelight.home.Feel.edgeNudge(cur, dir, null, sw.pxf(14))
     }
 

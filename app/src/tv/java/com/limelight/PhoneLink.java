@@ -28,8 +28,30 @@ import java.util.List;
  */
 public class PhoneLink {
     public static final int PORT = 8099;
-    /** What /mc-native reports as "version". 2 = /play accepts xboxId (+ xboxName). */
-    public static final int PROTOCOL_VERSION = 2;
+    /** What /mc-native reports as "version". 2 = /play accepts xboxId (+ xboxName). 3 = POST /stop. */
+    public static final int PROTOCOL_VERSION = 3;
+
+    // The stream screens open right now (PC, PS5, Xbox), so /stop can end them. Tracked once for the whole app.
+    private static final java.util.Set<android.app.Activity> streams =
+            java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
+    private static boolean tracking;
+
+    private static synchronized void track(Context app) {
+        if (tracking || !(app instanceof android.app.Application)) return;
+        tracking = true;
+        ((android.app.Application) app).registerActivityLifecycleCallbacks(new android.app.Application.ActivityLifecycleCallbacks() {
+            private boolean isStream(android.app.Activity a) {
+                return a instanceof Game || a instanceof Ps5StreamActivity || a instanceof XboxStreamActivity;
+            }
+            @Override public void onActivityCreated(android.app.Activity a, android.os.Bundle b) { if (isStream(a)) synchronized (streams) { streams.add(a); } }
+            @Override public void onActivityDestroyed(android.app.Activity a) { synchronized (streams) { streams.remove(a); } }
+            @Override public void onActivityStarted(android.app.Activity a) { }
+            @Override public void onActivityResumed(android.app.Activity a) { }
+            @Override public void onActivityPaused(android.app.Activity a) { }
+            @Override public void onActivityStopped(android.app.Activity a) { }
+            @Override public void onActivitySaveInstanceState(android.app.Activity a, android.os.Bundle b) { }
+        });
+    }
 
     /** What the home screen shows while a sent game starts. Called on the main thread. */
     public interface Listener {
@@ -50,6 +72,7 @@ public class PhoneLink {
     public PhoneLink(Context ctx, Listener listener) {
         this.ctx = ctx.getApplicationContext();
         this.listener = listener;
+        track(this.ctx);
     }
 
     public void start() { new Thread(this::serve, "mc-phone-link").start(); }
@@ -137,6 +160,18 @@ public class PhoneLink {
                     else send(s, 400, "{\"error\":" + quote(err) + "}");
                 } else if (appId != null && play(appId, appName, from)) send(s, 200, "{\"ok\":1}");
                 else send(s, 400, "{\"error\":\"no app id, or no paired PC\"}");
+            } else if ("POST".equals(method) && path.startsWith("/stop")) {
+                // The sender takes its game back (Play here instead) or stops: end the stream it started here and go
+                // home. Disconnect only; {"quit":true} quits the game on the PC too. Only the sender of the last
+                // /play may do this (it presents the same padKey).
+                String json = readBody(in, clen, 2048);
+                String key = field(json, "padKey"), mine = PhoneGamepad.padKey();
+                if (mine != null && !mine.isEmpty() && !mine.equals(key)) send(s, 403, "{\"error\":\"not the device that sent this game\"}");
+                else {
+                    boolean quit = json.replace(" ", "").contains("\"quit\":true");
+                    stopStreams(quit);
+                    send(s, 200, "{\"ok\":1}");
+                }
             } else if ("POST".equals(method) && path.startsWith("/register")) {
                 // Register a PlayStation (the PIN "Link Device" flow): host + PSN account id (base64) + 8-digit pin.
                 String json = readBody(in, clen, 2048);
@@ -193,6 +228,23 @@ public class PhoneLink {
             ctx.startActivity(i);
         }, 700);
         return true;
+    }
+
+    /** Finish every stream screen (PC, PS5, Xbox) and bring the home back. */
+    private void stopStreams(boolean quit) {
+        main.post(() -> {
+            java.util.List<android.app.Activity> list;
+            synchronized (streams) { list = new java.util.ArrayList<>(streams); }
+            for (android.app.Activity a : list) {
+                if (a.isFinishing()) continue;
+                if (quit && a instanceof Game) ((Game) a).quitOnHostAndFinish();
+                else a.finish();   // disconnect: the game keeps running (a PS5 stays on)
+            }
+            PhoneGamepad.stop();
+            Intent home = new Intent(ctx, com.limelight.home.HomeActivity.class);
+            home.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            try { ctx.startActivity(home); } catch (Exception ignored) { }
+        });
     }
 
     /** Start an Xbox the sender named, if this TV's Xbox account has it. Returns an error for the sender, or null. */

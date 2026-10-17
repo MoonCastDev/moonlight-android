@@ -170,16 +170,35 @@ class HandheldHomeActivity : Activity() {
         ui.post { runPending() }
     }
 
-    private fun runPending() {
+    private var pendingSince = 0L
+    private val pendingTimeout = Runnable { runPending(force = true) }
+
+    /**
+     * Start the pending game once its PC's state is known: right after resuming, the PC list still holds the state
+     * from before the poll (often "offline"), so wait for the first poll since resume, up to 6 s.
+     */
+    private fun runPending(force: Boolean = false) {
         val k = pendingPlay ?: return
-        val g = gameFor(k) ?: return   // not loaded yet: onComputer tries again
-        pendingPlay = null
-        playHere(g)
+        if (pendingSince == 0L) {
+            pendingSince = android.os.SystemClock.elapsedRealtime()
+            toast("Starting on this ${deviceShort()}…")
+            ui.postDelayed(pendingTimeout, 6000)
+        }
+        val g = gameFor(k)
+        val pc = g?.pc
+        if (!force && (g == null || (pc != null && (polledAt[pc.uuid] ?: 0L) < resumedAt))) return   // onComputer tries again
+        ui.removeCallbacks(pendingTimeout)
+        pendingPlay = null; pendingSince = 0L
+        if (g == null) { toast("Couldn't find that game here yet. Try it from the home."); return }
+        playHere(g)   // after 6 s without a fresh answer it just tries (only a poll that says offline asks to wake it)
     }
+    private val polledAt = HashMap<String, Long>()   // PC uuid -> when its state last came in
+    private var resumedAt = 0L
 
     override fun onResume() {
         super.onResume()
         resumed = true
+        resumedAt = android.os.SystemClock.elapsedRealtime()
         TvFinder.onChange = { render() }
         if (System.currentTimeMillis() - TvFinder.lastSweepAt > 90_000) TvFinder.sweep(this) else TvFinder.check(this)
         consoles = Ps5Store.all(this)
@@ -331,6 +350,8 @@ class HandheldHomeActivity : Activity() {
     private fun onComputer(d: ComputerDetails) {
         val uuid = d.uuid ?: return
         pcs[uuid] = d
+        // UNKNOWN = the service timed out its old poll data and hasn't asked the PC again yet
+        if (d.state != ComputerDetails.State.UNKNOWN) polledAt[uuid] = android.os.SystemClock.elapsedRealtime()
         val raw = d.rawAppList
         if (raw != null && raw != rawLists[uuid]) {
             rawLists[uuid] = raw
@@ -1292,7 +1313,7 @@ class HandheldHomeActivity : Activity() {
     private fun playHere(g: Game) {
         when {
             g.pc != null && g.app != null -> {
-                if (!online(g.pc)) {
+                if (g.pc.state == ComputerDetails.State.OFFLINE) {   // only when a poll says so (UNKNOWN = not asked yet)
                     confirm("${g.pc.name} is offline", "Wake it, then start ${g.app.appName} once it's online.", "Wake it") { wake(g.pc) }
                     return
                 }
