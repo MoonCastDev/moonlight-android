@@ -498,13 +498,19 @@ class XboxRtc(
     private val keyframeWatch = object : Runnable {
         override fun run() {
             if (closed || videoFlowing) return
-            if (keyframeTries++ >= 5) return
+            if (keyframeTries++ >= 5) {
+                // ~18 s with no video bytes from the Xbox: end this session (the console keeps it otherwise) and say so
+                Log.w(TAG, "no video after ${keyframeTries * 3} s: the Xbox accepted the session but sent no picture")
+                listener.onFailed("The Xbox connected but sent no picture.")
+                return
+            }
             Log.i(TAG, "no video yet, asking for a keyframe again")
             askKeyframe()
             work.postDelayed(this, 3000)
         }
     }
     @Volatile private var videoFlowing = false
+    private var statsLogs = 0
 
     private fun askKeyframe() = sendText("control", JSONObject().put("message", "videoKeyframeRequested").put("ifrRequested", false).toString())
 
@@ -625,6 +631,12 @@ class XboxRtc(
                     rtt = ((m["currentRoundTripTime"] as? Number)?.toDouble() ?: -0.001) * 1000.0
             }
             if (fps > 0 || mbps > 0) videoFlowing = true
+            else if (!videoFlowing && statsLogs++ < 12) {
+                // diagnostics while the picture is missing: is any video RTP arriving at all?
+                val vid = report.statsMap.values.filter { it.type == "inbound-rtp" && it.members["kind"] == "video" }
+                Log.i(TAG, "video in: ${vid.size} inbound-rtp, bytes=${vid.firstOrNull()?.members?.get("bytesReceived")} " +
+                        "packets=${vid.firstOrNull()?.members?.get("packetsReceived")} frames=${vid.firstOrNull()?.members?.get("framesDecoded")}")
+            }
             cb(Stats(fps, rtt, mbps, loss, w, h))
         }
     }

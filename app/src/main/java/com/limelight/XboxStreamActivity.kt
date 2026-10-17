@@ -72,7 +72,7 @@ class XboxStreamActivity : Activity(), com.limelight.home.MoveToTv.LocalSession 
                 com.limelight.preferences.GlPreferences.readPreferences(this).glRenderer)
         val r = SurfaceViewRenderer(this).also { renderer = it }
         r.init(egl.eglBaseContext, object : RendererCommon.RendererEvents {
-            override fun onFirstFrameRendered() { firstFrame = true; showStatus(null); com.limelight.home.StreamReport.playing() }
+            override fun onFirstFrameRendered() { firstFrame = true; main.removeCallbacks(pictureWatchdog); showStatus(null); com.limelight.home.StreamReport.playing() }
             override fun onFrameResolutionChanged(w: Int, h: Int, rotation: Int) {
                 Log.i(TAG, "picture ${w}x$h"); runOnUiThread { applyShape(w, h) }
             }
@@ -88,6 +88,7 @@ class XboxStreamActivity : Activity(), com.limelight.home.MoveToTv.LocalSession 
             addView(r, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
             addView(status, FrameLayout.LayoutParams(-1, -1))
         })
+        main.postDelayed(pictureWatchdog, 60_000)
         Thread { connect() }.start()
     }
 
@@ -115,7 +116,7 @@ class XboxStreamActivity : Activity(), com.limelight.home.MoveToTv.LocalSession 
                     prefs.getString("xbox_language", "en-US") ?: "en-US", coop, prefs.getInt("xbox_bitrate", 0),
                     prefs.getBoolean("checkbox_ultra_low_latency", false), renderer!!, object : XboxRtc.Listener {
                 override fun onStatus(text: String) { if (!firstFrame && !retrying) showStatus(text) }
-                override fun onConnected() { runOnUiThread { if (!started) { started = true; send(); pollStats(); startRemotePad() } } }
+                override fun onConnected() { runOnUiThread { if (!started) { started = true; send(); startStatsPoll(); startRemotePad() } } }
                 override fun onFailed(reason: String) { failed(reason) }
                 override fun onRumble(gamepad: Int, weak: Double, strong: Double, durationMs: Int) {
                     runOnUiThread { rumble(gamepad, durationMs, weak, strong) }
@@ -135,6 +136,21 @@ class XboxStreamActivity : Activity(), com.limelight.home.MoveToTv.LocalSession 
     // Microsoft answers "Xccs : ErrorCallingWNS : Send command failed : State WaitingForServerToRegister" (and similar)
     // while the console is in standby and hasn't registered with Xbox network's streaming service yet.
     private var firstFailAt = 0L
+    private var pollingStats = false
+    private val main by lazy { android.os.Handler(mainLooper) }
+    /** A start that never reaches the picture (the console accepts the session but sends nothing): end it, say so. */
+    private val pictureWatchdog = Runnable {
+        if (!firstFrame && !closed && !retrying) endSession("Your Xbox didn't start the picture in time. Try again, or turn the Xbox off and on.")
+    }
+
+    /** Stop the console session (so it isn't left running) and show the plain-language reason. */
+    private fun endSession(msg: String) {
+        main.removeCallbacks(pictureWatchdog)
+        started = false
+        Thread({ try { rtc?.stop() } catch (e: Throwable) { }; rtc = null }, "xbox-end").start()
+        showStatus(msg)
+        com.limelight.home.StreamReport.failed(msg)
+    }
     @Volatile private var retrying = false
 
     private fun notReady(reason: String): Boolean {
@@ -150,6 +166,7 @@ class XboxStreamActivity : Activity(), com.limelight.home.MoveToTv.LocalSession 
         val now = System.currentTimeMillis()
         if (firstFailAt == 0L) firstFailAt = now
         if (!firstFrame && notReady(reason) && now - firstFailAt < 60_000) {
+            main.removeCallbacks(pictureWatchdog)
             if (retrying) return
             retrying = true
             showStatus("Waking your Xbox…")
@@ -160,15 +177,16 @@ class XboxStreamActivity : Activity(), com.limelight.home.MoveToTv.LocalSession 
                 try { Xbox.wake(this, consoleId) } catch (e: Exception) { Log.w(TAG, "wake: $e") }
                 try { Thread.sleep(5000) } catch (e: InterruptedException) { }
                 retrying = false
-                if (!closed) connect()
+                if (!closed) { main.postDelayed(pictureWatchdog, 60_000); connect() }
             }, "xbox-retry").start()
             return
         }
-        val msg = if (notReady(reason))
-            "Your Xbox didn't answer. Turn it on, or check Settings > Devices & connections > Remote features on the Xbox."
-        else "The Xbox stream stopped. $reason"
-        showStatus(msg)
-        com.limelight.home.StreamReport.failed(msg)
+        val msg = when {
+            notReady(reason) -> "Your Xbox didn't answer. Turn it on, or check Settings > Devices & connections > Remote features on the Xbox."
+            reason.contains("no picture") -> "Your Xbox connected but sent no picture. Turn the Xbox off and on, then try again."
+            else -> "The Xbox stream stopped. $reason"
+        }
+        endSession(msg)
     }
 
     private fun screenHeight(): Int {
@@ -421,6 +439,8 @@ class XboxStreamActivity : Activity(), com.limelight.home.MoveToTv.LocalSession 
     // Live numbers from WebRTC's own stats, refreshed every second (and logged every 5 s for diagnosis)
     @Volatile private var last: XboxRtc.Stats? = null
     private var statTicks = 0
+    private fun startStatsPoll() { if (!pollingStats) { pollingStats = true; pollStats() } }
+
     private fun pollStats() {
         val h = android.os.Handler(mainLooper)
         h.post(object : Runnable {
