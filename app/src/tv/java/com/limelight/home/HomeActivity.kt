@@ -1006,6 +1006,8 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                         Psn.signOut(this); render(force = true) } }
                 else action(list, "set:psn", "PlayStation Network", "Sign in once to add a PS5 here and play it away from home", "Sign in") {
                     startActivityForResult(Intent(this, PsnSignInActivity::class.java), REQ_PSN) }
+                choice(list, Profile.PREF, "Profile", "Auto uses Away when the PS5 is reached through PlayStation Network. Home and Away force one",
+                        listOf("Auto" to "auto", "Home" to "home", "Away" to "away"), "auto")
                 choice(list, "ps5_resolution", "Resolution", "The PS5 streams up to 1080p", listOf("720p" to "720", "1080p" to "1080"), "1080")
                 info(list, "Frame rate", "60 fps")
                 choice(list, "ps5_bitrate_home", "Bitrate at home", "Auto: 30 Mbps on fast Wi-Fi or cable, 20 otherwise",
@@ -1016,6 +1018,9 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                 toggle(list, "ps5_swap_cross_circle", "Swap Cross and Circle", "For the Japanese layout", false)
                 choice(list, "ps5_away_quality", "Quality away from home", "Auto follows this TV's Wi-Fi: 1080p on a strong link, 720p on a weak one",
                         listOf("Auto" to "auto", "540p" to "540", "720p" to "720", "1080p" to "1080"), "auto")
+                choice(list, "away_bitrate", "Bitrate away", "Auto: capped by this TV's Wi-Fi link",
+                        listOf("Auto" to "auto", "8" to "8", "10" to "10", "15" to "15"), "auto")
+                choice(list, "away_codec", "Video codec away", "Used only in the Away profile", listOf("H.264" to "h264", "H.265" to "h265"), "h265")
                 val pin = prefs.getString("ps5_login_pin", "") ?: ""
                 action(list, "set:pspin", "Console PIN", "Signs in for you when the PS5 asks for its 4-digit login PIN",
                         if (pin.isEmpty()) "Not set" else "••••") { enterLoginPin() }

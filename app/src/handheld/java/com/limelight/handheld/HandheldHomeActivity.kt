@@ -38,6 +38,7 @@ import com.limelight.PcView
 import com.limelight.R
 import com.limelight.binding.PlatformBinding
 import com.limelight.binding.crypto.AndroidCryptoProvider
+import com.limelight.home.Profile
 import com.limelight.computers.ComputerManagerListener
 import com.limelight.computers.ComputerManagerService
 import com.limelight.grid.assets.CachedAppAssetLoader
@@ -1159,6 +1160,8 @@ class HandheldHomeActivity : Activity() {
                         Psn.signOut(this); render(force = true) } }
                 else action(list, "psn", "PlayStation Network", "Sign in once to register a PS5 and play it away from home", "Sign in") {
                     startActivityForResult(Intent(this, PsnSignInActivity::class.java), REQ_PSN) }
+                choice(list, stream, Profile.PREF, "Profile", "Auto uses Away when the PS5 is reached through PlayStation Network. Home and Away force one",
+                        listOf("Auto" to "auto", "Home" to "home", "Away" to "away"), "auto")
                 choice(list, stream, "ps5_resolution", "Resolution", "The PS5 streams up to 1080p", listOf("720p" to "720", "1080p" to "1080"), "1080")
                 choice(list, stream, "ps5_bitrate_home", "Bitrate at home", "Auto: 30 Mbps on fast Wi-Fi, 20 otherwise",
                         listOf("Auto" to "auto", "10" to "10", "15" to "15", "20" to "20", "30" to "30"), "auto")
@@ -1168,6 +1171,9 @@ class HandheldHomeActivity : Activity() {
                 toggle(list, "ps5_swap_cross_circle", "Swap Cross and Circle", "For the Japanese layout", false)
                 choice(list, stream, "ps5_away_quality", "Quality away from home", "Auto follows the Wi-Fi: 1080p strong, 720p weak",
                         listOf("Auto" to "auto", "540p" to "540", "720p" to "720", "1080p" to "1080"), "auto")
+                choice(list, stream, "away_bitrate", "Bitrate away", "Auto: capped by the Wi-Fi link",
+                        listOf("Auto" to "auto", "8" to "8", "10" to "10", "15" to "15"), "auto")
+                choice(list, stream, "away_codec", "Video codec away", "Used only in the Away profile", listOf("H.264" to "h264", "H.265" to "h265"), "h265")
                 val pin = prefs.getString("ps5_login_pin", "") ?: ""
                 action(list, "pspin", "Console PIN", "Signs in for you when the PS5 asks for its 4-digit login PIN", if (pin.isEmpty()) "Not set" else "••••") {
                     entry("Console PIN", "The 4-digit PIN your PS5 asks for when it starts. Leave empty to turn it off.", "4 digits", pin, true) { v ->
