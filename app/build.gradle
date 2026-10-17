@@ -20,6 +20,10 @@ android {
     }
 
     flavorDimensions.add("root")
+    // Which app this is. tv = MoonCast TV, always the RECEIVER (its home + the :8099 listener, src/tv).
+    // handheld = MoonCast for Odin-style handhelds and phones, always the SENDER (src/handheld).
+    // Everything else (Moonlight, PS5, Xbox, sign-ins, settings, Quick menu) is shared in src/main.
+    flavorDimensions.add("role")
 
     buildFeatures {
         buildConfig = true
@@ -56,6 +60,17 @@ android {
         }
     }
 
+    productFlavors {
+        tv {
+            dimension "role"
+            buildConfigField "boolean", "TV_APP", "true"
+        }
+        handheld {
+            dimension "role"
+            buildConfigField "boolean", "TV_APP", "false"
+        }
+    }
+
     compileOptions {
         encoding "UTF-8"
         sourceCompatibility JavaVersion.VERSION_17
@@ -87,8 +102,6 @@ android {
             applicationIdSuffix ".debug"
             // test builds: BUILD=testN ./gradlew ... puts the build name in the version (shown in Settings, About)
             versionNameSuffix "-" + (System.getenv("BUILD") ?: "dev")
-            resValue "string", "app_label", "MoonCast TV (Debug)"
-            resValue "string", "app_label_root", "MoonCast TV (Root Debug)"
         }
         release {
             // To whomever is releasing/using an APK in release mode with
@@ -122,8 +135,6 @@ android {
             //
             // TL;DR: Leave the following line alone!
             // MoonCast TV: our own application id (as the upstream author asks forks to do)
-            resValue "string", "app_label", "MoonCast TV"
-            resValue "string", "app_label_root", "MoonCast TV (Root)"
 
             minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
@@ -155,4 +166,18 @@ dependencies {
     implementation 'org.jitsi:webrtc:124.0.0'
 
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.5'
+}
+
+// Per app: its own application id (both can be installed side by side) and its own name.
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        def handheld = variant.productFlavors.any { it.second == "handheld" }
+        if (handheld) variant.applicationId.set(variant.applicationId.get().replace("me.mooncast.tv", "me.mooncast.handheld"))
+        def name = handheld ? "MoonCast" : "MoonCast TV"
+        def debug = variant.buildType == "debug"
+        variant.resValues.put(variant.makeResValueKey("string", "app_label"),
+            new com.android.build.api.variant.ResValue(name + (debug ? " (Debug)" : ""), null))
+        variant.resValues.put(variant.makeResValueKey("string", "app_label_root"),
+            new com.android.build.api.variant.ResValue(name + (debug ? " (Root Debug)" : " (Root)"), null))
+    }
 }
