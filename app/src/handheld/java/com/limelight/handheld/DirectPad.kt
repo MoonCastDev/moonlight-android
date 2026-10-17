@@ -150,7 +150,7 @@ class DirectPad(ctx: Context, private val pcUuid: String, private val appId: Int
                 .setMaxPacketSize(1392)
                 .setRemoteConfiguration(StreamConfiguration.STREAM_CFG_AUTO)
                 .setSupportedVideoFormats(MoonBridge.VIDEO_FORMAT_H264)
-                .setAttachedGamepadMask(0x1)   // one pad, player 1, from the start
+                .setAttachedGamepadMask(0x1)   // /resume asks remoteControllersBitmap=1, gcmap=1: pad 0, player 1
                 .setAudioConfiguration(MoonBridge.AUDIO_CONFIGURATION_STEREO)
                 .setPersistGamepadsAfterDisconnect(false)
                 .build()
@@ -176,6 +176,14 @@ class DirectPad(ctx: Context, private val pcUuid: String, private val appId: Int
                 conn = c
                 if (stopped) { stopOnce(c); end(); return }
                 Log.i(TAG, "controller session up on $pcName")
+                // claim pad 0 now (remoteControllersBitmap=1 in /resume asked for it): Sunshine creates the pad at
+                // once, before the first press, as an Xbox-style pad with analog triggers
+                val all = ControllerPacket.A_FLAG or ControllerPacket.B_FLAG or ControllerPacket.X_FLAG or ControllerPacket.Y_FLAG or
+                        ControllerPacket.LB_FLAG or ControllerPacket.RB_FLAG or ControllerPacket.BACK_FLAG or ControllerPacket.PLAY_FLAG or
+                        ControllerPacket.LS_CLK_FLAG or ControllerPacket.RS_CLK_FLAG or ControllerPacket.UP_FLAG or ControllerPacket.DOWN_FLAG or
+                        ControllerPacket.LEFT_FLAG or ControllerPacket.RIGHT_FLAG or ControllerPacket.SPECIAL_BUTTON_FLAG
+                try { c.sendControllerArrivalEvent(0, 0x1, MoonBridge.LI_CTYPE_XBOX, all, MoonBridge.LI_CCAP_ANALOG_TRIGGERS) }
+                catch (e: Throwable) { Log.w(TAG, "arrival: $e") }
                 set(State.CONNECTED, null)
                 started.countDown()
                 push()

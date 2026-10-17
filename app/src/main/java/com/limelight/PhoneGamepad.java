@@ -28,10 +28,11 @@ class PhoneGamepad {
     private static final long GIVE_UP_MS = 30000;     // stop retrying after this long without reaching the sender
 
     private static volatile PhoneGamepad current;
-    private static volatile NvConnection lastConn;
-    // The sender drives the PC directly with its own controller-only session (/play "pad":"direct"): no relay here,
-    // or the game would get the same pad twice. /pad turns the relay on later if the direct session can't connect.
-    private static volatile boolean direct;    // the stream it feeds, until that stream stops (stop())
+    private static volatile NvConnection lastConn;    // the stream it feeds, until that stream stops (stop())
+    // The sender drives the PC directly with its own controller-only session (/play "pad":"direct"): the next stream
+    // registers no gamepad and gets no relay, or the game would get the pad twice (or the TV would take pad 0).
+    // /pad turns the relay on later if the direct session can't connect.
+    private static volatile boolean direct;
     private static volatile String phoneHost;         // set from the /play socket's remote address
     private static volatile String padKey;            // the phone's pad-server session key (for /pad?k=...)
 
@@ -68,7 +69,7 @@ class PhoneGamepad {
     // A new /play while the stream is still up but the link gave up (the sender was away for a while): start again.
     private static synchronized void revive() {
         NvConnection c = lastConn;
-        if (current == null && c != null && !direct) { start(c, null); }
+        if (current == null && c != null && !c.controllersBlocked()) { start(c, null); }
     }
 
     /** Drop the current link and connect again at once (with the latest key and address). */
@@ -88,15 +89,25 @@ class PhoneGamepad {
         if (p != null) { p.running = false; try { if (p.sock != null) p.sock.close(); } catch (Exception ignored) { } }
     }
 
+    /** The next stream (the one /play starts) leaves the gamepads to the sender's direct session. */
+    static boolean isDirect() { return direct; }
+
+    /** The stream that /play started is over: streams started on the TV itself use its own controllers. */
+    static void streamEnded() { direct = false; }
+
     /** The sender asks for the relay after all (its direct session failed): start it on the running stream. */
     static synchronized void useRelay() {
         direct = false;
+        NvConnection c = lastConn;
+        if (c != null) c.setControllersBlocked(false);   // the relay's input goes through this stream now
         revive();
     }
 
     static synchronized void start(NvConnection conn, String overrideHost) {
         stop();
-        if (direct) { lastConn = conn; Log.i(TAG, "sender's controller goes direct to the PC: no relay"); return; }
+        // the stream itself knows (Game blocked its controllers when /play said direct): a stream of the TV's own isn't
+        // affected by a flag left from an earlier send
+        if (conn != null && conn.controllersBlocked()) { lastConn = conn; Log.i(TAG, "sender's controller goes direct to the PC: no relay"); return; }
         String h = overrideHost != null && !overrideHost.isEmpty() ? overrideHost : phoneHost;
         if (conn == null || h == null || h.isEmpty()) { Log.w(TAG, "no phone address yet - controller not started"); return; }
         PhoneGamepad p = new PhoneGamepad(conn, h);

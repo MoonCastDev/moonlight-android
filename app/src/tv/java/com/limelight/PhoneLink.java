@@ -29,8 +29,9 @@ import java.util.List;
 public class PhoneLink {
     public static final int PORT = 8099;
     /** What /mc-native reports as "version". 2 = /play accepts xboxId (+ xboxName). 3 = POST /stop.
-     *  4 = /play "pad":"direct" (the sender's controller goes straight to the PC) and POST /pad (relay after all). */
-    public static final int PROTOCOL_VERSION = 4;
+     *  4 = /play "pad":"direct" (the sender's controller goes straight to the PC) and POST /pad (relay after all).
+     *  5 = with "pad":"direct" the TV's stream registers no gamepad at all, so the sender's session is pad 0. */
+    public static final int PROTOCOL_VERSION = 5;
 
     // The stream screens open right now (PC, PS5, Xbox), so /stop can end them. Tracked once for the whole app.
     private static final java.util.Set<android.app.Activity> streams =

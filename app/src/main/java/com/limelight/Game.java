@@ -435,6 +435,10 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             // If we're using OSC, always set at least gamepad 1.
             gamepadMask |= 1;
         }
+        // A handheld sent this game with "pad":"direct": its own controller-only session on the PC is player 1, so this
+        // stream registers no gamepad at all (not even the TV remote), or it would take pad 0 from the handheld.
+        final boolean padsElsewhere = PhoneGamepad.isDirect();
+        if (padsElsewhere) gamepadMask = 0;
 
         // Set to the optimal mode for streaming
         float displayRefreshRate = prepareDisplayForRendering();
@@ -486,6 +490,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                 new ComputerDetails.AddressTuple(host, port),
                 httpsPort, uniqueId, config,
                 PlatformBinding.getCryptoProvider(this), serverCert);
+        conn.setControllersBlocked(padsElsewhere);
         controllerHandler = new ControllerHandler(this, conn, this, prefConfig);
         keyboardTranslator = new KeyboardTranslator();
 
@@ -1045,6 +1050,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         super.onDestroy();
 
         PhoneGamepad.stop();
+        PhoneGamepad.streamEnded();   // a later stream from the TV's own home has its controllers again
         if (controllerHandler != null) {
             controllerHandler.destroy();
         }

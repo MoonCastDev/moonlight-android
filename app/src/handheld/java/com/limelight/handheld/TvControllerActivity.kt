@@ -172,8 +172,9 @@ class TvControllerActivity : Activity() {
                     return@Thread
                 }
                 val tvNow = tv ?: tv0
-                // Settings, Controllers, "Controller on a TV": direct to the PC (needs MoonCast TV version 4 to skip its relay)
-                val useDirect = t.kind == "pc" && !t.pcUuid.isNullOrEmpty() && tvNow.version >= 4 &&
+                // Settings, Controllers, "Controller on a TV": direct to the PC. Needs MoonCast TV version 5, which skips its relay
+                // AND registers no pad of its own; an older TV would hold pad 0 and leave this device on pad 1.
+                val useDirect = t.kind == "pc" && !t.pcUuid.isNullOrEmpty() && tvNow.version >= 5 &&
                         prefs.getString(PAD_PREF, "direct") == "direct"
                 val err = TvSender.send(this, tvNow, t, padKey, useDirect)
                 runOnUiThread {
