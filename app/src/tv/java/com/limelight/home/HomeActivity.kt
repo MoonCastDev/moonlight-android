@@ -15,12 +15,14 @@ import android.os.IBinder
 import android.os.Looper
 import android.provider.Settings
 import android.text.format.DateFormat
+import android.view.FocusFinder
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
 import android.view.WindowManager
+import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.GridLayout
 import android.widget.HorizontalScrollView
@@ -74,6 +76,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
     private lateinit var hintsBar: LinearLayout
     private lateinit var overlay: FrameLayout
     private lateinit var clock: TextView
+    private lateinit var glide: FocusGlide
     private val ui = Handler(Looper.getMainLooper())
 
     // Moonlight's PC manager
@@ -137,6 +140,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
 
     override fun onDestroy() {
         probes.shutdownNow()
+        glide.detach()
         loaders.values.forEach { it.cancelBackgroundLoads(); it.cancelForegroundLoads(); it.freeCacheMemory() }
         try { unbindService(conn) } catch (e: Exception) { }
         super.onDestroy()
@@ -275,6 +279,17 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         overlay = FrameLayout(this).apply { visibility = View.GONE; isClickable = true }
         root.addView(overlay, FrameLayout.LayoutParams(-1, -1))
         setContentView(root)
+
+        // the highlight glides from item to item; each item keeps its own ring, the glide fades as it lands on it
+        glide = FocusGlide(root).apply {
+            ghost = true
+            strokeColor = Tv.CORONA
+            strokeWidth = tv.pxf(3)
+            cornerRadius = tv.pxf(16)
+            radiusFor = { v -> if (v.parent === tabsRow) tv.pxf(28) else null }
+            accept = { v -> v !is EditText }
+        }.attach()
+        FeelSounds.warm(this)
     }
 
     private fun go(t: Tab) {
@@ -841,8 +856,11 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                         "Controller" to "A pad on this TV"), "Buttons", listOf("Xbox button" to "Quick menu, Xbox button")))
     }
 
-    private fun playXbox(c: Xbox.Console) = startActivity(Intent(this, com.limelight.XboxStreamActivity::class.java)
-            .putExtra(com.limelight.XboxStreamActivity.EXTRA_CONSOLE_ID, c.id).putExtra(com.limelight.XboxStreamActivity.EXTRA_NAME, c.name))
+    private fun playXbox(c: Xbox.Console) {
+        FeelSounds.play(this, FeelSounds.Cue.LAUNCH)
+        startActivity(Intent(this, com.limelight.XboxStreamActivity::class.java)
+                .putExtra(com.limelight.XboxStreamActivity.EXTRA_CONSOLE_ID, c.id).putExtra(com.limelight.XboxStreamActivity.EXTRA_NAME, c.name))
+    }
 
     /** Microsoft's device-code sign-in: the TV shows a code, you type it at microsoft.com/link on a phone. */
     private fun xboxSignIn() {
@@ -957,6 +975,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                         listOf("Stereo" to "2", "5.1" to "51", "7.1" to "71"), "2")
                 toggle(list, "checkbox_host_audio", "Also play sound on the PC", "Useful when someone's in the room with it", false)
                 toggle(list, "checkbox_enable_audiofx", "Allow the TV's sound effects", "Lets this TV's equalizer and sound modes work while playing. Adds a little sound delay", false)
+                tvToggle(list, FeelSounds.PREF, "Menu sounds", "Soft sounds as you move around the menus. Games aren't affected", true)
             }
             "pads" -> {
                 action(list, "set:pad", "Pair a controller", "Opens this TV's Bluetooth settings. Put the pad in pairing mode first", null) { pairController() }
@@ -1154,7 +1173,11 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                     tv.flp(28, 28, Gravity.CENTER_VERTICAL or (if (on) Gravity.END else Gravity.START)).apply { leftMargin = tv.px(5); rightMargin = tv.px(5) })
             layoutParams = tv.lp(68, 38)
         }
-        settingRow(list, key, title, sub, true, sw) { stream.edit().putBoolean(key, !on).apply(); render(force = true) }
+        settingRow(list, key, title, sub, true, sw) {
+            stream.edit().putBoolean(key, !on).apply()
+            FeelSounds.play(this, FeelSounds.Cue.TOGGLE, FeelSounds.panFor(sw))
+            render(force = true)
+        }
     }
 
     /** A switch stored with this app's own settings (mc_tv), not Moonlight's stream settings. */
@@ -1166,7 +1189,11 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                     tv.flp(28, 28, Gravity.CENTER_VERTICAL or (if (on) Gravity.END else Gravity.START)).apply { leftMargin = tv.px(5); rightMargin = tv.px(5) })
             layoutParams = tv.lp(68, 38)
         }
-        settingRow(list, key, title, sub, true, sw) { prefs.edit().putBoolean(key, !on).apply(); render(force = true) }
+        settingRow(list, key, title, sub, true, sw) {
+            prefs.edit().putBoolean(key, !on).apply()
+            FeelSounds.play(this, FeelSounds.Cue.TOGGLE, FeelSounds.panFor(sw))   // turning sounds on answers with the sound
+            render(force = true)
+        }
     }
 
     /** The PS5's own 4-digit login PIN, so the player can answer it (PlayStation settings). */
@@ -1208,10 +1235,12 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         if (other != null && other.appId != app.appId) {
             confirm("Quit ${other.appName}?", "${pc.name} is running ${other.appName}. Quit it and start ${app.appName}?",
                     "Quit and start") {
+                FeelSounds.play(this, FeelSounds.Cue.LAUNCH)
                 ServerHelper.doQuit(this, pc, other, b) { runOnUiThread { ServerHelper.doStart(this, app, pc, b) } }
             }
             return
         }
+        FeelSounds.play(this, FeelSounds.Cue.LAUNCH)
         ServerHelper.doStart(this, app, pc, b)
     }
 
@@ -1310,6 +1339,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         if (power(c) != Ps5Store.Power.NOT_FOUND || !Psn.signedIn(this)) {
             if (power(c) == Ps5Store.Power.NOT_FOUND)
                 return toast("${c.name} isn't on this network. Sign in to PlayStation Network in Settings to play it from here.")
+            FeelSounds.play(this, FeelSounds.Cue.LAUNCH)
             startActivity(PhoneLink.ps5Intent(this, c.host, c.registKey, c.morning, c.ps5, null, null, null))
             return
         }
@@ -1318,7 +1348,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
             val r = Psn.remoteFor(this, c.name)
             runOnUiThread {
                 if (r == null) toast("PlayStation Network doesn't list ${c.name} for Remote Play. Check Remote Play is on in its settings.")
-                else startActivity(PhoneLink.ps5Intent(this, c.host, c.registKey, c.morning, c.ps5, r.first, r.second, r.third))
+                else { FeelSounds.play(this, FeelSounds.Cue.LAUNCH); startActivity(PhoneLink.ps5Intent(this, c.host, c.registKey, c.morning, c.ps5, r.first, r.second, r.third)) }
             }
         }.start()
     }
@@ -1669,6 +1699,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
     // ---------------------------------------------------------------- overlays
 
     private fun showOverlay(kind: String, v: View, dim: Boolean = true) {
+        if (kind != "idle" && kind != "incoming") FeelSounds.play(this, FeelSounds.Cue.OPEN)
         overlayKind = kind
         overlay.removeAllViews()
         overlay.setBackgroundColor(if (dim) (if (tv.oled) 0xE6000000.toInt() else 0xB805080F.toInt()) else tv.p.night)
@@ -1678,7 +1709,8 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         (overlay.findViewWithTag<View>("primary") ?: firstFocusable(overlay))?.requestFocus()
     }
 
-    private fun hideOverlay() {
+    private fun hideOverlay(cue: Boolean = true) {
+        if (cue && overlayKind != null && overlayKind != "idle" && overlayKind != "incoming") FeelSounds.play(this, FeelSounds.Cue.CLOSE)
         try {   // close the TV keyboard too (search / add PC / PIN boxes), or it stays up and squashes the screen
             (getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
                     .hideSoftInputFromWindow(window.decorView.windowToken, 0)
@@ -1721,7 +1753,12 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         card.addView(tv.text(title, 40, tv.p.moon, tv.display(700), 2))
         card.addView(tv.text(body, 22, tv.p.dust, tv.ui(500), 4), tv.lp(-1, -2).apply { topMargin = tv.px(12); bottomMargin = tv.px(28) })
         card.addView(tv.row().apply {
-            addView(tv.pill(yes, "A", !danger) { hideOverlay(); onYes() }.apply {
+            addView(tv.pill(yes, "A", !danger) {
+                // one sound per action: what the answer starts (a launch) speaks for it, else the dialog's close
+                val n = FeelSounds.serial
+                hideOverlay(cue = false); onYes()
+                if (n == FeelSounds.serial) FeelSounds.play(this@HomeActivity, FeelSounds.Cue.CLOSE)
+            }.apply {
                 tag = "primary"; if (danger) (getChildAt(childCount - 1) as TextView).setTextColor(Tv.DANGER) })
             addView(tv.pill("Cancel", "B", false) { hideOverlay() })
         })
@@ -1831,9 +1868,39 @@ class HomeActivity : Activity(), PhoneLink.Listener {
             val i = Tab.values().indexOf(tab)
             when (e.keyCode) {
                 KeyEvent.KEYCODE_BUTTON_Y, KeyEvent.KEYCODE_SEARCH -> if (tab == Tab.LIBRARY) { openSearch(); return true }
-                KeyEvent.KEYCODE_BUTTON_L1 -> { go(Tab.values()[(i + 3) % 4]); return true }
-                KeyEvent.KEYCODE_BUTTON_R1 -> { go(Tab.values()[(i + 1) % 4]); return true }
+                KeyEvent.KEYCODE_BUTTON_L1 -> { FeelSounds.play(this, FeelSounds.Cue.TAB, -0.3f); go(Tab.values()[(i + 3) % 4]); return true }
+                KeyEvent.KEYCODE_BUTTON_R1 -> { FeelSounds.play(this, FeelSounds.Cue.TAB, 0.3f); go(Tab.values()[(i + 1) % 4]); return true }
             }
+        }
+        return feel(e)
+    }
+
+    /**
+     * Sound and motion for ordinary navigation: a focus tick when the d-pad moves the focus, a soft refusal and a small
+     * shake when it hits the end of a row, and a select sound for a confirm press nothing else answered.
+     */
+    private fun feel(e: KeyEvent): Boolean {
+        val dir = Feel.direction(e.keyCode)
+        if (dir != 0 && e.action == KeyEvent.ACTION_DOWN) {
+            val before = currentFocus
+            val edge = before != null && before !is EditText && overlayKind != "code" &&
+                    FocusFinder.getInstance().findNextFocus(window.decorView as ViewGroup, before, dir) == null
+            val handled = super.dispatchKeyEvent(e)
+            val after = currentFocus
+            if (after != null && after !== before) FeelSounds.focus(after)
+            else if (edge) Feel.edgeNudge(before, dir, e, tv.pxf(14))
+            return handled
+        }
+        val confirm = e.keyCode == KeyEvent.KEYCODE_DPAD_CENTER || e.keyCode == KeyEvent.KEYCODE_ENTER ||
+                e.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER || e.keyCode == KeyEvent.KEYCODE_BUTTON_A
+        val focused = currentFocus
+        if (confirm && e.action == KeyEvent.ACTION_UP && focused != null && focused !is EditText) {
+            val pan = FeelSounds.panFor(focused)
+            val n = FeelSounds.serial
+            val handled = super.dispatchKeyEvent(e)
+            // the click may have played its own cue (a launch, a dialog opening); then stay quiet
+            if (handled && n == FeelSounds.serial) FeelSounds.play(this, FeelSounds.Cue.SELECT, pan)
+            return handled
         }
         return super.dispatchKeyEvent(e)
     }
@@ -1842,9 +1909,9 @@ class HomeActivity : Activity(), PhoneLink.Listener {
     override fun onBackPressed() {
         when {
             overlayKind != null -> hideOverlay()
-            detail != null -> { val d = detail; detail = null; render(force = true); content.findViewWithTag<View>(d)?.requestFocus() }
-            tab != Tab.HOME -> go(Tab.HOME)
-            else -> moveTaskToBack(true)   // keep listening for the phone
+            detail != null -> { FeelSounds.play(this, FeelSounds.Cue.BACK); val d = detail; detail = null; render(force = true); content.findViewWithTag<View>(d)?.requestFocus() }
+            tab != Tab.HOME -> { FeelSounds.play(this, FeelSounds.Cue.BACK); go(Tab.HOME) }
+            else -> { FeelSounds.play(this, FeelSounds.Cue.BACK); moveTaskToBack(true) }   // keep listening for the phone
         }
     }
 

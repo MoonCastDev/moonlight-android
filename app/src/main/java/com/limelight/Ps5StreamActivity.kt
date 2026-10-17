@@ -663,7 +663,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
                     (if (muted) "Muted" else "On") + (com.limelight.home.QuickMenu.battery(d)?.let { ", $it" } ?: ""), false) {
                     if (muted) mutedPads.remove(d.id) else { mutedPads.add(d.id); held.clear(); sendLocal() }
                     controllers()
-                }
+                }.asToggle()
             } + listOf(com.limelight.home.QuickMenu.Item("+", "Pair a controller", "Bluetooth settings", false) {
                 com.limelight.home.QuickMenu.pairController(this) }))
     }

@@ -26,7 +26,11 @@ import android.widget.TextView
  */
 class QuickMenu(private val act: Activity) {
     class Item @JvmOverloads constructor(val icon: String, val label: String, val detail: String? = null,
-                                         val danger: Boolean = false, val action: Runnable = Runnable { })
+                                         val danger: Boolean = false, val action: Runnable = Runnable { }) {
+        /** The item flips something on or off (it plays the toggle sound instead of select). */
+        var toggle = false
+        fun asToggle(): Item = apply { toggle = true }
+    }
 
     /** (value, label) pairs for the stat tiles, read every second while the menu is open. */
     fun interface Stats { fun get(): List<Pair<String, String>> }
@@ -40,12 +44,16 @@ class QuickMenu(private val act: Activity) {
     private var lastMove = 0L
     private var stats: Stats? = null
     private var statsViews = listOf<TextView>()
+    private var chosenAt = 0L
 
     val isShowing get() = root != null
 
     /** Show the menu. [stats] is polled every second while it's open: (value, label) pairs, up to four. */
     fun show(title: String, subtitle: String, stats: Stats, items: List<Item>) {
-        if (isShowing) hide()
+        FeelSounds.warm(act)
+        // one sound per action: an item that reopens the menu (a sub-list) already played its own
+        if (!isShowing && SystemClock.uptimeMillis() - chosenAt > 400) FeelSounds.play(act, FeelSounds.Cue.OPEN, PAN)
+        if (isShowing) close()
         this.items = items; this.stats = stats; sel = 0
 
         val panel = tv.col().apply {
@@ -103,7 +111,13 @@ class QuickMenu(private val act: Activity) {
         ui.post(tick)
     }
 
+    /** Close the menu, with its close sound. */
     fun hide() {
+        if (isShowing) FeelSounds.play(act, FeelSounds.Cue.CLOSE, PAN)
+        close()
+    }
+
+    private fun close() {
         ui.removeCallbacks(tick)
         root?.let { (it.parent as? ViewGroup)?.removeView(it) }
         root = null
@@ -127,11 +141,14 @@ class QuickMenu(private val act: Activity) {
         if (rows.isEmpty()) return
         sel = (sel + d + rows.size) % rows.size
         paint()
+        FeelSounds.play(act, FeelSounds.Cue.FOCUS, PAN)
     }
 
     private fun choose(i: Int) {
         val it = items.getOrNull(i) ?: return
-        hide()
+        FeelSounds.play(act, if (it.toggle) FeelSounds.Cue.TOGGLE else FeelSounds.Cue.SELECT, PAN)
+        chosenAt = SystemClock.uptimeMillis()
+        close()
         it.action.run()
     }
 
@@ -158,6 +175,9 @@ class QuickMenu(private val act: Activity) {
     }
 
     companion object {
+        /** The panel sits on the right, so its sounds lean right. */
+        private const val PAN = 0.4f
+
         /** Physical game pads connected now (not the TV remote). */
         @JvmStatic fun pads(): List<InputDevice> = InputDevice.getDeviceIds().toList().mapNotNull { InputDevice.getDevice(it) }.filter { d ->
             // A real pad has sticks (joystick source) or at least a maker id; the TV's "virtual-search" input claims

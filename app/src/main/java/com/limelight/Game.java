@@ -1530,7 +1530,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             if (isFinishing()) return;
             if (quickMenu == null) quickMenu = new com.limelight.home.QuickMenu(Game.this);
             java.util.List<com.limelight.home.QuickMenu.Item> items = new java.util.ArrayList<>();
-            items.add(new com.limelight.home.QuickMenu.Item("⌨", "Keyboard", "On-screen", false, this::toggleKeyboard));
+            items.add(new com.limelight.home.QuickMenu.Item("⌨", "Keyboard", "On-screen", false, this::toggleKeyboard).asToggle());
             items.add(new com.limelight.home.QuickMenu.Item("✚", "Controllers", com.limelight.home.QuickMenu.pads().size() + " connected", false, this::showControllers));
             items.add(new com.limelight.home.QuickMenu.Item("←", "Disconnect", "The game keeps running", false, this::finish));
             items.add(new com.limelight.home.QuickMenu.Item("✕", "Quit game", null, true, this::quitOnHostAndFinish));
