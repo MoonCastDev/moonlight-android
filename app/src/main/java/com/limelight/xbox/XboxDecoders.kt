@@ -41,8 +41,17 @@ class XboxDecoderFactory(egl: EglBase.Context, private val ultraLowLatency: Bool
         return default.createDecoder(info)
     }
 
-    override fun getSupportedCodecs(): Array<VideoCodecInfo> = default.supportedCodecs.also { list ->
+    override fun getSupportedCodecs(): Array<VideoCodecInfo> {
+        // The Xbox answers H.264 at profile-level-id 42e02a (level 4.2) when the offer only has 42e01f (level 3.1), and
+        // libwebrtc then drops that payload type: the packets arrive, no codec is mapped, no frame is ever decoded
+        // (test150). So the offer also lists the same H.264 at 42e02a. Everything else stays libwebrtc's default list.
+        val base = default.supportedCodecs
+        val extra = base.filter { it.name.equals("H264", true) && it.params["profile-level-id"] == "42e01f" }
+            .map { VideoCodecInfo("H264", HashMap(it.params).apply { put("profile-level-id", "42e02a") }) }
+            .filter { e -> base.none { it.name == e.name && it.params == e.params } }
+        val list = (base.toList() + extra).toTypedArray()
         Log.i("MoonCast-XboxDec", "offering " + list.joinToString { it.name + it.params })
+        return list
     }
 }
 
