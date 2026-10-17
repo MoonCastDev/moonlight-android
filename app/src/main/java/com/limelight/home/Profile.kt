@@ -24,8 +24,16 @@ object Profile {
         else -> viaPsn
     }
 
-    /** The PC's video settings that belong to a profile: Moonlight reads these keys, so a switch swaps their values. */
-    private val PC_KEYS = listOf("list_resolution", "list_fps", "seekbar_bitrate_kbps", "video_format")
+    /** Streaming settings that belong to a profile (PC, audio and Xbox picture). A switch saves and restores these. */
+    private val PC_KEYS = listOf(
+        // Moonlight video
+        "list_resolution", "list_fps", "seekbar_bitrate_kbps", "video_format", "checkbox_enable_hdr", "checkbox_full_range",
+        "list_video_scale_mode", "checkbox_stretch_video", "seekbar_video_zoom", "frame_pacing", "checkbox_ultra_low_latency",
+        "checkbox_enable_sops", "checkbox_unlock_fps", "checkbox_reduce_refresh_rate",
+        // audio
+        "list_audio_config", "checkbox_host_audio", "checkbox_enable_audiofx",
+        // Xbox picture
+        "xbox_resolution")
     private const val APPLIED = "pc_profile_applied"
 
     /**
@@ -42,7 +50,7 @@ object Profile {
         val ed = p.edit()
         for (k in PC_KEYS) {
             val v = p.all[k]
-            ed.putString("pcprof_${applied}_$k", when (v) { is Int -> "i:$v"; is String -> "s:$v"; else -> "" })
+            ed.putString("pcprof_${applied}_$k", when (v) { is Int -> "i:$v"; is Boolean -> "b:$v"; is String -> "s:$v"; else -> "" })
         }
         for (k in PC_KEYS) {
             val s = p.getString("pcprof_${want}_$k", null)
@@ -50,6 +58,7 @@ object Profile {
                 s == null || s.isEmpty() -> ed.remove(k)
                 s.startsWith("i:") -> s.substring(2).toIntOrNull()?.let { ed.putInt(k, it) } ?: ed.remove(k)
                 s.startsWith("s:") -> ed.putString(k, s.substring(2))
+                s.startsWith("b:") -> ed.putBoolean(k, s.substring(2).toBoolean())
                 else -> ed.remove(k)
             }
         }
