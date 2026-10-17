@@ -114,7 +114,11 @@ class Tv(val ctx: Context, val oled: Boolean) {
         }
     }
 
-    fun focusableView(v: View) { v.isFocusable = true; v.isClickable = true }
+    fun focusableView(v: View) {
+        v.isFocusable = true; v.isClickable = true
+        // with MoonCast's menu sounds on, its select sound replaces the system click
+        v.isSoundEffectsEnabled = !FeelSounds.enabled(ctx)
+    }
 
     // ---- small pieces ----
     /** The round face-button glyph used in hints and buttons: A, B, X, Y, or a square menu key. */
