@@ -6,8 +6,6 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CAPTURE_KEYBOARD" />
     <uses-permission android:name="com.android.providers.tv.permission.READ_EPG_DATA"/>
@@ -89,20 +87,6 @@
         <!-- Samsung DeX support requires explicit placement of android:resizeableActivity="true"
              in each activity even though it is implied by targeting API 24+ -->
 
-        <!-- MoonCast TV home (Big Picture style). It also listens for the phone on :8099. -->
-        <activity
-            android:name=".home.HomeActivity"
-            android:exported="true"
-            android:screenOrientation="landscape"
-            android:launchMode="singleTask"
-            android:theme="@style/StreamTheme"
-            android:configChanges="orientation|screenSize|keyboardHidden|navigation|uiMode|density|smallestScreenSize|screenLayout">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
-            </intent-filter>
-        </activity>
         <!-- Sony's PSN sign-in, once, so this TV can register a PS5 and reach it away from home -->
         <activity
             android:name=".home.PsnSignInActivity"
@@ -110,29 +94,6 @@
             android:theme="@style/StreamTheme"
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize|keyboardHidden|keyboard|navigation|uiMode|density|smallestScreenSize|screenLayout" />
-        <!-- Keeps :8099 open for the phone from boot, whether or not MoonCast is on screen -->
-        <service
-            android:name=".home.PhoneLinkService"
-            android:exported="false"
-            android:foregroundServiceType="specialUse">
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Local network listener so the user's phone can start a game stream on this TV" />
-        </service>
-        <receiver
-            android:name=".home.PhoneLinkBoot"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
-                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
-            </intent-filter>
-        </receiver>
-        <!-- The old receiver screen's name, kept so existing launch commands still open the home -->
-        <activity-alias
-            android:name=".MoonCastReceiver"
-            android:exported="true"
-            android:targetActivity=".home.HomeActivity" />
         <activity
             android:name=".PcView"
             android:exported="true"
