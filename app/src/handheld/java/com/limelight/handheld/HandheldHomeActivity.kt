@@ -144,6 +144,10 @@ class HandheldHomeActivity : Activity() {
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         applyRotation()
+        // a handheld streams at its own screen size unless you chose one (Moonlight's default is 720p);
+        // a resolution saved earlier, in either of Moonlight's keys, is left alone
+        if (!stream.contains("list_resolution") && !stream.contains("list_resolution_fps"))
+            stream.edit().putString("list_resolution", nativeResolution()).apply()
         buildShell()
         bindService(Intent(this, ComputerManagerService::class.java), conn, Context.BIND_AUTO_CREATE)
         (getSystemService(Context.INPUT_SERVICE) as InputManager).registerInputDeviceListener(pads, ui)
@@ -1049,7 +1053,7 @@ class HandheldHomeActivity : Activity() {
                 val native = nativeResolution()
                 val presets = listOf("720p" to "1280x720", "1080p" to "1920x1080", "1440p" to "2560x1440", "4K" to "3840x2160")
                 choice(list, stream, "list_resolution", "Resolution", "Native is this screen: ${native.replace("x", " × ")}",
-                        if (presets.any { it.second == native }) presets else presets + ("Native" to native), "1280x720")
+                        if (presets.any { it.second == native }) presets else presets + ("Native" to native), native)
                 choice(list, stream, "list_fps", "Frame rate", "60 is the smoothest. 30 uses less data and battery", listOf("30" to "30", "60" to "60", "90" to "90", "120" to "120"), "60")
                 bitrate(list)
                 choice(list, stream, "video_format", "Video codec", "H.265 and AV1 look better at the same bitrate",
@@ -1257,7 +1261,7 @@ class HandheldHomeActivity : Activity() {
 
     /** "Play on a TV": sending to a MoonCast TV is issue #26. For now this lists where it can play, which is here. */
     private fun playWhere(g: Game?) {
-        val res = (stream.getString("list_resolution", "1280x720") ?: "1280x720").substringAfter('x') + "p"
+        val res = (stream.getString("list_resolution", null) ?: nativeResolution()).substringAfter('x') + "p"
         val fps = stream.getString("list_fps", "60") ?: "60"
         dialog("Where should it play?",
                 (if (g != null) "${g.title}. " else "") + "Sending a game to a MoonCast TV is coming soon. Until then it plays here.",
@@ -1692,10 +1696,7 @@ class HandheldHomeActivity : Activity() {
         return "${w and 1.inv()}x${h and 1.inv()}"
     }
 
-    private fun chipName(): String {
-        val soc = if (Build.VERSION.SDK_INT >= 31) "${Build.SOC_MANUFACTURER} ${Build.SOC_MODEL}".trim() else ""
-        return soc.ifBlank { Build.HARDWARE }
-    }
+    private fun chipName(): String = com.limelight.home.Chip.name()
 
     private fun rounded(r: Number) = object : ViewOutlineProvider() {
         override fun getOutline(view: View, outline: Outline) = outline.setRoundRect(0, 0, view.width, view.height, sw.pxf(r))
