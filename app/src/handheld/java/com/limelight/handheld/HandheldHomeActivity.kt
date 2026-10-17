@@ -1065,7 +1065,7 @@ class HandheldHomeActivity : Activity() {
 
     // ---------------------------------------------------------------- Settings
 
-    private val groups = listOf("handheld" to "Handheld", "picture" to "Picture", "sound" to "Sound", "pads" to "Controllers",
+    private val groups = listOf("general" to "General", "handheld" to "Handheld", "picture" to "Picture", "sound" to "Sound", "pads" to "Controllers",
             "ps" to "PlayStation", "xbox" to "Xbox", "theme" to "Theme", "about" to "About")
 
     private fun settingsPage(): View {
@@ -1110,6 +1110,11 @@ class HandheldHomeActivity : Activity() {
 
     private fun settingsRows(list: LinearLayout, group: String) {
         when (group) {
+            "general" -> {
+                // One switch for every system: PlayStation, Xbox and PC streaming settings show the rows for this profile.
+                choice(list, stream, Profile.PREF, "Streaming profile", "Home: best quality for your network. Away: lighter settings for PlayStation Network. Auto picks Away only over PlayStation Network. PlayStation, Xbox and PC settings follow this",
+                        listOf("Auto" to "auto", "Home" to "home", "Away" to "away"), "auto")
+            }
             "handheld" -> {
                 appToggle(list, "hh_rotate", "Screen turns with the device", "Portrait when you hold it upright", true) { applyRotation() }
                 choice(list, prefs, "hh_battery_res", "On battery, stream at", "Plugged in, the Picture settings apply",
@@ -1160,20 +1165,26 @@ class HandheldHomeActivity : Activity() {
                         Psn.signOut(this); render(force = true) } }
                 else action(list, "psn", "PlayStation Network", "Sign in once to register a PS5 and play it away from home", "Sign in") {
                     startActivityForResult(Intent(this, PsnSignInActivity::class.java), REQ_PSN) }
-                choice(list, stream, Profile.PREF, "Profile", "Auto uses Away when the PS5 is reached through PlayStation Network. Home and Away force one",
-                        listOf("Auto" to "auto", "Home" to "home", "Away" to "away"), "auto")
-                choice(list, stream, "ps5_resolution", "Resolution", "The PS5 streams up to 1080p", listOf("720p" to "720", "1080p" to "1080"), "1080")
-                choice(list, stream, "ps5_bitrate_home", "Bitrate at home", "Auto: 30 Mbps on fast Wi-Fi, 20 otherwise",
-                        listOf("Auto" to "auto", "10" to "10", "15" to "15", "20" to "20", "30" to "30"), "auto")
-                choice(list, stream, "ps5_codec", "Video codec", "H.265 looks better at the same bitrate", listOf("H.264" to "h264", "H.265" to "h265"), "h265")
+                // The streaming rows follow the profile picked under General: Home rows, Away rows, or both under Auto.
+                val mode = Profile.mode(this)
+                if (mode != "away") {
+                    if (mode == "auto") info(list, "At home", "Used when this PS5 is on your home network")
+                    choice(list, stream, "ps5_resolution", "Resolution", "The PS5 streams up to 1080p", listOf("720p" to "720", "1080p" to "1080"), "1080")
+                    choice(list, stream, "ps5_bitrate_home", "Bitrate at home", "Auto: 30 Mbps on fast Wi-Fi, 20 otherwise",
+                            listOf("Auto" to "auto", "10" to "10", "15" to "15", "20" to "20", "30" to "30"), "auto")
+                    choice(list, stream, "ps5_codec", "Video codec", "H.265 looks better at the same bitrate", listOf("H.264" to "h264", "H.265" to "h265"), "h265")
+                }
+                if (mode != "home") {
+                    if (mode == "auto") info(list, "Away", "Used over PlayStation Network")
+                    choice(list, stream, "ps5_away_quality", "Quality away from home", "Auto follows the Wi-Fi: 1080p strong, 720p weak",
+                            listOf("Auto" to "auto", "540p" to "540", "720p" to "720", "1080p" to "1080"), "auto")
+                    choice(list, stream, "away_bitrate", "Bitrate away", "Auto: capped by the Wi-Fi link",
+                            listOf("Auto" to "auto", "8" to "8", "10" to "10", "15" to "15"), "auto")
+                    choice(list, stream, "away_codec", "Video codec away", "Used only in the Away profile", listOf("H.264" to "h264", "H.265" to "h265"), "h265")
+                }
                 choice(list, stream, "ps5_on_disconnect", "When I disconnect", "What happens to the PS5 after you leave a game",
                         listOf("Ask" to "ask", "Rest mode" to "rest", "Keep it on" to "keep"), "ask")
                 toggle(list, "ps5_swap_cross_circle", "Swap Cross and Circle", "For the Japanese layout", false)
-                choice(list, stream, "ps5_away_quality", "Quality away from home", "Auto follows the Wi-Fi: 1080p strong, 720p weak",
-                        listOf("Auto" to "auto", "540p" to "540", "720p" to "720", "1080p" to "1080"), "auto")
-                choice(list, stream, "away_bitrate", "Bitrate away", "Auto: capped by the Wi-Fi link",
-                        listOf("Auto" to "auto", "8" to "8", "10" to "10", "15" to "15"), "auto")
-                choice(list, stream, "away_codec", "Video codec away", "Used only in the Away profile", listOf("H.264" to "h264", "H.265" to "h265"), "h265")
                 val pin = prefs.getString("ps5_login_pin", "") ?: ""
                 action(list, "pspin", "Console PIN", "Signs in for you when the PS5 asks for its 4-digit login PIN", if (pin.isEmpty()) "Not set" else "••••") {
                     entry("Console PIN", "The 4-digit PIN your PS5 asks for when it starts. Leave empty to turn it off.", "4 digits", pin, true) { v ->
