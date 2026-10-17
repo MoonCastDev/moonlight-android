@@ -9,10 +9,14 @@ import com.limelight.computers.ComputerDatabaseManager;
 import com.limelight.home.Ps5Store;
 import com.limelight.home.Xbox;
 import com.limelight.nvstream.http.ComputerDetails;
+import com.limelight.nvstream.http.NvApp;
+import com.limelight.nvstream.http.NvHTTP;
+import com.limelight.utils.CacheHelper;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.io.StringReader;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -177,7 +181,7 @@ public class PhoneLink {
                     String err = playXbox(field(json, "xboxId"), field(json, "xboxName"), from);
                     if (err == null) send(s, 200, "{\"ok\":1}");
                     else send(s, 400, "{\"error\":" + quote(err) + "}");
-                } else if (appId != null && play(appId, appName, from)) send(s, 200, "{\"ok\":1}");
+                } else if ((appId != null || appName != null) && play(appId, appName, from)) send(s, 200, "{\"ok\":1}");
                 else send(s, 400, "{\"error\":\"no app id, or no paired PC\"}");
             } else if ("POST".equals(method) && path.startsWith("/stop")) {
                 // The sender takes its game back (Play here instead) or stops: end the stream it started here and go
@@ -248,18 +252,33 @@ public class PhoneLink {
     private boolean play(String appId, String appName, String from) {
         final ComputerDetails pc = firstComputer();
         if (pc == null) return false;
+        // Any sender (phone, tablet, Odin) names the game, and the game ID is looked up on THIS TV's PC. A sender's own
+        // ID is only the fallback: its PC list may number the games differently.
+        final String localId = appName == null ? null : localAppId(pc.uuid, appName);
+        if (localId == null && appId == null) return false;
         main.post(() -> listener.onIncoming(appName == null ? "Your game" : appName, from));
         main.postDelayed(() -> {
             replaceStreams();
             Intent i = new Intent(ctx, ShortcutTrampoline.class);
             i.putExtra(AppView.UUID_EXTRA, pc.uuid);
             i.putExtra(AppView.NAME_EXTRA, pc.name);
-            i.putExtra(Game.EXTRA_APP_ID, appId);
+            i.putExtra(Game.EXTRA_APP_ID, localId != null ? localId : appId);
             if (appName != null) i.putExtra(Game.EXTRA_APP_NAME, appName);
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             ctx.startActivity(i);
         }, 700);
         return true;
+    }
+
+    /** The game's ID in this TV's cached app list for the PC, or null if the list isn't cached or has no such game. */
+    private String localAppId(String uuid, String name) {
+        try {
+            String raw = CacheHelper.readInputStreamToString(CacheHelper.openCacheFileForInput(ctx.getCacheDir(), "applist", uuid));
+            if (raw == null || raw.isEmpty()) return null;
+            for (NvApp a : NvHTTP.getAppListByReader(new StringReader(raw)))
+                if (a.getAppName().equals(name)) return String.valueOf(a.getAppId());
+        } catch (Exception ignored) { }
+        return null;
     }
 
     /** A new /play replaces whatever player is open (even one showing an error): close it, the new one starts fresh. */
