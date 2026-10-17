@@ -713,7 +713,6 @@ public class ComputerManagerService extends Service {
         }
     }
 
-    @Override
     /** The running service, so a PC added for a session (identity transfer) can join its list without a restart. */
     private static volatile ComputerManagerService running;
 
@@ -729,6 +728,7 @@ public class ComputerManagerService extends Service {
         if (svc != null) svc.removeComputer(pc);
     }
 
+    @Override
     public void onCreate() {
         running = this;
         // Bind to the discovery service
