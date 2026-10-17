@@ -203,10 +203,10 @@ class XboxRtc(
             if (answer == null) Thread.sleep(1000)
         }
         if (closed) return
-        // what the Xbox agreed to: media sections, directions and the video codec it picked
-        answer!!.replace("\r", "").split("\n").filter { it.startsWith("m=") || it == "a=sendonly" || it == "a=recvonly" ||
-                it == "a=sendrecv" || it == "a=inactive" || it.startsWith("a=rtpmap") && (it.contains("H264") || it.contains("opus")) }
-            .forEach { Log.i(TAG, "answer $it") }
+        // what the Xbox agreed to: the whole video section of the answer, so codec parameters (fmtp: profile, mode)
+        // can be checked against the offer. A payload type whose parameters don't match the offer is never mapped.
+        sectionLines(answer!!, "video").forEach { Log.i(TAG, "answer $it") }
+        sectionLines(answer, "audio").filter { it.startsWith("a=rtpmap") || it.startsWith("a=sendrecv") }.forEach { Log.i(TAG, "answer $it") }
         setRemote(answer)
         // which way each media section was negotiated (a recvonly/inactive video section never gets media)
         pc?.transceivers?.forEach { t ->
@@ -360,6 +360,7 @@ class XboxRtc(
         l1.await(10, TimeUnit.SECONDS)
         val offer = made ?: throw IllegalStateException("Offer failed: $error")
         val munged = SessionDescription(offer.type, capBitrate(stereo(offer.description)))
+        sectionLines(munged.description, "video").forEach { Log.i(TAG, "offer $it") }
         val l2 = CountDownLatch(1)
         p.setLocalDescription(object : SdpAdapter() {
             override fun onSetSuccess() { l2.countDown() }
@@ -367,6 +368,17 @@ class XboxRtc(
         }, munged)
         l2.await(10, TimeUnit.SECONDS)
         return munged
+    }
+
+    /** The lines of one media section (video, audio...) of an SDP, without the \r. */
+    private fun sectionLines(sdp: String, kind: String): List<String> {
+        val out = ArrayList<String>()
+        var inside = false
+        for (l in sdp.replace("\r", "").split("\n")) {
+            if (l.startsWith("m=")) inside = l.startsWith("m=$kind ")
+            if (inside && l.isNotBlank()) out.add(l)
+        }
+        return out
     }
 
     private fun setRemote(sdp: String) {
