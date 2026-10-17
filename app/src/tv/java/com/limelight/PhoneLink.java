@@ -7,6 +7,7 @@ import android.os.Looper;
 
 import com.limelight.computers.ComputerDatabaseManager;
 import com.limelight.home.Ps5Store;
+import com.limelight.home.Xbox;
 import com.limelight.nvstream.http.ComputerDetails;
 
 import java.io.BufferedReader;
@@ -27,6 +28,8 @@ import java.util.List;
  */
 public class PhoneLink {
     public static final int PORT = 8099;
+    /** What /mc-native reports as "version". 2 = /play accepts xboxId (+ xboxName). */
+    public static final int PROTOCOL_VERSION = 2;
 
     /** What the home screen shows while a sent game starts. Called on the main thread. */
     public interface Listener {
@@ -101,8 +104,13 @@ public class PhoneLink {
             String from = "your phone";
             if ("GET".equals(method) && path.startsWith("/mc-native")) {
                 ComputerDetails pc = firstComputer();
+                // version 2: /play takes xboxId too. "xbox" = this TV is signed in to Xbox (it plays with its own sign-in).
+                // "id" stays the same when the TV's address changes, so a handheld can remember it.
                 send(s, 200, "{\"mooncast_native\":1,\"name\":" + quote(android.os.Build.MODEL)
-                        + ",\"pc\":" + quote(pc == null ? "" : pc.name) + "}");
+                        + ",\"pc\":" + quote(pc == null ? "" : pc.name)
+                        + ",\"xbox\":" + Xbox.INSTANCE.signedIn(ctx)
+                        + ",\"version\":" + PROTOCOL_VERSION
+                        + ",\"id\":" + quote(tvId()) + "}");
             } else if ("POST".equals(method) && path.startsWith("/play")) {
                 String json = readBody(in, clen, 16384);   // read it all: a PSN token makes it bigger than one read
                 String appId = field(json, "appId"), appName = field(json, "appName");
@@ -122,6 +130,11 @@ public class PhoneLink {
                             field(json, "psnToken"), field(json, "duid"), field(json, "accountId"), from))
                         send(s, 200, "{\"ok\":1}");
                     else send(s, 400, "{\"error\":\"ps5 launch failed\"}");
+                } else if (field(json, "xboxId") != null) {
+                    // Xbox: this TV plays it with its OWN Xbox sign-in; the sender is only the controller.
+                    String err = playXbox(field(json, "xboxId"), field(json, "xboxName"), from);
+                    if (err == null) send(s, 200, "{\"ok\":1}");
+                    else send(s, 400, "{\"error\":" + quote(err) + "}");
                 } else if (appId != null && play(appId, appName, from)) send(s, 200, "{\"ok\":1}");
                 else send(s, 400, "{\"error\":\"no app id, or no paired PC\"}");
             } else if ("POST".equals(method) && path.startsWith("/register")) {
@@ -180,6 +193,34 @@ public class PhoneLink {
             ctx.startActivity(i);
         }, 700);
         return true;
+    }
+
+    /** Start an Xbox the sender named, if this TV's Xbox account has it. Returns an error for the sender, or null. */
+    private String playXbox(String id, String name, String from) {
+        if (!Xbox.INSTANCE.signedIn(ctx)) return "Sign in to Xbox on this TV first";
+        Xbox.Console found = null;
+        for (Xbox.Console c : Xbox.INSTANCE.consoles(ctx)) if (c.getId().equals(id)) found = c;
+        if (found == null) {   // a console added since the TV last looked: ask Xbox network once
+            try { for (Xbox.Console c : Xbox.INSTANCE.refreshConsoles(ctx)) if (c.getId().equals(id)) found = c; }
+            catch (Exception ignored) { }
+        }
+        if (found == null) return "This TV's Xbox account doesn't have " + (name == null || name.isEmpty() ? "that Xbox" : name);
+        final Xbox.Console c = found;
+        XboxStreamActivity.setRemotePad(XboxPhonePad.INSTANCE);
+        main.post(() -> listener.onIncoming(c.getName(), from));
+        main.postDelayed(() -> {
+            Intent i = com.limelight.home.Launch.xboxIntent(ctx, c);
+            i.putExtra(XboxStreamActivity.EXTRA_REMOTE_PAD, true);
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            ctx.startActivity(i);
+        }, 700);
+        return null;
+    }
+
+    /** Same for the life of this install; lets a handheld recognise this TV after its address changes. */
+    private String tvId() {
+        String a = android.provider.Settings.Secure.getString(ctx.getContentResolver(), android.provider.Settings.Secure.ANDROID_ID);
+        return a == null ? "" : Integer.toHexString(a.hashCode());
     }
 
     private boolean playPs5(String host, String registKey, String morning, String ps5,

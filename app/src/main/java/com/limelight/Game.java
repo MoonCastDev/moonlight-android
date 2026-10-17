@@ -1532,6 +1532,11 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             java.util.List<com.limelight.home.QuickMenu.Item> items = new java.util.ArrayList<>();
             items.add(new com.limelight.home.QuickMenu.Item("⌨", "Keyboard", "On-screen", false, this::toggleKeyboard).asToggle());
             items.add(new com.limelight.home.QuickMenu.Item("✚", "Controllers", com.limelight.home.QuickMenu.pads().size() + " connected", false, this::showControllers));
+            // handheld only: send the game to the last MoonCast TV (it ends this stream, the game keeps running)
+            com.limelight.home.QuickMenu.Item move = com.limelight.home.MoveToTv.item(Game.this, new com.limelight.home.MoveToTv.Target(
+                    "pc", appName != null ? appName : "Your game", getIntent().getStringExtra(EXTRA_PC_UUID), pcName,
+                    getIntent().getIntExtra(EXTRA_APP_ID, 0), null, null, null, true, null));
+            if (move != null) items.add(move);
             items.add(new com.limelight.home.QuickMenu.Item("←", "Disconnect", "The game keeps running", false, this::finish));
             items.add(new com.limelight.home.QuickMenu.Item("✕", "Quit game", null, true, this::quitOnHostAndFinish));
             quickMenu.show(appName != null ? appName : "Your game",

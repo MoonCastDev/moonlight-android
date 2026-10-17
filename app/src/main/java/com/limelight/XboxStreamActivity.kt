@@ -25,10 +25,30 @@ import org.webrtc.SurfaceViewRenderer
  *   EXTRA_CONSOLE_ID: the console's id from Xbox.consoles(); EXTRA_NAME: its name, for the screen.
  */
 class XboxStreamActivity : Activity() {
+    /**
+     * A controller on another device (the handheld that sent this game to this TV). The TV app provides it; it
+     * calls the sink with W3C Standard Gamepad state: 17 buttons (0..1) and 4 axes (-1..1, Y down-positive).
+     */
+    interface RemotePad {
+        fun start(sink: (buttons: DoubleArray, axes: DoubleArray) -> Unit)
+        fun stop()
+    }
+
     companion object {
         private const val TAG = "MoonCast-Xbox"
         const val EXTRA_CONSOLE_ID = "xbox_console_id"
         const val EXTRA_NAME = "xbox_name"
+        /** Set when a phone/handheld sent this game to a TV: its controller arrives over the network (see [RemotePad]). */
+        const val EXTRA_REMOTE_PAD = "xbox_remote_pad"
+
+        @JvmStatic var remotePad: RemotePad? = null
+
+        private val W3C_KEYS = intArrayOf(KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_BUTTON_B, KeyEvent.KEYCODE_BUTTON_X,
+            KeyEvent.KEYCODE_BUTTON_Y, KeyEvent.KEYCODE_BUTTON_L1, KeyEvent.KEYCODE_BUTTON_R1, 0, 0,
+            KeyEvent.KEYCODE_BUTTON_SELECT, KeyEvent.KEYCODE_BUTTON_START, KeyEvent.KEYCODE_BUTTON_THUMBL,
+            KeyEvent.KEYCODE_BUTTON_THUMBR, KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
+            KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_BUTTON_MODE)
+
         private val MENU_COMBO = setOf(KeyEvent.KEYCODE_BUTTON_SELECT, KeyEvent.KEYCODE_BUTTON_START,
             KeyEvent.KEYCODE_BUTTON_L1, KeyEvent.KEYCODE_BUTTON_R1)
     }
@@ -95,7 +115,7 @@ class XboxStreamActivity : Activity() {
                     prefs.getString("xbox_language", "en-US") ?: "en-US", coop, prefs.getInt("xbox_bitrate", 0),
                     prefs.getBoolean("checkbox_ultra_low_latency", false), renderer!!, object : XboxRtc.Listener {
                 override fun onStatus(text: String) { if (!firstFrame) showStatus(text) }
-                override fun onConnected() { runOnUiThread { if (!started) { started = true; send(); pollStats() } } }
+                override fun onConnected() { runOnUiThread { if (!started) { started = true; send(); pollStats(); startRemotePad() } } }
                 override fun onFailed(reason: String) { showStatus("The Xbox stream stopped.\n$reason") }
                 override fun onRumble(gamepad: Int, weak: Double, strong: Double, durationMs: Int) {
                     runOnUiThread { rumble(gamepad, durationMs, weak, strong) }
@@ -145,6 +165,7 @@ class XboxStreamActivity : Activity() {
 
     override fun onDestroy() {
         closed = true
+        if (remoteOn) try { remotePad?.stop() } catch (e: Throwable) { }
         try { rtc?.stop() } catch (e: Throwable) { }
         try { renderer?.release() } catch (e: Throwable) { }
         try { egl.release() } catch (e: Throwable) { }
@@ -268,6 +289,29 @@ class XboxStreamActivity : Activity() {
         return super.dispatchGenericMotionEvent(e)
     }
 
+    // ---- the sender's controller (a handheld that sent this game to the TV) -> player 1 ----
+    private var remoteOn = false
+
+    private fun startRemotePad() {
+        if (!intent.getBooleanExtra(EXTRA_REMOTE_PAD, false)) return
+        val rp = remotePad ?: return
+        remoteOn = true
+        rp.start { b, a -> runOnUiThread { if (!closed) applyRemote(b, a) } }
+    }
+
+    private fun applyRemote(b: DoubleArray, a: DoubleArray) {
+        if (menu.isShowing) return
+        val p = pads.getOrPut(-3) { Pad(0) }
+        p.held.clear()
+        for (i in W3C_KEYS.indices) if (W3C_KEYS[i] != 0 && i < b.size && b[i] > .5) p.held.add(W3C_KEYS[i])
+        fun ax(i: Int) = if (i < a.size) a[i].toFloat().coerceIn(-1f, 1f) else 0f
+        p.lx = ax(0); p.ly = ax(1); p.rx = ax(2); p.ry = ax(3)
+        p.lt = if (b.size > 6) b[6].toFloat().coerceIn(0f, 1f) else 0f
+        p.rt = if (b.size > 7) b[7].toFloat().coerceIn(0f, 1f) else 0f
+        p.hatX = 0f; p.hatY = 0f
+        send()
+    }
+
     /** Hand every pad's latest state to the session; it sends them 62.5 times a second. */
     private fun send() {
         val r = rtc ?: return
@@ -358,8 +402,11 @@ class XboxStreamActivity : Activity() {
     private fun openMenu() {
         if (isFinishing) return
         sendNeutral()
-        menu.show(consoleName, "Xbox Remote Play. " + QuickMenu.COMBO_LABEL + " opens this menu", { liveStats() }, listOf(
+        // handheld only: hand the Xbox over to the last MoonCast TV (it signs in with its own Xbox account)
+        val move = com.limelight.home.MoveToTv.item(this, com.limelight.home.MoveToTv.Target("xb", consoleName, xboxId = consoleId))
+        menu.show(consoleName, "Xbox Remote Play. " + QuickMenu.COMBO_LABEL + " opens this menu", { liveStats() }, listOfNotNull(
             QuickMenu.Item("⊗", "Xbox button", "Opens the guide", false) { tapGuide() },
+            move,
             QuickMenu.Item("←", "Disconnect", "The game keeps running", false) { finish() },
             QuickMenu.Item("⏻", "Turn off the Xbox", "Ends the game", true) { turnOff() }))
     }

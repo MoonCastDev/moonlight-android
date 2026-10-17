@@ -614,13 +614,18 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
     private fun openMenu() {
         lastShown = -1.0; lastLossPct = 0.0
         if (isFinishing) return
+        // handheld only: hand the PS5 over to the last MoonCast TV
+        val move = com.limelight.home.MoveToTv.item(this, com.limelight.home.MoveToTv.Target("ps", "PlayStation 5",
+            psHost = intent.getStringExtra(EXTRA_HOST), registKey = intent.getStringExtra(EXTRA_REGIST_KEY),
+            morning = intent.getStringExtra(EXTRA_MORNING), isPs5 = intent.getBooleanExtra(EXTRA_PS5, true)))
         menu.show("PlayStation 5",
             (if (streamRemote) "Over PlayStation Network. " else "On your home network. ") + com.limelight.home.QuickMenu.COMBO_LABEL + " opens this menu",
             { liveStats() },
-            listOf(
+            listOfNotNull(
                 com.limelight.home.QuickMenu.Item("PS", "PS button", "L2 + Start", false) { tap(ControllerState.BUTTON_PS) },
                 com.limelight.home.QuickMenu.Item("▢", "Touchpad", "Select + Start", false) { tap(ControllerState.BUTTON_TOUCHPAD) },
                 com.limelight.home.QuickMenu.Item("✚", "Controllers", "${com.limelight.home.QuickMenu.pads().size} connected", false) { controllers() },
+                move,
                 com.limelight.home.QuickMenu.Item("←", "Disconnect", disconnectHint(), false) { leave() },
                 com.limelight.home.QuickMenu.Item("Zz", "Put PS5 to rest", "Ends the game", true) { rest() }))
     }
