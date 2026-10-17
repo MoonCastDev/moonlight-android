@@ -945,7 +945,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                 val customRes = res !in listOf("1280x720", "1920x1080", "2560x1440", "3840x2160", nativeResolution())
                 action(list, "set:customres", "Custom resolution", "Any size, for example this TV's exact panel. Sunshine scales to it",
                         if (customRes) res.replace("x", " × ") else "Off") { customResolution(res, customRes) }
-                choice(list, "list_fps", "Frame rate", "MoonCast streams at 60 unless you raise it", listOf("60" to "60", "90" to "90", "120" to "120"), "60")
+                choice(list, "list_fps", "Frame rate", "60 is the smoothest. 30 uses less data", listOf("30" to "30", "60" to "60", "90" to "90", "120" to "120"), "60")
                 bitrate(list)
                 val kbps = stream.getInt("seekbar_bitrate_kbps", 0)
                 val customRate = kbps != 0 && kbps / 1000 !in listOf(10, 20, 30, 50, 80)
