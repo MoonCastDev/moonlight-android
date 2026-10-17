@@ -165,7 +165,11 @@ class FocusGlide(private val host: FrameLayout) : View(host.context) {
 
     private val focusListener = ViewTreeObserver.OnGlobalFocusChangeListener { _, new -> moveTo(new) }
     private val follow = ViewTreeObserver.OnScrollChangedListener { track() }
-    private val layoutFollow = ViewTreeObserver.OnGlobalLayoutListener { track() }
+    private val layoutFollow = ViewTreeObserver.OnGlobalLayoutListener {
+        val p = pending
+        if (p != null) { pending = null; if (p.isFocused) moveTo(p) } else track()
+    }
+    private var pending: View? = null
 
     init {
         isFocusable = false; isClickable = false
@@ -252,7 +256,13 @@ class FocusGlide(private val host: FrameLayout) : View(host.context) {
     fun moveTo(v: View?) {
         if (v == null || v === this || v.isInTouchMode || !accept(v) || !isDescendant(v)) { hide(); return }
         val next = RectF()
-        if (!boundsOf(v, next)) { hide(); return }
+        if (!boundsOf(v, next)) {
+            hide()
+            // focused before its first layout (a dialog that just opened, a page rebuilt on resume): land on it then
+            if (v.isAttachedToWindow && v.isFocused) pending = v
+            return
+        }
+        pending = null
         target = v
         radius = (radiusFor?.invoke(v) ?: cornerRadius)
         anim?.cancel()

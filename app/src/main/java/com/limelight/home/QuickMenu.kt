@@ -55,6 +55,7 @@ class QuickMenu(private val act: Activity) {
         if (!isShowing && SystemClock.uptimeMillis() - chosenAt > 400) FeelSounds.play(act, FeelSounds.Cue.OPEN, PAN)
         if (isShowing) close()
         this.items = items; this.stats = stats; sel = 0
+        if (switchStyle) { showSwitch(title, subtitle, stats, items); return }
 
         val panel = tv.col().apply {
             background = tv.round(tv.p.deep, 0)
@@ -111,6 +112,102 @@ class QuickMenu(private val act: Activity) {
         ui.post(tick)
     }
 
+    // ---- the handheld's look: the Switch-style quick settings of mooncast-handheld-v2.html ----
+
+    /** The handheld app (not the TV) uses the Switch look: a right panel in landscape, a bottom sheet upright. */
+    private val switchStyle = !com.limelight.BuildConfig.TV_APP
+    private val light = act.getSharedPreferences("mc_tv", Context.MODE_PRIVATE).getString("hh_theme", "dark") == "light"
+    private val sBg = if (light) 0xFFEBEBEB.toInt() else 0xFF2B2D31.toInt()
+    private val sPanel = if (light) 0xFFFFFFFF.toInt() else 0xFF36393F.toInt()
+    private val sInk = if (light) 0xFF2D2D2D.toInt() else 0xFFFFFFFF.toInt()
+    private val sSub = if (light) 0xFF6E727A.toInt() else 0xFFB5BAC3.toInt()
+    private val sRing = if (light) 0xFF00A9C2.toInt() else 0xFF2FD3E6.toInt()
+    private var st: Tv = tv
+
+    private fun showSwitch(title: String, subtitle: String, stats: Stats, items: List<Item>) {
+        val dm = act.resources.displayMetrics
+        val upright = dm.heightPixels > dm.widthPixels
+        st = Tv(act, false, if (upright) 1080 else 1920, if (upright) 1920 else 1080)
+        val t = st
+        fun txt(v: CharSequence, size: Number, color: Int, w: Int, lines: Int = 1) = t.text(v, size, color, t.ui(w), lines)
+
+        val panel = t.col().apply {
+            background = if (upright) android.graphics.drawable.GradientDrawable().apply {
+                setColor(sPanel); val r = t.pxf(36); cornerRadii = floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f) }
+                else android.graphics.drawable.ColorDrawable(sPanel)
+            setPadding(t.px(44), t.px(if (upright) 26 else 44), t.px(44), t.px(if (upright) 60 else 40))
+        }
+        if (upright) panel.addView(View(act).apply { background = t.round(if (light) 0xFFCDCFD4.toInt() else 0xFF474B53.toInt(), 5) },
+                LinearLayout.LayoutParams(t.px(120), t.px(10)).apply { gravity = Gravity.CENTER_HORIZONTAL; bottomMargin = t.px(30) })
+        panel.addView(t.row().apply {
+            addView(txt(title, 36, sInk, 800), LinearLayout.LayoutParams(0, -2, 1f))
+            addView(txt(subtitle, 24, sSub, 700), t.lp(-2, -2).apply { leftMargin = t.px(16) })
+        })
+
+        val first = stats.get()
+        val statRow = t.row()
+        statsViews = (0 until minOf(4, first.size)).map { i ->
+            val n = txt(first[i].first, 34, sInk, 800)
+            statRow.addView(t.col().apply {
+                background = t.round(sBg, 10)
+                setPadding(t.px(16), t.px(18), t.px(16), t.px(18))
+                addView(n)
+                addView(txt(first[i].second, 20, sSub, 600), t.lp(-2, -2).apply { topMargin = t.px(4) })
+            }, LinearLayout.LayoutParams(0, -2, 1f).apply { if (i > 0) leftMargin = t.px(8) })
+            n
+        }
+        if (statsViews.isNotEmpty()) panel.addView(statRow, t.lp(-1, -2).apply { topMargin = t.px(30); bottomMargin = t.px(20) })
+
+        val list = t.col()
+        rows = items.mapIndexed { i, it ->
+            t.row().apply {
+                setPadding(t.px(24), t.px(14), t.px(24), t.px(14))
+                minimumHeight = t.px(100)
+                addView(txt(it.icon, 18, 0xFFFFFFFF.toInt(), 800).apply {
+                    gravity = Gravity.CENTER; background = t.round(if (it.danger) 0xFFE9605A.toInt() else 0xFF5B6170.toInt(), 12)
+                }, t.lp(52, 52).apply { rightMargin = t.px(22) })
+                addView(t.col().apply {
+                    addView(txt(it.label, 28, sInk, 800))
+                    if (it.detail != null) addView(txt(it.detail, 21, sSub, 600), t.lp(-2, -2).apply { topMargin = t.px(4) })
+                }, LinearLayout.LayoutParams(0, -2, 1f))
+                setOnClickListener { _ -> choose(i) }
+                list.addView(this, t.lp(-1, -2).apply { topMargin = t.px(10) })
+            }
+        }
+        val scroll = android.widget.ScrollView(act).apply { isVerticalScrollBarEnabled = false; addView(list) }
+        if (upright) panel.addView(scroll, t.lp(-1, -2)) else panel.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        panel.addView(t.row().apply {
+            addView(View(act), LinearLayout.LayoutParams(0, 1, 1f))
+            listOf("B" to "Back to the game", "A" to "OK").forEach { (k, l) ->
+                addView(txt(k, 24, sBg, 800).apply { gravity = Gravity.CENTER; background = t.round(sInk, 23) }, t.lp(46, 46).apply { leftMargin = t.px(32); rightMargin = t.px(12) })
+                addView(txt(l, 24, sInk, 700))
+            }
+        }, t.lp(-1, -2).apply { topMargin = t.px(24) })
+
+        val r = FrameLayout(act).apply {
+            setBackgroundColor(0x80000000.toInt())
+            isClickable = true
+            setOnClickListener { hide() }
+            if (upright) addView(panel, FrameLayout.LayoutParams(-1, (dm.heightPixels * 0.62f).toInt(), Gravity.BOTTOM))
+            else addView(panel, FrameLayout.LayoutParams(t.px(680), -1, Gravity.END))
+            panel.isClickable = true
+        }
+        (act.window.decorView as ViewGroup).addView(r, ViewGroup.LayoutParams(-1, -1))
+        root = r
+        paint()
+        ui.post(tick)
+    }
+
+    /** The selected row in the Switch look: the cyan double ring (a gap in the panel colour, then cyan). */
+    private fun switchRow(on: Boolean): android.graphics.drawable.Drawable {
+        val t = st
+        if (!on) return t.round(sBg, 10)
+        return android.graphics.drawable.LayerDrawable(arrayOf(t.round(sRing, 10), t.round(sPanel, 8), t.round(sBg, 6))).apply {
+            setLayerInset(1, t.px(6), t.px(6), t.px(6), t.px(6))
+            setLayerInset(2, t.px(11), t.px(11), t.px(11), t.px(11))
+        }
+    }
+
     /** Close the menu, with its close sound. */
     fun hide() {
         if (isShowing) FeelSounds.play(act, FeelSounds.Cue.CLOSE, PAN)
@@ -133,7 +230,7 @@ class QuickMenu(private val act: Activity) {
 
     private fun paint() {
         rows.forEachIndexed { i, v ->
-            v.background = if (i == sel) tv.round(tv.p.raise, 16, Tv.CORONA, 3) else null
+            v.background = if (switchStyle) switchRow(i == sel) else if (i == sel) tv.round(tv.p.raise, 16, Tv.CORONA, 3) else null
         }
     }
 

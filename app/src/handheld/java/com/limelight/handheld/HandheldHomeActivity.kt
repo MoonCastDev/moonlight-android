@@ -33,7 +33,6 @@ import android.widget.GridLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
-import android.widget.Toast
 import com.limelight.AppView
 import com.limelight.PcView
 import com.limelight.R
@@ -158,11 +157,15 @@ class HandheldHomeActivity : Activity() {
         refreshXboxes()
         startPolling()
         ui.post(tick)
+        holdMulticast(true)
         render(force = true)
+        // back from a stream: put the ring back on the focused item once it's laid out
+        ui.postDelayed({ currentFocus?.let { glide.moveTo(it) } }, 120)
     }
 
     override fun onPause() {
         resumed = false
+        holdMulticast(false)
         stopPolling()
         ui.removeCallbacks(tick)
         super.onPause()
@@ -224,6 +227,29 @@ class HandheldHomeActivity : Activity() {
         b.startPolling(ComputerManagerListener { d -> runOnUiThread { onComputer(d) } })
     }
 
+    /**
+     * mDNS on Wi-Fi only arrives while someone holds a multicast lock (Android 13 and older; 14+ uses NsdManager).
+     * Moonlight's discovery agent takes one too; holding ours while the home is open covers phones that drop it.
+     */
+    private var multicast: android.net.wifi.WifiManager.MulticastLock? = null
+    private fun holdMulticast(on: Boolean) {
+        if (Build.VERSION.SDK_INT >= 34) return
+        try {
+            if (on) {
+                if (multicast == null) multicast = (applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager)
+                        .createMulticastLock("MoonCast home mDNS").apply { setReferenceCounted(false) }
+                multicast?.acquire()
+            } else multicast?.release()
+        } catch (e: Exception) { }
+    }
+
+    /** Restart Moonlight's discovery and polling, so a PC that just came up is found without leaving the screen. */
+    private fun lookAgain() {
+        stopPolling()
+        startPolling()
+    }
+    private var lastKick = 0L
+
     private fun stopPolling() {
         appPollers.values.forEach { it.stop() }
         appPollers.clear()
@@ -242,6 +268,9 @@ class HandheldHomeActivity : Activity() {
         override fun run() {
             updateStatus()
             probeConsoles()
+            // no PC yet: give discovery a fresh start every half minute
+            if (pcs.isEmpty() && android.os.SystemClock.elapsedRealtime() - lastKick > 30_000) {
+                lastKick = android.os.SystemClock.elapsedRealtime(); if (polling) lookAgain() }
             ui.postDelayed(this, 10_000)
         }
     }
@@ -410,6 +439,7 @@ class HandheldHomeActivity : Activity() {
         }.attach()
         root.viewTreeObserver.addOnGlobalFocusChangeListener { _, n -> onFocus(n) }
         root.viewTreeObserver.addOnScrollChangedListener { placeName() }
+        snack = null
         FeelSounds.warm(this)
         lastPage = null
         lastSig = ""
@@ -451,6 +481,8 @@ class HandheldHomeActivity : Activity() {
             Page.SETTINGS -> settingsPage()
         }
         content.addView(pg, FrameLayout.LayoutParams(-1, -1))
+        // what a pad's first press lands on when the screen was last touched (Android restores the default focus)
+        if (Build.VERSION.SDK_INT >= 26) primaryView?.isFocusedByDefault = true
         if (page == Page.HOME) wash.color = gameFor(selKey)?.let { sw.tint(it.seed) } ?: (homeGames().firstOrNull()?.let { sw.tint(it.seed) } ?: 0)
         if (entering) entrance()
         if (overlayKind != null) return
@@ -496,8 +528,9 @@ class HandheldHomeActivity : Activity() {
                 setPadding(sw.px(18), 0, sw.px(26), 0)
                 addView(View(this@HandheldHomeActivity).apply { background = sw.round(0, 5, sw.ink, 3) }, sw.lp(30, 20).apply { rightMargin = sw.px(12) })
                 addView(sw.text(if (portrait) "This ${deviceShort()}" else "Playing on this ${deviceShort()}", 24, sw.ink, 700))
-                isClickable = true
                 setOnClickListener { playWhere(gameFor(selKey)) }
+                isFocusable = false   // a tap target only; the pad starts on the games
+                isSoundEffectsEnabled = !FeelSounds.enabled(this@HandheldHomeActivity)
             }, sw.lp(-2, 64))
         } else {
             topBar.addView(sw.text(page.title, 44, sw.ink, 800))
@@ -863,8 +896,8 @@ class HandheldHomeActivity : Activity() {
                 else -> if (n > 0) "$n games" else "Paired"
             }, when { !online(d) -> null; !paired(d) -> "Pair"; else -> "Online" }) { pcMenu(d) }
         }
-        if (list.childCount == 0) list.addView(sw.text("Nothing yet. PCs running Sunshine on your network show up here by themselves.", 26, sw.sub, 600, 2),
-                sw.lp(-1, -2).apply { topMargin = sw.px(24); bottomMargin = sw.px(24); leftMargin = sw.px(26) })
+        if (pcs.isEmpty()) listRow(list, "add:look", "PC", Sw.PC, "Looking for PCs on this network…",
+                "PCs running Sunshine show up here by themselves. Select to look again", null) { lookAgain(); toast("Looking for PCs…") }
         groupHeader(list, "Add")
         listRow(list, "add:pc", "+", sw.tile, "Add a PC by its address", "For a PC this device doesn't find on its own", null) { addPcByAddress() }
         listRow(list, "add:ps", "PS", Sw.PS, "Register a PS5", if (Psn.signedIn(this)) "Link it with the code from its Remote Play settings" else "Sign in to PlayStation Network, then link it", null) { registerPs() }
@@ -1178,7 +1211,27 @@ class HandheldHomeActivity : Activity() {
 
     // ---------------------------------------------------------------- playing
 
-    private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_LONG).show()
+    /** A message in the Switch style along the bottom (system toasts showed as an empty white pill on the Odin). */
+    private var snack: TextView? = null
+    private val hideSnack = Runnable { snack?.animate()?.alpha(0f)?.translationY(sw.pxf(20))?.setDuration(200)?.start() }
+    private fun toast(s: String) {
+        val v = snack?.takeIf { it.parent === root } ?: sw.text("", 26, sw.ink, 700, 3).apply {
+            gravity = Gravity.CENTER
+            setPadding(sw.px(36), sw.px(22), sw.px(36), sw.px(22))
+            background = sw.round(sw.panel, 18, sw.line, 2)
+            elevation = sw.pxf(12)
+            alpha = 0f
+            root.addView(this, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
+                bottomMargin = sw.px(if (portrait) 260 else 150); leftMargin = sw.px(60); rightMargin = sw.px(60) })
+            snack = this
+        }
+        v.text = s
+        v.bringToFront()
+        v.translationY = sw.pxf(20)
+        v.animate().alpha(1f).translationY(0f).setDuration(200).start()
+        ui.removeCallbacks(hideSnack)
+        ui.postDelayed(hideSnack, if (s.length > 60) 5000L else 3500L)
+    }
 
     private fun play(g: Game) {
         when {
@@ -1337,7 +1390,7 @@ class HandheldHomeActivity : Activity() {
 
     private fun addPcByAddress() {
         entry("Add a PC by its address", "The IP address or name of the PC Sunshine runs on. Add :port only if it isn't the usual one.",
-                "For example 192.168.1.20", "", false) { raw ->
+                "For example 192.168.1.20", "", "address") { raw ->
             if (raw.isEmpty()) return@entry "Type the PC's address first."
             val b = binder ?: return@entry "Still starting, try again in a moment."
             toast("Looking for a PC at $raw…")
@@ -1537,7 +1590,10 @@ class HandheldHomeActivity : Activity() {
         dialog(title, body, emptyList(), listOf("Cancel" to {}, yes to onYes))
 
     /** A one-line entry; [onSave] returns an error to show, or null when the value is good. */
-    private fun entry(title: String, body: String, hint: String, v: String, numbers: Boolean, onSave: (String) -> String?) {
+    private fun entry(title: String, body: String, hint: String, v: String, numbers: Boolean, onSave: (String) -> String?) =
+        entry(title, body, hint, v, if (numbers) "number" else "text", onSave)
+
+    private fun entry(title: String, body: String, hint: String, v: String, kind: String, onSave: (String) -> String?) {
         val card = card()
         card.addView(sw.text(title, 40, sw.ink, 800, 2), sw.lp(-1, -2).apply { leftMargin = sw.px(56); rightMargin = sw.px(56); topMargin = sw.px(48); bottomMargin = sw.px(10) })
         card.addView(sw.text(body, 26, sw.sub, 600, 4), sw.lp(-1, -2).apply { leftMargin = sw.px(56); rightMargin = sw.px(56) })
@@ -1547,9 +1603,16 @@ class HandheldHomeActivity : Activity() {
             setTextColor(sw.ink); setHintTextColor(sw.sub)
             setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, sw.pxf(32)); typeface = sw.ui(700)
             setSingleLine(true)
-            inputType = if (numbers) android.text.InputType.TYPE_CLASS_NUMBER
-                        else android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE
+            inputType = when (kind) {
+                "number" -> android.text.InputType.TYPE_CLASS_NUMBER
+                "address" -> android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                else -> android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            }
+            // keep the box on our dark card: no full-screen white extract editor on a landscape handheld
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE or android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI or
+                    android.view.inputmethod.EditorInfo.IME_FLAG_NO_FULLSCREEN
+            highlightColor = sw.ring and 0x66FFFFFF
+            if (Build.VERSION.SDK_INT >= 29) { textCursorDrawable = sw.round(sw.ring, 2).apply { setSize(sw.px(3), sw.px(36)) } }
             background = sw.round(sw.bg, 10, sw.ring, 3)
             setPadding(sw.px(24), 0, sw.px(24), 0)
             tag = "field"
@@ -1577,6 +1640,8 @@ class HandheldHomeActivity : Activity() {
         overlay.visibility = View.VISIBLE
         overlay.setOnClickListener { hideOverlay() }   // a tap outside the card closes it
         card.isClickable = true
+        // clickable views are focusable by default on Android 8+; the scrim and the card must never take focus
+        overlay.isFocusable = false; card.isFocusable = false
         main.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
         (overlay.findViewWithTag<View>("primary") ?: firstFocusable(overlay))?.requestFocus()
     }
@@ -1681,13 +1746,36 @@ class HandheldHomeActivity : Activity() {
         val dir = Feel.direction(e.keyCode)
         if (dir != 0 && e.action == KeyEvent.ACTION_DOWN) {
             val before = currentFocus
-            val edge = before != null && before !is EditText &&
-                    FocusFinder.getInstance().findNextFocus(window.decorView as ViewGroup, before, dir) == null
-            val handled = super.dispatchKeyEvent(e)
-            val after = currentFocus
-            if (after != null && after !== before) FeelSounds.focus(after)
-            else if (edge) Feel.edgeNudge(before, dir, e, sw.pxf(14))
-            return handled
+            // nothing focused yet (just opened, or back from touch): start on the page's first item, not the top bar
+            if (before == null || !(isIn(before, content) || isIn(before, overlay) || isIn(before, foot))) {
+                val start = if (overlayKind != null) overlay.findViewWithTag<View>("primary") ?: firstFocusable(overlay)
+                            else primaryView?.takeIf { it.isAttachedToWindow } ?: firstFocusable(content)
+                if (start != null && start.requestFocus()) { FeelSounds.focus(start); return true }
+            }
+            if (super.dispatchKeyEvent(e)) {    // a view moved the focus itself (a scrolling row, a list)
+                val after = currentFocus
+                if (after != null && after !== before) FeelSounds.focus(after)
+                return true
+            }
+            if (before == null || before is EditText) return false
+            // Nothing took the key, so Android would move the focus next and play its own click. Move it here the same
+            // way instead, so MoonCast's sound replaces the system one rather than playing on top of it.
+            val root = window.decorView as ViewGroup
+            val next = before.focusSearch(dir)
+            if (next != null && next !== before) {
+                val r = android.graphics.Rect()
+                before.getFocusedRect(r)
+                root.offsetDescendantRectToMyCoords(before, r)
+                root.offsetRectIntoDescendantCoords(next, r)
+                if (next.requestFocus(dir, r)) {
+                    if (FeelSounds.enabled(this)) FeelSounds.focus(next)
+                    else next.playSoundEffect(android.view.SoundEffectConstants.getContantForFocusDirection(dir))
+                    return true
+                }
+                return false
+            }
+            Feel.edgeNudge(before, dir, e, sw.pxf(14))
+            return true
         }
         val confirm = e.keyCode == KeyEvent.KEYCODE_DPAD_CENTER || e.keyCode == KeyEvent.KEYCODE_ENTER ||
                 e.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER || e.keyCode == KeyEvent.KEYCODE_BUTTON_A
@@ -1701,6 +1789,12 @@ class HandheldHomeActivity : Activity() {
             return handled
         }
         return super.dispatchKeyEvent(e)
+    }
+
+    private fun isIn(v: View, parent: View): Boolean {
+        var p: Any? = v
+        while (p is View) { if (p === parent) return true; p = p.parent }
+        return false
     }
 
     @Deprecated("Deprecated in Java")

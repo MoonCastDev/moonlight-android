@@ -84,7 +84,10 @@ class Sw(ctx: Context, val light: Boolean, val portrait: Boolean) {
     fun lp(w: Number, h: Number) = tv.lp(w, h)
     fun flp(w: Number, h: Number, g: Int = Gravity.NO_GRAVITY) = tv.flp(w, h, g)
 
-    fun focusable(v: View) { v.isFocusable = true; v.isClickable = true }
+    fun focusable(v: View) {
+        tv.focusableView(v)   // with menu sounds on, MoonCast's sound replaces the system click
+        if (android.os.Build.VERSION.SDK_INT >= 26) v.defaultFocusHighlightEnabled = false   // the cyan ring is the highlight
+    }
 
     /** A 2 px divider along the bottom edge of a settings row. */
     fun bottomLine(): Drawable = object : Drawable() {
