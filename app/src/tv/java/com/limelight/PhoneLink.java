@@ -297,6 +297,10 @@ public class PhoneLink {
         try (java.io.FileOutputStream out = new java.io.FileOutputStream(f)) { out.write(data); }
     }
 
+    /** Tells the home screen a session PC went away, so its card goes at once. */
+    public interface SessionListener { void onSessionEnded(String uuid); }
+    public static volatile SessionListener sessionListener;
+
     /** Removes the session identity and its PC entry. Called when the stream stops and when the TV app closes. */
     public static void endSessionIdentity(Context c) {
         new java.io.File(c.getFilesDir(), "session-client.crt").delete();
@@ -312,6 +316,8 @@ public class PhoneLink {
                     db.deleteComputer(pc);
                 }
             } finally { db.close(); }
+            SessionListener l = sessionListener;
+            if (l != null) l.onSessionEnded(uuid);
         }
     }
 

@@ -108,6 +108,9 @@ class HomeActivity : Activity(), PhoneLink.Listener {
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         Profile.syncPcSettings(this)
+        com.limelight.PhoneLink.sessionListener = com.limelight.PhoneLink.SessionListener { uuid ->
+            runOnUiThread { pcs.remove(uuid); apps.remove(uuid); rawLists.remove(uuid); render(force = true) }
+        }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         tv = Tv(this, prefs.getBoolean("oled", false))
         buildShell()
@@ -140,6 +143,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
 
     override fun onDestroy() {
         com.limelight.PhoneLink.endSessionIdentity(this)
+        com.limelight.PhoneLink.sessionListener = null
         probes.shutdownNow()
         glide.detach()
         loaders.values.forEach { it.cancelBackgroundLoads(); it.cancelForegroundLoads(); it.freeCacheMemory() }
