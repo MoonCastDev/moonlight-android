@@ -72,7 +72,7 @@ class XboxStreamActivity : Activity(), com.limelight.home.MoveToTv.LocalSession 
                 com.limelight.preferences.GlPreferences.readPreferences(this).glRenderer)
         val r = SurfaceViewRenderer(this).also { renderer = it }
         r.init(egl.eglBaseContext, object : RendererCommon.RendererEvents {
-            override fun onFirstFrameRendered() { firstFrame = true; showStatus(null) }
+            override fun onFirstFrameRendered() { firstFrame = true; showStatus(null); com.limelight.home.StreamReport.playing() }
             override fun onFrameResolutionChanged(w: Int, h: Int, rotation: Int) {
                 Log.i(TAG, "picture ${w}x$h"); runOnUiThread { applyShape(w, h) }
             }
@@ -114,9 +114,9 @@ class XboxStreamActivity : Activity(), com.limelight.home.MoveToTv.LocalSession 
             val session = XboxRtc(this, egl, consoleId, auth.baseUri, auth.gsToken, auth.connectToken, res,
                     prefs.getString("xbox_language", "en-US") ?: "en-US", coop, prefs.getInt("xbox_bitrate", 0),
                     prefs.getBoolean("checkbox_ultra_low_latency", false), renderer!!, object : XboxRtc.Listener {
-                override fun onStatus(text: String) { if (!firstFrame) showStatus(text) }
+                override fun onStatus(text: String) { if (!firstFrame && !retrying) showStatus(text) }
                 override fun onConnected() { runOnUiThread { if (!started) { started = true; send(); pollStats(); startRemotePad() } } }
-                override fun onFailed(reason: String) { showStatus("The Xbox stream stopped.\n$reason") }
+                override fun onFailed(reason: String) { failed(reason) }
                 override fun onRumble(gamepad: Int, weak: Double, strong: Double, durationMs: Int) {
                     runOnUiThread { rumble(gamepad, durationMs, weak, strong) }
                 }
@@ -126,9 +126,49 @@ class XboxStreamActivity : Activity(), com.limelight.home.MoveToTv.LocalSession 
             session.start()
         } catch (e: Exception) {
             Log.w(TAG, "connect failed", e)
-            showStatus(if (!Xbox.signedIn(this)) "Sign in to Xbox first: Settings, Xbox."
-                    else "Couldn't start Xbox Remote Play. Check the Xbox is on or asleep, with remote features on.\n\n${e.message ?: ""}".trim())
+            if (!Xbox.signedIn(this)) { showStatus("Sign in to Xbox first: Settings, Xbox."); com.limelight.home.StreamReport.failed("Sign in to Xbox on this TV first.") }
+            else failed(e.message ?: e.javaClass.simpleName)
         }
+    }
+
+    // ---- a console that isn't ready yet: wake it and try again ----
+    // Microsoft answers "Xccs : ErrorCallingWNS : Send command failed : State WaitingForServerToRegister" (and similar)
+    // while the console is in standby and hasn't registered with Xbox network's streaming service yet.
+    private var firstFailAt = 0L
+    @Volatile private var retrying = false
+
+    private fun notReady(reason: String): Boolean {
+        val r = reason.lowercase()
+        return listOf("waitingforservertoregister", "errorcallingwns", "xccs", "connectedstandby", "not registered",
+                "offline", "unavailable", "notready", "not ready").any { r.contains(it) }
+    }
+
+    /** The session failed: before the first picture, retry a console that isn't ready (wake every 5 s, ~60 s). */
+    private fun failed(reason: String) {
+        if (closed) return
+        Log.w(TAG, "xbox failed: $reason")
+        val now = System.currentTimeMillis()
+        if (firstFailAt == 0L) firstFailAt = now
+        if (!firstFrame && notReady(reason) && now - firstFailAt < 60_000) {
+            if (retrying) return
+            retrying = true
+            showStatus("Waking your Xbox…")
+            Thread({
+                try { rtc?.stop() } catch (e: Throwable) { }
+                rtc = null
+                started = false
+                try { Xbox.wake(this, consoleId) } catch (e: Exception) { Log.w(TAG, "wake: $e") }
+                try { Thread.sleep(5000) } catch (e: InterruptedException) { }
+                retrying = false
+                if (!closed) connect()
+            }, "xbox-retry").start()
+            return
+        }
+        val msg = if (notReady(reason))
+            "Your Xbox didn't answer. Turn it on, or check Settings > Devices & connections > Remote features on the Xbox."
+        else "The Xbox stream stopped. $reason"
+        showStatus(msg)
+        com.limelight.home.StreamReport.failed(msg)
     }
 
     private fun screenHeight(): Int {

@@ -30,8 +30,14 @@ public class PhoneLink {
     public static final int PORT = 8099;
     /** What /mc-native reports as "version". 2 = /play accepts xboxId (+ xboxName). 3 = POST /stop.
      *  4 = /play "pad":"direct" (the sender's controller goes straight to the PC) and POST /pad (relay after all).
-     *  5 = with "pad":"direct" the TV's stream registers no gamepad at all, so the sender's session is pad 0. */
-    public static final int PROTOCOL_VERSION = 5;
+     *  5 = with "pad":"direct" the TV's stream registers no gamepad at all, so the sender's session is pad 0.
+     *  6 = GET /status: how the stream the last /play started is going ({"state","error","seq"}). */
+    public static final int PROTOCOL_VERSION = 6;
+
+    // GET /status: "idle", "starting" (after /play), "playing" or "failed" with the player's own words
+    private static volatile String playState = "idle";
+    private static volatile String playError = null;
+    private static volatile int playSeq = 0;
 
     // The stream screens open right now (PC, PS5, Xbox), so /stop can end them. Tracked once for the whole app.
     private static final java.util.Set<android.app.Activity> streams =
@@ -41,6 +47,10 @@ public class PhoneLink {
     private static synchronized void track(Context app) {
         if (tracking || !(app instanceof android.app.Application)) return;
         tracking = true;
+        com.limelight.home.StreamReport.setListener((state, msg) -> {
+            playState = state; playError = "failed".equals(state) ? msg : null;
+            return kotlin.Unit.INSTANCE;
+        });
         ((android.app.Application) app).registerActivityLifecycleCallbacks(new android.app.Application.ActivityLifecycleCallbacks() {
             private boolean isStream(android.app.Activity a) {
                 return a instanceof Game || a instanceof Ps5StreamActivity || a instanceof XboxStreamActivity;
@@ -136,7 +146,11 @@ public class PhoneLink {
                         + ",\"xbox\":" + Xbox.INSTANCE.signedIn(ctx)
                         + ",\"version\":" + PROTOCOL_VERSION
                         + ",\"id\":" + quote(tvId()) + "}");
+            } else if ("GET".equals(method) && path.startsWith("/status")) {
+                send(s, 200, "{\"state\":" + quote(playState) + ",\"error\":" + quote(playError == null ? "" : playError)
+                        + ",\"seq\":" + playSeq + "}");
             } else if ("POST".equals(method) && path.startsWith("/play")) {
+                playSeq++; playState = "starting"; playError = null;
                 String json = readBody(in, clen, 16384);   // read it all: a PSN token makes it bigger than one read
                 String appId = field(json, "appId"), appName = field(json, "appName");
                 String sender = field(json, "deviceName");
@@ -236,6 +250,7 @@ public class PhoneLink {
         if (pc == null) return false;
         main.post(() -> listener.onIncoming(appName == null ? "Your game" : appName, from));
         main.postDelayed(() -> {
+            replaceStreams();
             Intent i = new Intent(ctx, ShortcutTrampoline.class);
             i.putExtra(AppView.UUID_EXTRA, pc.uuid);
             i.putExtra(AppView.NAME_EXTRA, pc.name);
@@ -245,6 +260,13 @@ public class PhoneLink {
             ctx.startActivity(i);
         }, 700);
         return true;
+    }
+
+    /** A new /play replaces whatever player is open (even one showing an error): close it, the new one starts fresh. */
+    private static void replaceStreams() {
+        java.util.List<android.app.Activity> list;
+        synchronized (streams) { list = new java.util.ArrayList<>(streams); }
+        for (android.app.Activity a : list) if (!a.isFinishing()) a.finish();
     }
 
     /** Finish every stream screen (PC, PS5, Xbox) and bring the home back. */
@@ -278,6 +300,7 @@ public class PhoneLink {
         XboxStreamActivity.setRemotePad(XboxPhonePad.INSTANCE);
         main.post(() -> listener.onIncoming(c.getName(), from));
         main.postDelayed(() -> {
+            replaceStreams();
             Intent i = com.limelight.home.Launch.xboxIntent(ctx, c);
             i.putExtra(XboxStreamActivity.EXTRA_REMOTE_PAD, true);
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -298,7 +321,7 @@ public class PhoneLink {
         final boolean isPs5 = ps5 == null || !"false".equalsIgnoreCase(ps5);
         Ps5Store.INSTANCE.save(ctx, new Ps5Store.Console(host, "PS5", registKey, morning, isPs5));
         main.post(() -> { listener.onConsolesChanged(); listener.onIncoming("PlayStation 5", from); });
-        main.postDelayed(() -> ctx.startActivity(ps5Intent(ctx, host, registKey, morning, isPs5, psnToken, duid, accountId)), 700);
+        main.postDelayed(() -> { replaceStreams(); ctx.startActivity(ps5Intent(ctx, host, registKey, morning, isPs5, psnToken, duid, accountId)); }, 700);
         return true;
     }
 

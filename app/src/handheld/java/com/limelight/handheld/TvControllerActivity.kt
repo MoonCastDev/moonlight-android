@@ -62,6 +62,33 @@ class TvControllerActivity : Activity() {
 
     // PC games: the controller goes straight to the PC as its own controller-only session (DirectPad); if that can't
     // connect, the TV relays it after all (/pad). PS5 and Xbox always go through the TV.
+    // GET /status on the TV while it plays: its player's own error when it can't start the game
+    @Volatile private var tvState: String? = null
+    private val statusPoll = object : Runnable {
+        override fun run() {
+            val tv0 = tv ?: return
+            if (state != State.PLAYING || tv0.version < 6) return
+            val mine = attempt
+            Thread({
+                val st = TvSender.status(tv0)
+                runOnUiThread {
+                    if (mine != attempt || state != State.PLAYING || isFinishing) return@runOnUiThread
+                    if (st != null) {
+                        tvState = st.first
+                        if (st.first == "failed") {
+                            stopDirect(); ui.removeCallbacks(linkTimeout)
+                            val e = st.second.ifBlank { "it stopped" }
+                            fail("${tv0.name} couldn't start ${target?.title ?: "the game"}: ${e.replaceFirstChar { it.lowercase() }}")
+                            return@runOnUiThread
+                        }
+                        refresh()
+                    }
+                    ui.postDelayed(this, 2000)
+                }
+            }, "tv-status").start()
+        }
+    }
+
     private var direct: DirectPad? = null
     private var directMode = false
     private var directEverUp = false
@@ -139,7 +166,9 @@ class TvControllerActivity : Activity() {
     }
 
     /** Sent, but the TV never connected to the controller (or didn't come back): say so, and offer Try again. */
-    private val linkTimeout = Runnable {
+    private val linkTimeout: Runnable = Runnable {
+        // the TV is still starting the game (an Xbox waking up, a PS5 busy with another device): wait for it
+        if (state == State.PLAYING && tvState == "starting") { ui.postDelayed(linkTimeout, LINK_WAIT_MS); return@Runnable }
         if (state == State.PLAYING && !directMode && PadLink.clientCount == 0) { noLink = true; FeelSounds.play(this, FeelSounds.Cue.ERROR); setMenu(true); refresh() }
     }
 
@@ -183,6 +212,8 @@ class TvControllerActivity : Activity() {
                     else {
                         TvFinder.setLast(this, tv0)
                         state = State.PLAYING
+                        tvState = null
+                        ui.removeCallbacks(statusPoll); ui.postDelayed(statusPoll, 2000)
                         FeelSounds.play(this, FeelSounds.Cue.LAUNCH)
                         ui.removeCallbacks(linkTimeout)
                         if (useDirect) startDirect(t)
@@ -305,6 +336,7 @@ class TvControllerActivity : Activity() {
                 }
             } else when {
                 PadLink.clientCount > 0 -> "Controller connected (through $tvName)"
+                tvState == "starting" && !everConnected -> "$tvName is starting ${t.title}…"
                 noLink -> "$tvName didn't connect to this ${deviceShort()}'s controller. Check both are on the same Wi-Fi."
                 everConnected -> "Reconnecting to $tvName…"
                 else -> "Waiting for $tvName to connect…"

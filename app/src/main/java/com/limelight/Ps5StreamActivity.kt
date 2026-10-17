@@ -283,6 +283,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
                         Log.i(TAG, "PS5 still in use by another device after ${IN_USE_WAIT_MS / 1000} s")
                         closed = true
                         showStatus("Your PS5 is already streaming to another device.\nClose it there, then try again.")
+                        com.limelight.home.StreamReport.failed("Your PS5 is busy with another device. Close it there, then try again.")
                         try { Thread.sleep(6000) } catch (e: InterruptedException) { }
                         runOnUiThread { finish() }
                         return
@@ -314,6 +315,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
             Log.e(TAG, "PS5 did not connect")
             stopProgressWatch()
             showStatus("Couldn't reach your PlayStation.\nCheck it's in rest mode (not off) and try again.")
+            com.limelight.home.StreamReport.failed("Couldn't reach the PlayStation. Check it's in rest mode (not off).")
             try { Thread.sleep(4000) } catch (e: InterruptedException) { }
             runOnUiThread { finish() }
         }
@@ -382,6 +384,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
         when (ev) {
             is ConnectedEvent -> {
                 Log.i(TAG, "PS5 connected"); connected = true
+                com.limelight.home.StreamReport.playing()
                 stopProgressWatch(); showStatus(null); attemptLatch?.countDown()
             }
             is QuitEvent -> {
@@ -402,6 +405,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
                     attemptLatch?.countDown()
                     stopProgressWatch()
                     showStatus("Your PS5 is already streaming to another device.\nClose it there, then try again.")
+                    com.limelight.home.StreamReport.failed("Your PS5 is busy with another device. Close it there, then try again.")
                     Thread({ try { Thread.sleep(6000) } catch (e: InterruptedException) { }; runOnUiThread { finish() } }, "ps5-inuse").start()
                     return
                 }
@@ -421,6 +425,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
                     // never got a picture: say why instead of dropping back to the home screen without a word
                     stopProgressWatch()
                     showStatus("Couldn't reach your PlayStation.\nCheck it's on or in rest mode (not fully off), then try again.")
+                    com.limelight.home.StreamReport.failed("Couldn't reach the PlayStation. Check it's on or in rest mode (not fully off).")
                     Thread({ try { Thread.sleep(6000) } catch (e: InterruptedException) { }; runOnUiThread { if (!menu.isShowing) finish() } }, "ps5-noconnect").start()
                     return
                 }

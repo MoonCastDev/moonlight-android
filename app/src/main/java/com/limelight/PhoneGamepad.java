@@ -81,7 +81,13 @@ class PhoneGamepad {
 
     /** Start feeding this connection from the phone's pad (uses the last known phone address, or an override). */
     /** /play said the sender's controller goes straight to the PC (true), or through us (false). */
+    private static volatile int playGen;   // counts /play requests
+
+    /** Which /play the stream being created belongs to (see [streamEnded]). */
+    static int playGen() { return playGen; }
+
     static synchronized void setDirect(boolean d) {
+        playGen++;
         direct = d;
         if (!d) return;
         // a relay from an earlier send would feed the same pad a second time: end it, keep the stream it fed
@@ -93,7 +99,7 @@ class PhoneGamepad {
     static boolean isDirect() { return direct; }
 
     /** The stream that /play started is over: streams started on the TV itself use its own controllers. */
-    static void streamEnded() { direct = false; }
+    static void streamEnded(int gen) { if (gen == playGen) direct = false; }   // a newer /play keeps its own setting
 
     /** The sender asks for the relay after all (its direct session failed): start it on the running stream. */
     static synchronized void useRelay() {
@@ -114,6 +120,13 @@ class PhoneGamepad {
         current = p;
         lastConn = conn;
         new Thread(p::run, "phone-gamepad").start();
+    }
+
+    /** The stream [c] ended: stop the relay only if it feeds that stream (a newer stream may already have its own). */
+    static synchronized void stopFor(NvConnection c) {
+        PhoneGamepad p = current;
+        if (p != null && p.conn == c) stop();
+        else if (lastConn == c) lastConn = null;
     }
 
     static synchronized void stop() {

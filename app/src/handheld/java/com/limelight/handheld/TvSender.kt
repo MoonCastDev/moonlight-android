@@ -94,6 +94,19 @@ object TvSender : MoveToTv.Handler {
         } catch (e: Exception) { false } finally { c?.disconnect() }
     }
 
+    /** Blocking. How the TV's stream from our last /play is going: (state, error), or null (older TV / no answer). */
+    fun status(tv: TvFinder.Tv): Pair<String, String>? {
+        if (tv.ip.isEmpty() || tv.version < 6) return null
+        var c: HttpURLConnection? = null
+        return try {
+            c = URL("http://${tv.ip}:${TvFinder.PORT}/status").openConnection() as HttpURLConnection
+            c.connectTimeout = 1500; c.readTimeout = 2000
+            if (c.responseCode != 200) return null
+            val j = JSONObject(c.inputStream.bufferedReader().use { it.readText() })
+            j.optString("state") to j.optString("error")
+        } catch (e: Exception) { null } finally { c?.disconnect() }
+    }
+
     /** Blocking. The direct controller session failed: ask [tv] to relay the pad after all (POST /pad, version 4+). */
     fun useRelay(tv: TvFinder.Tv, padKey: String): Boolean {
         if (tv.ip.isEmpty() || tv.version < 4) return false
