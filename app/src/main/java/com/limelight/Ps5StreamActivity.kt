@@ -132,21 +132,35 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
             else -> VideoResolutionPreset.RES_1080P
         }
         val h264 = !ps5 || (if (away) prefs.getString("away_codec", "h265") else prefs.getString("ps5_codec", "h265")) == "h264"
-        val fps30 = (if (away) prefs.getString("away_fps", "60") else prefs.getString("ps5_fps_home", "60")) == "30"
+        // Frame rate: 30 or 60 presets, or a Custom value (15-60) that replaces the preset's fps.
+        val fpsSel = (if (away) prefs.getString("away_fps", "60") else prefs.getString("ps5_fps_home", "60")) ?: "60"
+        val fps30 = fpsSel == "30"
+        val customFps = if (fpsSel == "custom") (prefs.getString(if (away) "away_fps_custom" else "ps5_fps_home_custom", "60")?.toIntOrNull() ?: 60).coerceIn(15, 60) else null
         val preset = ConnectVideoProfile.preset(
             resPreset, if (fps30) VideoFPSPreset.FPS_30 else VideoFPSPreset.FPS_60,
             if (h264) Codec.CODEC_H264 else Codec.CODEC_H265
-        )
+        ).let { p -> if (customFps != null) p.copy(maxFPS = customFps) else p }
         // Home network: Auto = 30 or 20 Mbps from this device's own link (chiaki's 1080p preset is 15), or the
-        // number picked in Settings. Over the internet keep the preset - the PS5 backs off by itself.
+        // number picked in Settings, or a Custom value (2-50 Mbps). Over the internet keep the preset - the PS5 backs off by itself.
         // ~30 % of the link is what a busy 2.4 GHz channel really delivers without queueing
         val linkCap = if (link > 0) (link * 300).coerceIn(5000, 30000) else 30000
-        val homeKbps = prefs.getString("ps5_bitrate_home", "auto")?.toIntOrNull()?.times(1000) ?: minOf(lanBitrateKbps(), linkCap)
-        val awayKbps = prefs.getString("away_bitrate", "auto")?.toIntOrNull()?.times(1000)
+        fun customKbps(key: String, def: Int) = (prefs.getString("${key}_custom", def.toString())?.toIntOrNull() ?: def).coerceIn(2, 50) * 1000
+        val homeSel = prefs.getString("ps5_bitrate_home", "auto") ?: "auto"
+        val homeKbps = when (homeSel) {
+            "custom" -> customKbps("ps5_bitrate_home", 20)
+            "auto" -> minOf(lanBitrateKbps(), linkCap)
+            else -> homeSel.toIntOrNull()?.times(1000) ?: minOf(lanBitrateKbps(), linkCap)
+        }
+        val awaySel = prefs.getString("away_bitrate", "auto") ?: "auto"
+        val awayKbps = when (awaySel) {
+            "custom" -> customKbps("away_bitrate", 10)
+            "auto" -> null
+            else -> awaySel.toIntOrNull()?.times(1000)
+        }
         val profile = if (away) preset.copy(bitrate = awayKbps ?: minOf(preset.bitrate, linkCap)) else preset.copy(bitrate = homeKbps)
         streamInfo = Triple(when (resPreset) { VideoResolutionPreset.RES_540P -> "540p"; VideoResolutionPreset.RES_720P -> "720p"; else -> "1080p" }, if (h264) "H.264" else "H.265", profile.bitrate / 1000)
         streamRemote = remote
-        Log.i(TAG, "stream ${streamInfo.first}${if (fps30) 30 else 60} at ${profile.bitrate / 1000} Mbps (${if (remote) "PSN" else "home"}, ${if (away) "away" else "home"} profile, link ${if (link > 0) "$link Mbps" else "cable/unknown"})")
+        Log.i(TAG, "stream ${streamInfo.first}${profile.maxFPS} at ${profile.bitrate / 1000} Mbps (${if (remote) "PSN" else "home"}, ${if (away) "away" else "home"} profile, link ${if (link > 0) "$link Mbps" else "cable/unknown"})")
         if (!remote) return ConnectInfo(ps5, host, registKey, morning, profile)
         val account = intent.getStringExtra(EXTRA_ACCOUNT_ID)?.let {
             try { android.util.Base64.decode(it, android.util.Base64.DEFAULT) } catch (e: Exception) { null }

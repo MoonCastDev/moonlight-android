@@ -1,5 +1,8 @@
 # Changelog
 
+## 12.2-test158 (2026-10-17)
+- PlayStation Frame rate and Bitrate rows (Home and Away) get a Custom option. Choose Custom, then tap the Custom value row to type a number: frame rate 15-60 fps, bitrate 2-50 Mbps. The stream uses the typed value.
+
 ## 12.2-test157 (2026-10-17)
 - PlayStation settings: the same four rows (Resolution, Frame rate, Bitrate, Video codec) for each profile. The General profile decides which set they change. Frame rate can be 60 or 30 fps, per profile.
 - Fix: the Away settings had no frame rate and a different resolution row, so changes in Home didn't apply to Away.

@@ -1170,18 +1170,28 @@ class HandheldHomeActivity : Activity() {
                 if (mode != "away") {
                     if (mode == "auto") info(list, "At home", "Used when this PS5 is on your home network")
                     choice(list, stream, "ps5_resolution", "Resolution", "The PS5 streams up to 1080p", listOf("720p" to "720", "1080p" to "1080"), "1080")
-                    choice(list, stream, "ps5_fps_home", "Frame rate", "60 fps is smoother; 30 fps lets a weak link keep up", listOf("60 fps" to "60", "30 fps" to "30"), "60")
+                    choice(list, stream, "ps5_fps_home", "Frame rate", "60 fps is smoother; 30 fps lets a weak link keep up",
+                            listOf("60 fps" to "60", "30 fps" to "30", "Custom" to "custom"), "60")
+                    if (stream.getString("ps5_fps_home", "60") == "custom")
+                        customNumber(list, stream, "ps5_fps_home", "Custom frame rate", "15 to 60 fps. The PS5 may cap it at 60", "fps", 15, 60, 60)
                     choice(list, stream, "ps5_bitrate_home", "Bitrate", "Auto: 30 Mbps on fast Wi-Fi, 20 otherwise",
-                            listOf("Auto" to "auto", "10" to "10", "15" to "15", "20" to "20", "30" to "30"), "auto")
+                            listOf("Auto" to "auto", "10" to "10", "15" to "15", "20" to "20", "30" to "30", "Custom" to "custom"), "auto")
+                    if (stream.getString("ps5_bitrate_home", "auto") == "custom")
+                        customNumber(list, stream, "ps5_bitrate_home", "Custom bitrate", "2 to 50 Mbps", "Mbps", 2, 50, 20)
                     choice(list, stream, "ps5_codec", "Video codec", "H.265 looks better at the same bitrate", listOf("H.264" to "h264", "H.265" to "h265"), "h265")
                 }
                 if (mode != "home") {
                     if (mode == "auto") info(list, "Away", "Used over PlayStation Network")
                     choice(list, stream, "ps5_away_quality", "Resolution", "Auto follows the Wi-Fi: 1080p strong, 720p weak",
                             listOf("Auto" to "auto", "540p" to "540", "720p" to "720", "1080p" to "1080"), "auto")
-                    choice(list, stream, "away_fps", "Frame rate", "60 fps is smoother; 30 fps lets a weak link keep up", listOf("60 fps" to "60", "30 fps" to "30"), "60")
+                    choice(list, stream, "away_fps", "Frame rate", "60 fps is smoother; 30 fps lets a weak link keep up",
+                            listOf("60 fps" to "60", "30 fps" to "30", "Custom" to "custom"), "60")
+                    if (stream.getString("away_fps", "60") == "custom")
+                        customNumber(list, stream, "away_fps", "Custom frame rate", "15 to 60 fps. The PS5 may cap it at 60", "fps", 15, 60, 60)
                     choice(list, stream, "away_bitrate", "Bitrate", "Auto: capped by the Wi-Fi link",
-                            listOf("Auto" to "auto", "8" to "8", "10" to "10", "15" to "15"), "auto")
+                            listOf("Auto" to "auto", "8" to "8", "10" to "10", "15" to "15", "Custom" to "custom"), "auto")
+                    if (stream.getString("away_bitrate", "auto") == "custom")
+                        customNumber(list, stream, "away_bitrate", "Custom bitrate", "2 to 50 Mbps", "Mbps", 2, 50, 10)
                     choice(list, stream, "away_codec", "Video codec", "H.265 looks better at the same bitrate", listOf("H.264" to "h264", "H.265" to "h265"), "h265")
                 }
                 choice(list, stream, "ps5_on_disconnect", "When I disconnect", "What happens to the PS5 after you leave a game",
@@ -1251,6 +1261,22 @@ class HandheldHomeActivity : Activity() {
             }
             if (onClick != null) { sw.focusable(this); setOnClickListener { onClick() } }
         }, sw.lp(-1, -2))
+    }
+
+    /** A Custom value for a choice row: tapping it asks for a number, and saving a number switches the row to Custom. */
+    private fun customNumber(list: LinearLayout, store: SharedPreferences, key: String, title: String, sub: String, unit: String, min: Int, max: Int, def: Int) {
+        val cur = store.getString(key + "_custom", def.toString()) ?: def.toString()
+        action(list, "$key-custom", title, sub, "$cur $unit") {
+            entry(title, "$min to $max $unit. Used when this row is set to Custom", unit, cur, true) { v ->
+                val n = v.trim().toIntOrNull()
+                if (n == null || n !in min..max) "Enter a number from $min to $max"
+                else {
+                    store.edit().putString(key + "_custom", n.toString()).putString(key, "custom").apply()
+                    render(force = true)
+                    null
+                }
+            }
+        }
     }
 
     private fun choice(list: LinearLayout, store: SharedPreferences, key: String, title: String, sub: String, options: List<Pair<String, String>>, def: String) {
