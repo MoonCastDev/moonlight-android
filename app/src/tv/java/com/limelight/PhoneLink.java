@@ -150,7 +150,8 @@ public class PhoneLink {
                         + ",\"xbox\":" + Xbox.INSTANCE.signedIn(ctx)
                         + ",\"version\":" + PROTOCOL_VERSION
                         + ",\"id\":" + quote(tvId())
-                        + ",\"identityKey\":" + quote(identityKey()) + "}");
+                        + ",\"identityKey\":" + quote(identityKey())
+                        + ",\"paired\":" + (pc != null && pc.serverCert != null) + "}");
             } else if ("GET".equals(method) && path.startsWith("/status")) {
                 send(s, 200, "{\"state\":" + quote(playState) + ",\"error\":" + quote(playError == null ? "" : playError)
                         + ",\"seq\":" + playSeq + "}");

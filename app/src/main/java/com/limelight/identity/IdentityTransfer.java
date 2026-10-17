@@ -1,6 +1,12 @@
 package com.limelight.identity;
 
+import android.content.Context;
+import android.util.Base64;
+
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
+
+import java.io.File;
+import java.io.FileInputStream;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
@@ -78,6 +84,36 @@ public final class IdentityTransfer {
         cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(key, "AES"), new GCMParameterSpec(TAG_BITS, nonce));
         cipher.updateAAD(INFO.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         return cipher.doFinal(ct);
+    }
+
+    /**
+     * This device's Sunshine client identity, sealed for a receiver. [receiverKeyB64] is the receiver's published key.
+     * Returns base64 of the encrypted blob, or null if this device has no identity yet (it has never paired).
+     */
+    public static String sealIdentity(Context ctx, String receiverKeyB64) {
+        try {
+            byte[] cert = readFile(new File(ctx.getFilesDir(), "client.crt"));
+            byte[] key = readFile(new File(ctx.getFilesDir(), "client.key"));
+            if (cert == null || key == null) return null;
+            byte[] recvRaw = Base64.decode(receiverKeyB64, Base64.DEFAULT);
+            return Base64.encodeToString(encrypt(recvRaw, pack(cert, key)), Base64.NO_WRAP);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static byte[] readFile(File f) throws java.io.IOException {
+        if (!f.isFile()) return null;
+        byte[] out = new byte[(int) f.length()];
+        try (FileInputStream in = new FileInputStream(f)) {
+            int off = 0;
+            while (off < out.length) {
+                int n = in.read(out, off, out.length - off);
+                if (n < 0) break;
+                off += n;
+            }
+        }
+        return out;
     }
 
     /** Packs a certificate and its private key into one plaintext: length-prefixed, DER certificate then PKCS#8 key. */
