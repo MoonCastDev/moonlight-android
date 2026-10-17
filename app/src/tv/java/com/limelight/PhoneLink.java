@@ -149,7 +149,8 @@ public class PhoneLink {
                         + ",\"pc\":" + quote(pc == null ? "" : pc.name)
                         + ",\"xbox\":" + Xbox.INSTANCE.signedIn(ctx)
                         + ",\"version\":" + PROTOCOL_VERSION
-                        + ",\"id\":" + quote(tvId()) + "}");
+                        + ",\"id\":" + quote(tvId())
+                        + ",\"identityKey\":" + quote(identityKey()) + "}");
             } else if ("GET".equals(method) && path.startsWith("/status")) {
                 send(s, 200, "{\"state\":" + quote(playState) + ",\"error\":" + quote(playError == null ? "" : playError)
                         + ",\"seq\":" + playSeq + "}");
@@ -329,6 +330,19 @@ public class PhoneLink {
     }
 
     /** Same for the life of this install; lets a handheld recognise this TV after its address changes. */
+    /** This TV's public key for identity transfer (raw X25519, base64). Made once per run; the private half never leaves. */
+    private static java.security.KeyPair identityKeys;
+
+    private synchronized String identityKey() {
+        try {
+            if (identityKeys == null) identityKeys = com.limelight.identity.IdentityTransfer.newReceiverKeys();
+            return android.util.Base64.encodeToString(
+                    com.limelight.identity.IdentityTransfer.rawPublic(identityKeys.getPublic()), android.util.Base64.NO_WRAP);
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
     private String tvId() {
         String a = android.provider.Settings.Secure.getString(ctx.getContentResolver(), android.provider.Settings.Secure.ANDROID_ID);
         return a == null ? "" : Integer.toHexString(a.hashCode());
