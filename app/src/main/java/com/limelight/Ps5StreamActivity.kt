@@ -132,8 +132,9 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
             else -> VideoResolutionPreset.RES_1080P
         }
         val h264 = !ps5 || (if (away) prefs.getString("away_codec", "h265") else prefs.getString("ps5_codec", "h265")) == "h264"
+        val fps30 = (if (away) prefs.getString("away_fps", "60") else prefs.getString("ps5_fps_home", "60")) == "30"
         val preset = ConnectVideoProfile.preset(
-            resPreset, VideoFPSPreset.FPS_60,
+            resPreset, if (fps30) VideoFPSPreset.FPS_30 else VideoFPSPreset.FPS_60,
             if (h264) Codec.CODEC_H264 else Codec.CODEC_H265
         )
         // Home network: Auto = 30 or 20 Mbps from this device's own link (chiaki's 1080p preset is 15), or the
@@ -145,7 +146,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
         val profile = if (away) preset.copy(bitrate = awayKbps ?: minOf(preset.bitrate, linkCap)) else preset.copy(bitrate = homeKbps)
         streamInfo = Triple(when (resPreset) { VideoResolutionPreset.RES_540P -> "540p"; VideoResolutionPreset.RES_720P -> "720p"; else -> "1080p" }, if (h264) "H.264" else "H.265", profile.bitrate / 1000)
         streamRemote = remote
-        Log.i(TAG, "stream ${streamInfo.first}60 at ${profile.bitrate / 1000} Mbps (${if (remote) "PSN" else "home"}, ${if (away) "away" else "home"} profile, link ${if (link > 0) "$link Mbps" else "cable/unknown"})")
+        Log.i(TAG, "stream ${streamInfo.first}${if (fps30) 30 else 60} at ${profile.bitrate / 1000} Mbps (${if (remote) "PSN" else "home"}, ${if (away) "away" else "home"} profile, link ${if (link > 0) "$link Mbps" else "cable/unknown"})")
         if (!remote) return ConnectInfo(ps5, host, registKey, morning, profile)
         val account = intent.getStringExtra(EXTRA_ACCOUNT_ID)?.let {
             try { android.util.Base64.decode(it, android.util.Base64.DEFAULT) } catch (e: Exception) { null }

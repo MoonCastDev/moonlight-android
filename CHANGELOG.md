@@ -1,5 +1,9 @@
 # Changelog
 
+## 12.2-test157 (2026-10-17)
+- PlayStation settings: the same four rows (Resolution, Frame rate, Bitrate, Video codec) for each profile. The General profile decides which set they change. Frame rate can be 60 or 30 fps, per profile.
+- Fix: the Away settings had no frame rate and a different resolution row, so changes in Home didn't apply to Away.
+
 ## 12.2-test156 (2026-10-17)
 - Streaming profile moved to a General tab (TV and handheld). PlayStation settings show the rows for the chosen profile: Home rows, Away rows, or both under Auto. PC and Xbox settings are not switched by the profile yet.
 
