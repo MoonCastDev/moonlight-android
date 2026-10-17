@@ -91,7 +91,8 @@ import java.util.Locale;
 public class Game extends Activity implements SurfaceHolder.Callback,
         OnGenericMotionListener, OnTouchListener, NvConnectionListener, EvdevListener,
         OnSystemUiVisibilityChangeListener, GameGestures, StreamView.InputCallbacks,
-        PerfOverlayListener, UsbDriverService.UsbDriverStateListener, View.OnKeyListener {
+        PerfOverlayListener, UsbDriverService.UsbDriverStateListener, View.OnKeyListener,
+        com.limelight.home.MoveToTv.LocalSession {
     private int lastButtonState = 0;
 
     // Only 2 touches are supported
@@ -2332,7 +2333,10 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     public void stageComplete(String stage) {
     }
 
-    private void stopConnection() {
+    private void stopConnection() { stopConnection(null); }
+
+    /** Stop the stream; [done] runs on the main thread once the PC was told (null: don't wait). */
+    private void stopConnection(final Runnable done) {
         PhoneGamepad.stop();
         if (connecting || connected) {
             connecting = connected = false;
@@ -2351,9 +2355,17 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             new Thread() {
                 public void run() {
                     conn.stop();
+                    if (done != null) runOnUiThread(done);
                 }
             }.start();
         }
+        else if (done != null) runOnUiThread(done);
+    }
+
+    // "Move to TV" (handheld): end this stream (disconnect, the game keeps running) before the TV joins it.
+    @Override
+    public void endLocalSession(Runnable done) {
+        stopConnection(done);
     }
 
     @Override

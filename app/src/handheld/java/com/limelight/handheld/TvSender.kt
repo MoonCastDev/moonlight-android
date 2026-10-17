@@ -123,7 +123,8 @@ object TvSender : MoveToTv.Handler {
     override fun move(act: Activity, t: MoveToTv.Target) {
         val tv = TvFinder.lastTv(act) ?: return
         Recents.touch(act, t.key)
-        // the local stream ends as the player finishes; give it (and the PS5 or Xbox) a moment to let go first
-        open(act, tv, t, when (t.kind) { "pc" -> 1500L; "ps" -> 3000L; else -> 2500L })
+        // the player already ended its session (MoveToTv.LocalSession); a short pause lets the PC / PS5 / Xbox notice
+        // the old client is gone (the TV still retries a PS5 that isn't free yet)
+        open(act, tv, t, when (t.kind) { "pc" -> 500L; "ps" -> 1500L; else -> 1000L })
     }
 }

@@ -47,6 +47,13 @@ object MoveToTv {
 
     @JvmStatic var handler: Handler? = null
 
+    /**
+     * A player whose session must be completely over before the TV takes the game: a PS5 allows one Remote Play
+     * client, and finishing the screen alone left chiaki running (and froze the UI on its decoder lock).
+     * [done] runs on the main thread once the session is closed.
+     */
+    interface LocalSession { fun endLocalSession(done: Runnable) }
+
     /** The Quick menu item, or null when there's no TV to move to (always null on the TV app). */
     @JvmStatic
     fun item(act: Activity, t: Target): QuickMenu.Item? {
@@ -54,8 +61,13 @@ object MoveToTv {
         val h = handler ?: return null
         val name = h.tvName(act) ?: return null
         return QuickMenu.Item("TV", "Move to $name", "Keeps playing there. This device becomes the controller", false) {
-            h.move(act, t)
-            act.finish()   // disconnect, don't quit: the TV picks the game up
+            // end this device's session first (disconnect, don't quit), THEN send: the TV picks the game up
+            val once = java.util.concurrent.atomic.AtomicBoolean(false)
+            val go = Runnable { if (once.compareAndSet(false, true) && !act.isDestroyed) { h.move(act, t); act.finish() } }
+            if (act is LocalSession) {
+                act.endLocalSession(go)
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(go, 3000)   // never wait longer than ~3 s
+            } else go.run()
         }
     }
 }

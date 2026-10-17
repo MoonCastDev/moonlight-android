@@ -24,7 +24,7 @@ import org.webrtc.SurfaceViewRenderer
  * ([Xbox.streamAuth]), wakes the console, draws the picture and turns this device's controllers into Xbox pads.
  *   EXTRA_CONSOLE_ID: the console's id from Xbox.consoles(); EXTRA_NAME: its name, for the screen.
  */
-class XboxStreamActivity : Activity() {
+class XboxStreamActivity : Activity(), com.limelight.home.MoveToTv.LocalSession {
     /**
      * A controller on another device (the handheld that sent this game to this TV). The TV app provides it; it
      * calls the sink with W3C Standard Gamepad state: 17 buttons (0..1) and 4 axes (-1..1, Y down-positive).
@@ -162,6 +162,16 @@ class XboxStreamActivity : Activity() {
     } catch (e: Exception) { 0 }
 
     override fun onStop() { super.onStop(); if (!isChangingConfigurations) finish() }
+
+    /** "Move to TV": the Xbox session here is fully closed before the TV starts its own. */
+    override fun endLocalSession(done: Runnable) {
+        closed = true
+        sendNeutral()
+        val r = rtc
+        if (r == null) { done.run(); return }
+        val main = android.os.Handler(mainLooper)
+        try { r.stop { main.post(done) } } catch (e: Throwable) { done.run() }
+    }
 
     override fun onDestroy() {
         closed = true

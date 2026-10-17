@@ -107,8 +107,10 @@ class XboxRtc(
 
     fun start() = work.post { try { run() } catch (e: Exception) { if (!closed) { Log.w(TAG, "session failed", e); listener.onFailed(e.message ?: e.javaClass.simpleName) } } }
 
-    fun stop() {
-        if (closed) return
+    /** End the session. [done] (optional) runs on the worker once everything is closed. */
+    @JvmOverloads
+    fun stop(done: Runnable? = null) {
+        if (closed) { done?.run(); return }
         closed = true
         work.removeCallbacksAndMessages(null)
         work.post {
@@ -118,6 +120,7 @@ class XboxRtc(
             try { pc?.dispose() } catch (e: Exception) { }
             try { factory?.dispose() } catch (e: Exception) { }
             worker.quitSafely()
+            done?.run()
         }
     }
 

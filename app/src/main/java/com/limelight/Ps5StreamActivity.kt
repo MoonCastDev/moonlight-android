@@ -30,7 +30,7 @@ import com.metallic.chiaki.lib.VideoResolutionPreset
  *   EXTRA_HOST, EXTRA_REGIST_KEY (hex), EXTRA_MORNING (hex), EXTRA_PS5.
  * The phone stays the controller: [Ps5Pad] feeds its pad into session.setControllerState.
  */
-class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
+class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home.MoveToTv.LocalSession {
     companion object {
         private const val TAG = "MoonCast-PS5"
         const val EXTRA_HOST = "ps5_host"
@@ -700,17 +700,50 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback {
     }
 
     override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, ht: Int) {}
-    override fun surfaceDestroyed(holder: SurfaceHolder) { if (!closed) session?.setSurface(null) }
+    // setSurface(null) waits for chiaki's decoder lock, which a running session can hold for a long time: on the UI
+    // thread that froze the app (ANR when "Move to TV" covered the player). Do it on a worker, and never on a session
+    // that is being torn down (see [teardown]).
+    override fun surfaceDestroyed(holder: SurfaceHolder) {
+        val s = session ?: return
+        if (closed) return
+        Thread({ synchronized(sessionLock) { if (!closed && synchronized(disposed) { s !in disposed }) try { s.setSurface(null) } catch (e: Exception) { } } },
+            "ps5-surface").start()
+    }
 
-    override fun onDestroy() {
+    private val sessionLock = Any()
+    private val disposed = java.util.Collections.newSetFromMap(java.util.WeakHashMap<Session, Boolean>())
+
+    /**
+     * End the session off the UI thread (Session.dispose() joins native threads and can block). stop() first, without
+     * the lock, so a surface call stuck on the decoder lock gets released; dispose() under the lock, so no surface
+     * call can run on a freed session. [done] runs on the main thread afterwards.
+     */
+    private fun teardown(done: Runnable?) {
         closed = true
         attemptLatch?.countDown()   // release a remote attempt that's waiting for its first picture
         stopProgressWatch()
         val s = session
         session = null
-        // Tear down off the UI thread: Session.dispose() joins native threads and can block, which would freeze the
-        // app's main looper and stop the receiver from launching the next stream.
-        Thread({ Ps5Pad.stop(); if (s != null) try { s.stop(); s.dispose() } catch (e: Exception) {} }, "ps5-teardown").start()
+        Thread({
+            Ps5Pad.stop()
+            if (s != null) {
+                synchronized(disposed) { disposed.add(s) }
+                try { s.stop() } catch (e: Exception) { }
+                synchronized(sessionLock) { try { s.dispose() } catch (e: Exception) { } }
+            }
+            if (done != null) android.os.Handler(android.os.Looper.getMainLooper()).post(done)
+        }, "ps5-teardown").start()
+    }
+
+    /** "Move to TV": the PS5 takes one Remote Play client, so this one must be gone before the TV connects. */
+    override fun endLocalSession(done: Runnable) {
+        showStatus("Handing your PS5 over to the TV…")
+        if (closed && session == null) { done.run(); return }
+        teardown(done)
+    }
+
+    override fun onDestroy() {
+        if (!closed || session != null) teardown(null)
         super.onDestroy()
     }
 }
