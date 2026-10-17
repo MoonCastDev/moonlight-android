@@ -15,7 +15,6 @@ import android.os.IBinder
 import android.os.Looper
 import android.provider.Settings
 import android.text.format.DateFormat
-import android.view.FocusFinder
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
@@ -1866,13 +1865,30 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         val dir = Feel.direction(e.keyCode)
         if (dir != 0 && e.action == KeyEvent.ACTION_DOWN) {
             val before = currentFocus
-            val edge = before != null && before !is EditText && overlayKind != "code" &&
-                    FocusFinder.getInstance().findNextFocus(window.decorView as ViewGroup, before, dir) == null
-            val handled = super.dispatchKeyEvent(e)
-            val after = currentFocus
-            if (after != null && after !== before) FeelSounds.focus(after)
-            else if (edge) Feel.edgeNudge(before, dir, e, tv.pxf(14))
-            return handled
+            if (super.dispatchKeyEvent(e)) {    // a view moved the focus itself (a row's own Left, a list)
+                val after = currentFocus
+                if (after != null && after !== before) FeelSounds.focus(after)
+                return true
+            }
+            if (before == null || before is EditText || overlayKind == "code") return false
+            // Nothing took the key, so Android would move the focus next and play its own click. Move it here the same
+            // way instead, so MoonCast's sound replaces the system one rather than playing on top of it.
+            val root = window.decorView as ViewGroup
+            val next = before.focusSearch(dir)
+            if (next != null && next !== before) {
+                val r = android.graphics.Rect()
+                before.getFocusedRect(r)
+                root.offsetDescendantRectToMyCoords(before, r)
+                root.offsetRectIntoDescendantCoords(next, r)
+                if (next.requestFocus(dir, r)) {
+                    if (FeelSounds.enabled(this)) FeelSounds.focus(next)
+                    else next.playSoundEffect(android.view.SoundEffectConstants.getContantForFocusDirection(dir))
+                    return true
+                }
+                return false
+            }
+            Feel.edgeNudge(before, dir, e, tv.pxf(14))
+            return true
         }
         val confirm = e.keyCode == KeyEvent.KEYCODE_DPAD_CENTER || e.keyCode == KeyEvent.KEYCODE_ENTER ||
                 e.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER || e.keyCode == KeyEvent.KEYCODE_BUTTON_A
