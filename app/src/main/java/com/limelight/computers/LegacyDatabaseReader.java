@@ -87,6 +87,8 @@ public class LegacyDatabaseReader {
     }
 
     public static List<ComputerDetails> migrateAllComputers(Context c) {
+        // MoonCast (#44): nothing to migrate on a fresh install; opening a missing DB only logged an exception
+        if (!c.getDatabasePath(COMPUTER_DB_NAME).exists()) return new LinkedList<ComputerDetails>();
         try (final SQLiteDatabase computerDb = SQLiteDatabase.openDatabase(
                 c.getDatabasePath(COMPUTER_DB_NAME).getPath(),
                 null, SQLiteDatabase.OPEN_READONLY)
