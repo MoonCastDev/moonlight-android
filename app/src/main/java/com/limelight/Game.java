@@ -1574,8 +1574,12 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                 java.util.Collections::emptyList, items);
     }
 
+    /** The user ended this stream (Quit game, Disconnect, Back): its end is not a failure to report (#41). */
+    private volatile boolean endedByUser;
+
     // Quit the game on the PC (not just this stream), then leave. Public for the TV's /stop {"quit":true}.
     public void quitOnHostAndFinish() {
+        endedByUser = true;   // the PC closing the game ends the stream with an error code; that's this quit
         final Intent i = getIntent();
         new Thread(() -> {
             try {
@@ -2340,6 +2344,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
     /** Stop the stream; [done] runs on the main thread once the PC was told (null: don't wait). */
     private void stopConnection(final Runnable done) {
+        endedByUser = true;   // we stop it ourselves; a termination after this isn't a failure
         PhoneGamepad.stopFor(conn);
         if (connecting || connected) {
             connecting = connected = false;
@@ -2415,7 +2420,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     @Override
     public void connectionTerminated(final int errorCode) {
         PhoneGamepad.stopFor(conn);   // the stream is over: stop pulling the sender's controller
-        if (errorCode != MoonBridge.ML_ERROR_GRACEFUL_TERMINATION)
+        // A stream the user ended (Quit game makes the PC close it, error -1) isn't a failure (#41)
+        if (errorCode != MoonBridge.ML_ERROR_GRACEFUL_TERMINATION && !endedByUser && !isFinishing())
             com.limelight.home.StreamReport.failed("The stream from the PC stopped (error " + errorCode + ").");
         // Perform a connection test if the failure could be due to a blocked port
         // This does network I/O, so don't do it on the main thread.
