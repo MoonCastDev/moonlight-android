@@ -133,14 +133,16 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
             else -> VideoResolutionPreset.RES_1080P
         }
         val h264 = !ps5 || (if (away) prefs.getString("away_codec", "h265") else prefs.getString("ps5_codec", "h265")) == "h264"
-        // Frame rate: 30 or 60 presets, or a Custom value (15-60) that replaces the preset's fps.
+        // Frame rate: the PS5 streams at 30 or 60 fps only; any other rate broke the picture (#39). A Custom value
+        // saved by an older build uses the nearer of the two.
         val fpsSel = (if (away) prefs.getString("away_fps", "60") else prefs.getString("ps5_fps_home", "60")) ?: "60"
-        val fps30 = fpsSel == "30"
-        val customFps = if (fpsSel == "custom") (prefs.getString(if (away) "away_fps_custom" else "ps5_fps_home_custom", "60")?.toIntOrNull() ?: 60).coerceIn(15, 60) else null
+        val fps30 = if (fpsSel == "custom")
+            (prefs.getString(if (away) "away_fps_custom" else "ps5_fps_home_custom", "60")?.toIntOrNull() ?: 60) < 45
+        else fpsSel == "30"
         val preset = ConnectVideoProfile.preset(
             resPreset, if (fps30) VideoFPSPreset.FPS_30 else VideoFPSPreset.FPS_60,
             if (h264) Codec.CODEC_H264 else Codec.CODEC_H265
-        ).let { p -> if (customFps != null) p.copy(maxFPS = customFps) else p }
+        )
         // Home network: Auto = 30 or 20 Mbps from this device's own link (chiaki's 1080p preset is 15), or the
         // number picked in Settings, or a Custom value (2-50 Mbps). Over the internet keep the preset - the PS5 backs off by itself.
         // ~30 % of the link is what a busy 2.4 GHz channel really delivers without queueing
