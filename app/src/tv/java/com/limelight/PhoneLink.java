@@ -60,7 +60,14 @@ public class PhoneLink {
                 return a instanceof Game || a instanceof Ps5StreamActivity || a instanceof XboxStreamActivity;
             }
             @Override public void onActivityCreated(android.app.Activity a, android.os.Bundle b) { if (isStream(a)) synchronized (streams) { streams.add(a); } }
-            @Override public void onActivityDestroyed(android.app.Activity a) { synchronized (streams) { streams.remove(a); } }
+            @Override public void onActivityDestroyed(android.app.Activity a) {
+                synchronized (streams) {
+                    streams.remove(a);
+                    // #41: the last stream screen closed, so nothing is playing any more. A failure stays reported
+                    // (with its words) until the next /play, so the sender can still read why.
+                    if (isStream(a) && streams.isEmpty() && !"failed".equals(playState)) playState = "idle";
+                }
+            }
             @Override public void onActivityStarted(android.app.Activity a) { }
             @Override public void onActivityResumed(android.app.Activity a) { }
             @Override public void onActivityPaused(android.app.Activity a) { }
