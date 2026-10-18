@@ -1131,6 +1131,16 @@ class HandheldHomeActivity : Activity() {
                 choice(list, stream, "list_resolution", "Resolution", "Native is this screen: ${native.replace("x", " × ")}",
                         if (presets.any { it.second == native }) presets else presets + ("Native" to native), native)
                 choice(list, stream, "list_fps", "Frame rate", "60 is the smoothest. 30 uses less data and battery", listOf("30" to "30", "60" to "60", "90" to "90", "120" to "120"), "60")
+                // #42: any PC frame rate, saved straight into list_fps as a number
+                val fps = stream.getString("list_fps", "60") ?: "60"
+                val customFps = fps !in listOf("30", "60", "90", "120")
+                action(list, "list_fps-custom", "Custom frame rate", "Any rate between the steps above, 15 to 120 fps", if (customFps) "$fps fps" else "Off") {
+                    entry("Custom frame rate", "In fps, from 15 to 120. The PC streams at the rate you pick.", "For example 45", if (customFps) fps else "", true) { raw ->
+                        val v = raw.trim().toIntOrNull()
+                        if (v == null || v !in 15..120) "A number from 15 to 120."
+                        else { stream.edit().putString("list_fps", v.toString()).apply(); render(force = true); null }
+                    }
+                }
                 bitrate(list)
                 choice(list, stream, "video_format", "Video codec", "H.265 and AV1 look better at the same bitrate",
                         listOf("Auto" to "auto", "H.264" to "neverh265", "H.265" to "forceh265", "AV1" to "forceav1"), "auto")

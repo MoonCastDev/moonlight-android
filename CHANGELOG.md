@@ -1,5 +1,8 @@
 # Changelog
 
+## 12.2-test183 (2026-10-18)
+- PC streams get a Custom frame rate (#42), TV and handheld: a "Custom frame rate" row under Frame rate takes any rate from 15 to 120 fps, like Custom resolution and Custom bitrate. It's saved per profile like the other PC settings. "Turn off" on the TV goes back to 60.
+
 ## 12.2-test182 (2026-10-18)
 - Fix (#39): the PS5 only streams at 30 or 60 fps, and a Custom frame rate such as 45 gave a broken picture (0 fps, all packets lost). The PS5 Frame rate rows (Home and Away, TV and handheld) now offer 60 or 30 only; a Custom value saved earlier uses the nearer of the two. Custom bitrate for the PS5 stays.
 
