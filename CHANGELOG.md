@@ -1,5 +1,8 @@
 # Changelog
 
+## 12.2-test186 (2026-10-18)
+- Fix (#41 follow-up): quitting a PC game from the TV's Quick menu left the TV's link reporting "failed: The stream from the PC stopped (error -1)". Quit makes the PC close the game, which ends the stream with an error code. A stream the user ended (Quit game, Disconnect, Back) no longer counts as a failure, so the link goes back to "idle".
+
 ## 12.2-test185 (2026-10-18)
 - Fix (#44): the "can't open database" error was still logged on every check from a handheld, from Moonlight's two other old databases (computers2.db, computers3.db). Those are skipped too when they don't exist.
 
