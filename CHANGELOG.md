@@ -1,5 +1,8 @@
 # Changelog
 
+## 12.2-test177 (2026-10-18)
+- Fix (#37 follow-up): ending a PS5 game could still crash the TV app at random on Android 9 (1 of 2 stops on test176, 2 of 3 on test175). On Android 9 any decoder call after the decoder is stopped aborts the app, and chiaki stopped it first: the stream thread then fed it one more frame, and the output thread's wait returned into it. The decoder now stops taking frames and lets the output thread finish first, and is stopped and deleted last (native patch `native/mc_decoder_shutdown_patch.py`, which replaces test176's `mc_decoder_join_patch.py`).
+
 ## 12.2-test176 (2026-10-18)
 - Fix (#37 follow-up): ending a PS5 game after the PS5 had already closed the stream (Disconnect, then rest mode) could crash the TV app. The decoder was deleted while its output thread was still running; it now waits for that thread first (native patch `native/mc_decoder_join_patch.py`). Only reachable since test174 freed the session.
 
