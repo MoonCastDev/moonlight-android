@@ -1,5 +1,29 @@
 # Changelog
 
+## 12.2-test173 (2026-10-18)
+- TV receiver reports a PC as paired only when the PC really accepts this TV's identity (checked in the background), so a handheld sends its identity whenever the TV can't stream on its own.
+
+## 12.2-test172 (2026-10-18)
+- TV home: a PC card added for a sent session goes away as soon as the session ends, without reopening the app.
+
+## 12.2-test171 (2026-10-18)
+- A PC added for a sent session joins the TV's PC list at once, so the stream can start straight away. Build fix: `@Override` kept on `onCreate`.
+
+## 12.2-test170 (2026-10-18)
+- TV receiver: a handheld's identity for an unpaired PC is used for that session only. It is saved to session files, the PC is added for the session, and both are removed when the stream stops or the app closes. No prompt on the TV.
+
+## 12.2-test169 (2026-10-18)
+- Handheld: when the TV is not paired with the PC, the handheld sends its Sunshine identity encrypted to the TV's key (X25519 + HKDF-SHA256 + AES-256-GCM). Only ciphertext crosses the network.
+
+## 12.2-test168 (2026-10-18)
+- TV receiver publishes an identity key and whether it is paired with the PC, so a handheld knows when to send its identity.
+
+## 12.2-test167 (2026-10-17)
+- Decode delay now measures the decoder directly (frame in to frame out), not from host timestamps that read 0.
+
+## 12.2-test166 (2026-10-17)
+- Quick menu shows up to five stat tiles, so Decode delay is visible.
+
 ## 12.2-test165 (2026-10-17)
 - PC stream Quick menu shows Decode delay (average decoder time per frame), so Ultra low latency can be compared on a device. The Quick menu now shows up to five stat tiles.
 
