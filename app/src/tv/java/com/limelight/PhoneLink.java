@@ -9,10 +9,14 @@ import com.limelight.computers.ComputerDatabaseManager;
 import com.limelight.home.Ps5Store;
 import com.limelight.home.Xbox;
 import com.limelight.nvstream.http.ComputerDetails;
+import com.limelight.nvstream.http.NvApp;
+import com.limelight.nvstream.http.NvHTTP;
+import com.limelight.utils.CacheHelper;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.io.StringReader;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -145,7 +149,9 @@ public class PhoneLink {
                         + ",\"pc\":" + quote(pc == null ? "" : pc.name)
                         + ",\"xbox\":" + Xbox.INSTANCE.signedIn(ctx)
                         + ",\"version\":" + PROTOCOL_VERSION
-                        + ",\"id\":" + quote(tvId()) + "}");
+                        + ",\"id\":" + quote(tvId())
+                        + ",\"identityKey\":" + quote(identityKey())
+                        + ",\"paired\":" + pairedNow(pc) + "}");
             } else if ("GET".equals(method) && path.startsWith("/status")) {
                 send(s, 200, "{\"state\":" + quote(playState) + ",\"error\":" + quote(playError == null ? "" : playError)
                         + ",\"seq\":" + playSeq + "}");
@@ -165,6 +171,13 @@ public class PhoneLink {
                 PhoneGamepad.setDirect("direct".equals(field(json, "pad")) && field(json, "ps5host") == null && field(json, "xboxId") == null);
                 PhoneGamepad.setPhoneHost(phoneIp);
                 PhoneGamepad.setPadKey(field(json, "padKey"));   // key to authorize with the phone's pad server
+                // A device with no PC pairing sent its identity: use it for this session only.
+                String identity = field(json, "identity");
+                if (identity != null && !identity.isEmpty() && !acceptIdentity(identity)) {
+                    send(s, 400, "{\"error\":\"identity not accepted\"}");
+                    s.close();
+                    return;
+                }
                 // PS5 Remote Play (native chiaki): the phone sends the console's host + registration keys.
                 String ps5host = field(json, "ps5host");
                 if (ps5host != null && !ps5host.isEmpty()) {
@@ -177,9 +190,10 @@ public class PhoneLink {
                     String err = playXbox(field(json, "xboxId"), field(json, "xboxName"), from);
                     if (err == null) send(s, 200, "{\"ok\":1}");
                     else send(s, 400, "{\"error\":" + quote(err) + "}");
-                } else if (appId != null && play(appId, appName, from)) send(s, 200, "{\"ok\":1}");
+                } else if ((appId != null || appName != null) && play(appId, appName, from)) send(s, 200, "{\"ok\":1}");
                 else send(s, 400, "{\"error\":\"no app id, or no paired PC\"}");
             } else if ("POST".equals(method) && path.startsWith("/stop")) {
+                endSessionIdentity(ctx);
                 // The sender takes its game back (Play here instead) or stops: end the stream it started here and go
                 // home. Disconnect only; {"quit":true} quits the game on the PC too. Only the sender of the last
                 // /play may do this (it presents the same padKey).
@@ -245,21 +259,137 @@ public class PhoneLink {
 
     // Show "sent from" on the TV for a moment, then start the stream through the trampoline (it handles the paired
     // PC and the connection).
+    /** The last answer from the PC about this TV's pairing. Null until the first check finishes. */
+    private static volatile Boolean pcAccepts;
+    private static final java.util.concurrent.atomic.AtomicBoolean checking = new java.util.concurrent.atomic.AtomicBoolean();
+
+    /**
+     * Whether this TV can really stream from [pc]. A saved certificate alone is not enough: the PC must still accept this
+     * TV's identity. The PC is asked in the background, so the discovery reply stays quick; it reports the last answer.
+     */
+    private boolean pairedNow(ComputerDetails pc) {
+        if (pc == null || pc.serverCert == null) return false;
+        if (checking.compareAndSet(false, true)) {
+            final ComputerDetails target = pc;
+            new Thread(() -> {
+                try { pcAccepts = pcAcceptsUs(target); } finally { checking.set(false); }
+            }).start();
+        }
+        Boolean last = pcAccepts;
+        return last == null || last;
+    }
+
+    private boolean pcAcceptsUs(ComputerDetails pc) {
+        try {
+            ComputerDetails.AddressTuple addr = pc.localAddress != null ? pc.localAddress : pc.activeAddress;
+            if (addr == null) return false;
+            int httpsPort = pc.httpsPort > 0 ? pc.httpsPort : 47984;
+            com.limelight.nvstream.http.NvHTTP http = new com.limelight.nvstream.http.NvHTTP(addr, httpsPort,
+                    new com.limelight.computers.IdentityManager(ctx).getUniqueId(), pc.serverCert,
+                    com.limelight.binding.PlatformBinding.getCryptoProvider(ctx));
+            return http.getPairState() == com.limelight.nvstream.http.PairingManager.PairState.PAIRED;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** The PC a sent identity came with, while its session is open. Null when this TV uses its own pairing. */
+    private static volatile String sessionPcUuid;
+
+    /** Opens an identity sent by another MoonCast device: saved as session files, and its PC added for this session. */
+    private boolean acceptIdentity(String blob) {
+        try {
+            identityKey();   // makes this run's receiver key if it isn't there yet
+            org.json.JSONObject j = com.limelight.identity.IdentityTransfer.openIdentity(
+                    identityKeys.getPrivate(), com.limelight.identity.IdentityTransfer.rawPublic(identityKeys.getPublic()), blob);
+            java.io.File dir = ctx.getFilesDir();
+            writeFile(new java.io.File(dir, "session-client.crt"), android.util.Base64.decode(j.getString("cert"), android.util.Base64.DEFAULT));
+            writeFile(new java.io.File(dir, "session-client.key"), android.util.Base64.decode(j.getString("key"), android.util.Base64.DEFAULT));
+
+            ComputerDetails pc = new ComputerDetails();
+            pc.uuid = j.getString("uuid");
+            pc.name = j.getString("name");
+            pc.localAddress = new ComputerDetails.AddressTuple(j.getString("address"), j.getInt("port"));
+            pc.activeAddress = pc.localAddress;
+            pc.serverCert = (java.security.cert.X509Certificate) java.security.cert.CertificateFactory.getInstance("X.509")
+                    .generateCertificate(new java.io.ByteArrayInputStream(
+                            android.util.Base64.decode(j.getString("serverCert"), android.util.Base64.DEFAULT)));
+            pc.pairState = com.limelight.nvstream.http.PairingManager.PairState.PAIRED;
+            pc.httpsPort = 47984;
+            pc.state = ComputerDetails.State.ONLINE;
+            ComputerDatabaseManager db = new ComputerDatabaseManager(ctx);
+            try { db.updateComputer(pc); } finally { db.close(); }
+            sessionPcUuid = pc.uuid;
+            com.limelight.computers.ComputerManagerService.addSessionComputer(pc);
+            return true;
+        } catch (Exception e) {
+            endSessionIdentity(ctx);
+            return false;
+        }
+    }
+
+    private static void writeFile(java.io.File f, byte[] data) throws java.io.IOException {
+        try (java.io.FileOutputStream out = new java.io.FileOutputStream(f)) { out.write(data); }
+    }
+
+    /** Tells the home screen a session PC went away, so its card goes at once. */
+    public interface SessionListener { void onSessionEnded(String uuid); }
+    public static volatile SessionListener sessionListener;
+
+    /** Removes the session identity and its PC entry. Called when the stream stops and when the TV app closes. */
+    public static void endSessionIdentity(Context c) {
+        new java.io.File(c.getFilesDir(), "session-client.crt").delete();
+        new java.io.File(c.getFilesDir(), "session-client.key").delete();
+        String uuid = sessionPcUuid;
+        sessionPcUuid = null;
+        if (uuid != null) {
+            ComputerDatabaseManager db = new ComputerDatabaseManager(c);
+            try {
+                ComputerDetails pc = db.getComputerByUUID(uuid);
+                if (pc != null) {
+                    com.limelight.computers.ComputerManagerService.removeSessionComputer(pc);
+                    db.deleteComputer(pc);
+                }
+            } finally { db.close(); }
+            SessionListener l = sessionListener;
+            if (l != null) l.onSessionEnded(uuid);
+        }
+    }
+
     private boolean play(String appId, String appName, String from) {
-        final ComputerDetails pc = firstComputer();
+        final ComputerDetails pc;
+        if (sessionPcUuid != null) {
+            ComputerDatabaseManager db = new ComputerDatabaseManager(ctx);
+            try { pc = db.getComputerByUUID(sessionPcUuid); } finally { db.close(); }
+        } else pc = firstComputer();
         if (pc == null) return false;
+        // Any sender (phone, tablet, Odin) names the game, and the game ID is looked up on THIS TV's PC. A sender's own
+        // ID is only the fallback: its PC list may number the games differently.
+        final String localId = appName == null ? null : localAppId(pc.uuid, appName);
+        if (localId == null && appId == null) return false;
         main.post(() -> listener.onIncoming(appName == null ? "Your game" : appName, from));
         main.postDelayed(() -> {
             replaceStreams();
             Intent i = new Intent(ctx, ShortcutTrampoline.class);
             i.putExtra(AppView.UUID_EXTRA, pc.uuid);
             i.putExtra(AppView.NAME_EXTRA, pc.name);
-            i.putExtra(Game.EXTRA_APP_ID, appId);
+            i.putExtra(Game.EXTRA_APP_ID, localId != null ? localId : appId);
             if (appName != null) i.putExtra(Game.EXTRA_APP_NAME, appName);
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             ctx.startActivity(i);
         }, 700);
         return true;
+    }
+
+    /** The game's ID in this TV's cached app list for the PC, or null if the list isn't cached or has no such game. */
+    private String localAppId(String uuid, String name) {
+        try {
+            String raw = CacheHelper.readInputStreamToString(CacheHelper.openCacheFileForInput(ctx.getCacheDir(), "applist", uuid));
+            if (raw == null || raw.isEmpty()) return null;
+            for (NvApp a : NvHTTP.getAppListByReader(new StringReader(raw)))
+                if (a.getAppName().equals(name)) return String.valueOf(a.getAppId());
+        } catch (Exception ignored) { }
+        return null;
     }
 
     /** A new /play replaces whatever player is open (even one showing an error): close it, the new one starts fresh. */
@@ -310,6 +440,19 @@ public class PhoneLink {
     }
 
     /** Same for the life of this install; lets a handheld recognise this TV after its address changes. */
+    /** This TV's public key for identity transfer (raw X25519, base64). Made once per run; the private half never leaves. */
+    private static java.security.KeyPair identityKeys;
+
+    private synchronized String identityKey() {
+        try {
+            if (identityKeys == null) identityKeys = com.limelight.identity.IdentityTransfer.newReceiverKeys();
+            return android.util.Base64.encodeToString(
+                    com.limelight.identity.IdentityTransfer.rawPublic(identityKeys.getPublic()), android.util.Base64.NO_WRAP);
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
     private String tvId() {
         String a = android.provider.Settings.Secure.getString(ctx.getContentResolver(), android.provider.Settings.Secure.ANDROID_ID);
         return a == null ? "" : Integer.toHexString(a.hashCode());

@@ -38,7 +38,15 @@ object TvSender : MoveToTv.Handler {
         when (t.kind) {
             // "pad":"direct": this device opens its own controller-only session on the PC (DirectPad), so the TV must not
             // relay the pad too. padKey still goes along: it authorizes /stop and /pad (the relay, if direct fails).
-            "pc" -> { j.put("appId", t.appId.toString()).put("appName", t.title); if (direct) j.put("pad", "direct") }
+            "pc" -> {
+                j.put("appId", t.appId.toString()).put("appName", t.title); if (direct) j.put("pad", "direct")
+                // A TV with no pairing gets this device's identity, sealed to the TV's key (identity transfer).
+                if (!tv.paired && tv.identityKey.isNotEmpty()) {
+                    val pc = com.limelight.computers.ComputerDatabaseManager(ctx).let { db ->
+                        try { db.getComputerByUUID(t.pcUuid ?: "") } finally { db.close() } }
+                    com.limelight.identity.IdentityTransfer.sealIdentity(ctx, tv.identityKey, pc)?.let { j.put("identity", it) }
+                }
+            }
             "ps" -> {
                 val c = Ps5Store.all(ctx).firstOrNull { it.host == t.psHost }
                 val regist = t.registKey ?: c?.registKey; val morning = t.morning ?: c?.morning

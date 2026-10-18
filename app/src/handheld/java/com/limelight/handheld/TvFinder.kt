@@ -28,14 +28,16 @@ object TvFinder {
     /** A TV that answered within this long counts as on this network. */
     private const val HERE_MS = 150_000L
 
-    class Tv(val id: String, val ip: String, val name: String, val pc: String, val xbox: Boolean, val version: Int, val seen: Long) {
+    class Tv(val id: String, val ip: String, val name: String, val pc: String, val xbox: Boolean, val version: Int, val seen: Long,
+             val identityKey: String = "", val paired: Boolean = true) {
         /** /play takes an Xbox (MoonCast TV from this release on). */
         val canXbox get() = version >= 2
         fun json(): JSONObject = JSONObject().put("id", id).put("ip", ip).put("name", name).put("pc", pc)
-                .put("xbox", xbox).put("version", version).put("seen", seen)
+                .put("xbox", xbox).put("version", version).put("seen", seen).put("identityKey", identityKey).put("paired", paired)
         companion object {
             fun of(j: JSONObject) = Tv(j.optString("id"), j.optString("ip"), j.optString("name", "MoonCast TV"),
-                    j.optString("pc"), j.optBoolean("xbox"), j.optInt("version", 1), j.optLong("seen"))
+                    j.optString("pc"), j.optBoolean("xbox"), j.optInt("version", 1), j.optLong("seen"),
+                    j.optString("identityKey"), j.optBoolean("paired", true))
         }
     }
 
@@ -156,7 +158,8 @@ object TvFinder {
             if (j.optInt("mooncast_native") != 1) return null
             val id = j.optString("id").ifEmpty { "ip:$ip" }   // TVs from before the "id" field: known by address
             Tv(id, ip, j.optString("name", "MoonCast TV").ifBlank { "MoonCast TV" }, j.optString("pc"), j.optBoolean("xbox"),
-                    j.optInt("version", 1), System.currentTimeMillis())
+                    j.optInt("version", 1), System.currentTimeMillis(),
+                    j.optString("identityKey"), j.optBoolean("paired", true))
         } catch (e: Exception) { null } finally { c?.disconnect() }
     }
 }

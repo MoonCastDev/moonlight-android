@@ -48,7 +48,7 @@ class QuickMenu(private val act: Activity) {
 
     val isShowing get() = root != null
 
-    /** Show the menu. [stats] is polled every second while it's open: (value, label) pairs, up to four. */
+    /** Show the menu. [stats] is polled every second while it's open: (value, label) pairs, up to five. */
     fun show(title: String, subtitle: String, stats: Stats, items: List<Item>) {
         FeelSounds.warm(act)
         // one sound per action: an item that reopens the menu (a sub-list) already played its own
@@ -66,7 +66,7 @@ class QuickMenu(private val act: Activity) {
 
         val grid = GridLayout(act).apply { columnCount = 2 }
         val first = stats.get()
-        statsViews = (0 until minOf(4, first.size)).map { i ->
+        statsViews = (0 until minOf(5, first.size)).map { i ->
             val n = tv.text(first[i].first, 34, tv.p.moon, tv.display(600))
             grid.addView(tv.col().apply {
                 background = tv.round(tv.p.night, 16, tv.p.line, 1)
@@ -151,7 +151,7 @@ class QuickMenu(private val act: Activity) {
 
         val first = stats.get().map { short(it) }
         val statRow = t.row()
-        statsViews = (0 until minOf(4, first.size)).map { i ->
+        statsViews = (0 until minOf(5, first.size)).map { i ->
             val n = txt(first[i].first, statSize(first[i].first), sInk, 800).apply { ellipsize = null }
             statRow.addView(t.col().apply {
                 background = t.round(sBg, 10)
@@ -360,7 +360,9 @@ object StreamStats {
     @Volatile var rttMs = 0
     @Volatile var lossPct = 0f
     @Volatile var size = ""
-    @JvmStatic fun update(fps: Float, rttMs: Int, lossPct: Float, size: String) {
-        this.fps = fps; this.rttMs = rttMs; this.lossPct = lossPct; this.size = size
+    /** Average time the decoder spends on one frame, in ms. */
+    @Volatile var decodeMs = 0f
+    @JvmStatic fun update(fps: Float, rttMs: Int, lossPct: Float, size: String, decodeMs: Float) {
+        this.fps = fps; this.rttMs = rttMs; this.lossPct = lossPct; this.size = size; this.decodeMs = decodeMs
     }
 }

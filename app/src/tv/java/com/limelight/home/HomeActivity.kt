@@ -107,6 +107,10 @@ class HomeActivity : Activity(), PhoneLink.Listener {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        Profile.syncPcSettings(this)
+        com.limelight.PhoneLink.sessionListener = com.limelight.PhoneLink.SessionListener { uuid ->
+            runOnUiThread { pcs.remove(uuid); apps.remove(uuid); rawLists.remove(uuid); render(force = true) }
+        }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         tv = Tv(this, prefs.getBoolean("oled", false))
         buildShell()
@@ -138,6 +142,8 @@ class HomeActivity : Activity(), PhoneLink.Listener {
     }
 
     override fun onDestroy() {
+        com.limelight.PhoneLink.endSessionIdentity(this)
+        com.limelight.PhoneLink.sessionListener = null
         probes.shutdownNow()
         glide.detach()
         loaders.values.forEach { it.cancelBackgroundLoads(); it.cancelForegroundLoads(); it.freeCacheMemory() }
@@ -322,6 +328,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
 
     /** Rebuild the current page when something visible changed, keeping focus on the same item. */
     private fun render(force: Boolean = false, focusContent: Boolean = true) {
+        Profile.syncPcSettings(this)
         val sig = signature()
         if (!force && sig == lastSig) return
         lastSig = sig
@@ -935,6 +942,9 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         }
         when (settingsGroup) {
             "video" -> {
+                // Home and Away: one switch for PC, PlayStation and Xbox. Each profile keeps its own settings.
+                choice(list, Profile.PREF, "Streaming profile", "Home: best quality on your network. Away: lighter settings for PlayStation Network and slower links",
+                        listOf("Home" to "home", "Away" to "away"), "home")
                 // Native: this screen's real panel size (its display mode), as in Moonlight/Artemis' "Native (WxH)"
                 val native = nativeResolution()
                 val presets = listOf("720p" to "1280x720", "1080p" to "1920x1080", "1440p" to "2560x1440", "4K" to "3840x2160")
@@ -1006,16 +1016,40 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                         Psn.signOut(this); render(force = true) } }
                 else action(list, "set:psn", "PlayStation Network", "Sign in once to add a PS5 here and play it away from home", "Sign in") {
                     startActivityForResult(Intent(this, PsnSignInActivity::class.java), REQ_PSN) }
-                choice(list, "ps5_resolution", "Resolution", "The PS5 streams up to 1080p", listOf("720p" to "720", "1080p" to "1080"), "1080")
-                info(list, "Frame rate", "60 fps")
-                choice(list, "ps5_bitrate_home", "Bitrate at home", "Auto: 30 Mbps on fast Wi-Fi or cable, 20 otherwise",
-                        listOf("Auto" to "auto", "10" to "10", "15" to "15", "20" to "20", "30" to "30"), "auto")
-                choice(list, "ps5_codec", "Video codec", "H.265 looks better at the same bitrate", listOf("H.264" to "h264", "H.265" to "h265"), "h265")
+                // Same four rows for each profile; the General profile decides which set they edit. Auto shows both sets.
+                val mode = Profile.mode(this)
+                if (mode != "away") {
+                    choice(list, "ps5_resolution", "Resolution", "The PS5 streams up to 1080p", listOf("720p" to "720", "1080p" to "1080"), "1080")
+                    choice(list, "ps5_fps_home", "Frame rate", "60 fps is smoother; 30 fps lets a weak link keep up",
+                            listOf("60 fps" to "60", "30 fps" to "30", "Custom" to "custom"), "60",
+                            onPick = { if (it == "custom") customDialog("ps5_fps_home", "Custom frame rate", "fps", 15, 60, 60) })
+                    if (stream.getString("ps5_fps_home", "60") == "custom")
+                        customNumber(list, "ps5_fps_home", "Custom frame rate", "15 to 60 fps. The PS5 may cap it at 60", "fps", 15, 60, 60)
+                    choice(list, "ps5_bitrate_home", "Bitrate", "Auto: 30 Mbps on fast Wi-Fi or cable, 20 otherwise",
+                            listOf("Auto" to "auto", "10" to "10", "15" to "15", "20" to "20", "30" to "30", "Custom" to "custom"), "auto",
+                            onPick = { if (it == "custom") customDialog("ps5_bitrate_home", "Custom bitrate", "Mbps", 2, 50, 20) })
+                    if (stream.getString("ps5_bitrate_home", "auto") == "custom")
+                        customNumber(list, "ps5_bitrate_home", "Custom bitrate", "2 to 50 Mbps", "Mbps", 2, 50, 20)
+                    choice(list, "ps5_codec", "Video codec", "H.265 looks better at the same bitrate", listOf("H.264" to "h264", "H.265" to "h265"), "h265")
+                }
+                if (mode != "home") {
+                    choice(list, "ps5_away_quality", "Resolution", "Auto follows this TV's Wi-Fi: 1080p on a strong link, 720p on a weak one",
+                            listOf("Auto" to "auto", "540p" to "540", "720p" to "720", "1080p" to "1080"), "auto")
+                    choice(list, "away_fps", "Frame rate", "60 fps is smoother; 30 fps lets a weak link keep up",
+                            listOf("60 fps" to "60", "30 fps" to "30", "Custom" to "custom"), "60",
+                            onPick = { if (it == "custom") customDialog("away_fps", "Custom frame rate", "fps", 15, 60, 60) })
+                    if (stream.getString("away_fps", "60") == "custom")
+                        customNumber(list, "away_fps", "Custom frame rate", "15 to 60 fps. The PS5 may cap it at 60", "fps", 15, 60, 60)
+                    choice(list, "away_bitrate", "Bitrate", "Auto: capped by this TV's Wi-Fi link",
+                            listOf("Auto" to "auto", "8" to "8", "10" to "10", "15" to "15", "Custom" to "custom"), "auto",
+                            onPick = { if (it == "custom") customDialog("away_bitrate", "Custom bitrate", "Mbps", 2, 50, 10) })
+                    if (stream.getString("away_bitrate", "auto") == "custom")
+                        customNumber(list, "away_bitrate", "Custom bitrate", "2 to 50 Mbps", "Mbps", 2, 50, 10)
+                    choice(list, "away_codec", "Video codec", "H.265 looks better at the same bitrate", listOf("H.264" to "h264", "H.265" to "h265"), "h265")
+                }
                 choice(list, "ps5_on_disconnect", "When I disconnect", "What happens to the PS5 after you leave a game",
                         listOf("Ask" to "ask", "Rest mode" to "rest", "Keep it on" to "keep"), "ask")
                 toggle(list, "ps5_swap_cross_circle", "Swap Cross and Circle", "For the Japanese layout", false)
-                choice(list, "ps5_away_quality", "Quality away from home", "Auto follows this TV's Wi-Fi: 1080p on a strong link, 720p on a weak one",
-                        listOf("Auto" to "auto", "540p" to "540", "720p" to "720", "1080p" to "1080"), "auto")
                 val pin = prefs.getString("ps5_login_pin", "") ?: ""
                 action(list, "set:pspin", "Console PIN", "Signs in for you when the PS5 asks for its 4-digit login PIN",
                         if (pin.isEmpty()) "Not set" else "••••") { enterLoginPin() }
@@ -1123,7 +1157,28 @@ class HomeActivity : Activity(), PhoneLink.Listener {
     }
 
     /** Options as a segmented control; A moves to the next one. */
-    private fun choice(list: LinearLayout, key: String, title: String, sub: String, options: List<Pair<String, String>>, def: String) {
+    /** A Custom value for a choice row: tapping it asks for a number, and saving a number switches the row to Custom. */
+    private fun customNumber(list: LinearLayout, key: String, title: String, sub: String, unit: String, min: Int, max: Int, def: Int) {
+        val cur = stream.getString(key + "_custom", def.toString()) ?: def.toString()
+        action(list, "set:$key-custom", title, sub, "$cur $unit") { customDialog(key, title, unit, min, max, def) }
+    }
+
+    /** Asks for a Custom number and saves it; the row switches to Custom. */
+    private fun customDialog(key: String, title: String, unit: String, min: Int, max: Int, def: Int) {
+        val cur = stream.getString(key + "_custom", def.toString()) ?: def.toString()
+        entryDialog(title, "$min to $max $unit", unit, cur, true, { v ->
+            val n = v.trim().toIntOrNull()
+            if (n == null || n !in min..max) "Enter a number from $min to $max"
+            else {
+                stream.edit().putString(key + "_custom", n.toString()).putString(key, "custom").apply()
+                render(force = true)
+                null
+            }
+        })
+    }
+
+    private fun choice(list: LinearLayout, key: String, title: String, sub: String, options: List<Pair<String, String>>, def: String,
+                       onPick: ((String) -> Unit)? = null) {
         val cur = stream.getString(key, def)
         val seg = tv.row().apply { background = tv.round(0, 20, tv.p.line, 1) }
         options.forEach { (label, v) ->
@@ -1135,8 +1190,10 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         }
         settingRow(list, key, title, sub, true, seg) {
             val i = options.indexOfFirst { it.second == cur }
-            stream.edit().putString(key, options[(i + 1) % options.size].second).apply()
+            val next = options[(i + 1) % options.size].second
+            stream.edit().putString(key, next).apply()
             render(force = true)
+            onPick?.invoke(next)
         }
     }
 
