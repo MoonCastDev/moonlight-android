@@ -269,17 +269,19 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
                 val s = Session(connectInfo(remote), null, false)
                 s.eventCallback = { ev -> onEvent(ev) }
                 s.setSurface(surface)
+                // Only the first picture counts as success; a quit before that is a failed attempt -> retry.
+                // Remote: the data-channel hole-punch may fail. Home: the console may still be waking up.
+                // Armed before start() (#38): a console still waking refuses within milliseconds, often before
+                // start() returns, and a quit with no attempt armed closed the screen instead of retrying.
+                val latch = java.util.concurrent.CountDownLatch(1)
+                attemptQuit = false
+                attemptLatch = latch
                 val err = s.start()
-                if (closed) { try { s.stop(); s.dispose() } catch (e: Exception) {}; return }  // torn down mid-connect
+                if (closed) { attemptLatch = null; try { s.stop(); s.dispose() } catch (e: Exception) {}; return }  // torn down mid-connect
                 if (err.isSuccess) {
                     session = s
                     if (!remote) step(3)
                     Ps5Pad.start(s)   // phone drives the controller
-                    // Only the first picture counts as success; a quit before that is a failed attempt -> retry.
-                    // Remote: the data-channel hole-punch may fail. Home: the console may still be waking up.
-                    val latch = java.util.concurrent.CountDownLatch(1)
-                    attemptLatch = latch
-                    attemptQuit = false
                     latch.await(120, java.util.concurrent.TimeUnit.SECONDS)
                     attemptLatch = null
                     if (connected || closed) return
@@ -318,9 +320,11 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
                     }
                     continue
                 }
+                attemptLatch = null
                 Log.w(TAG, "start attempt ${attempt + 1} failed: $err")
                 try { s.dispose() } catch (e: Exception) {}   // always release the native session so none linger on the PS5
             } catch (e: Exception) {
+                attemptLatch = null
                 Log.w(TAG, "connect attempt ${attempt + 1}: $e")
             }
             attempt++
