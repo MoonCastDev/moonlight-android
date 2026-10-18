@@ -56,6 +56,15 @@ class PhoneGamepad {
     /** The last phone address that drove a /play (used by the PS5 pad relay too). */
     static String phoneHost() { return phoneHost; }
 
+    /**
+     * The game the sender started has ended: forget the sender (#40). Otherwise a game started later on the TV itself
+     * kept calling that device for its controller every few seconds. The next /play sets it again.
+     */
+    static void forgetPhone() {
+        phoneHost = null;
+        padKey = null;
+    }
+
     /** The phone's pad-server session key, passed in /play; the relay presents it so the pad server authorizes us. */
     static void setPadKey(String k) {
         boolean changed = k == null ? padKey != null : !k.equals(padKey);
