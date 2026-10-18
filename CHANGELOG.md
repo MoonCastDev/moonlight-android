@@ -1,5 +1,8 @@
 # Changelog
 
+## 12.2-test185 (2026-10-18)
+- Fix (#44): the "can't open database" error was still logged on every check from a handheld, from Moonlight's two other old databases (computers2.db, computers3.db). Those are skipped too when they don't exist.
+
 ## 12.2-test184 (2026-10-18)
 - Small fixes from the test173 pass (#44):
   - TV: the PS5 and Xbox detail panels show the picture the profile in use streams with (for example "1080p, 60 fps (Home)") instead of always "60 fps, set by this TV's link".
