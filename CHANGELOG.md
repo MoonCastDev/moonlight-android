@@ -1,5 +1,8 @@
 # Changelog
 
+## 12.2-test176 (2026-10-18)
+- Fix (#37 follow-up): ending a PS5 game after the PS5 had already closed the stream (Disconnect, then rest mode) could crash the TV app. The decoder was deleted while its output thread was still running; it now waits for that thread first (native patch `native/mc_decoder_join_patch.py`). Only reachable since test174 freed the session.
+
 ## 12.2-test175 (2026-10-18)
 - Fix (#38): Wake and play with the PS5 in rest mode no longer gives up at once with "Couldn't reach your PlayStation". A console still waking refuses the session within milliseconds, often before the session start returned, so the retry wasn't armed yet and the screen closed. It's now armed before the start, so the app keeps retrying for about a minute while the PS5 wakes.
 
