@@ -1,5 +1,8 @@
 # Changelog
 
+## 12.2-test180 (2026-10-18)
+- Fix (#41): the TV's link (GET /status) goes back to "idle" when the last stream screen closes, after a Stop from the handheld, a stop on the TV or the game ending. Before, it kept saying "playing" until the next game. A failed start still reports "failed" with its message until the next game, so the handheld can show why.
+
 ## 12.2-test179 (2026-10-18)
 - Fix (#43): in a TV number box (Custom bitrate, Custom frame rate, custom resolution), Down on the remote or pad now leaves the box for the Save button, and A in the box saves, as its glyph says. Before, only the keyboard's Enter saved. Also, closing a Custom box without saving no longer leaves the row on Custom: it moves on to the first option.
 
