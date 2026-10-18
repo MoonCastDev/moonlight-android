@@ -1173,10 +1173,7 @@ class HandheldHomeActivity : Activity() {
                 if (mode != "away") {
                     choice(list, stream, "ps5_resolution", "Resolution", "The PS5 streams up to 1080p", listOf("720p" to "720", "1080p" to "1080"), "1080")
                     choice(list, stream, "ps5_fps_home", "Frame rate", "60 fps is smoother; 30 fps lets a weak link keep up",
-                            listOf("60 fps" to "60", "30 fps" to "30", "Custom" to "custom"), "60",
-                            onPick = { if (it == "custom") customDialog(stream, "ps5_fps_home", "Custom frame rate", "fps", 15, 60, 60) })
-                    if (stream.getString("ps5_fps_home", "60") == "custom")
-                        customNumber(list, stream, "ps5_fps_home", "Custom frame rate", "15 to 60 fps. The PS5 may cap it at 60", "fps", 15, 60, 60)
+                            listOf("60 fps" to "60", "30 fps" to "30"), "60")   // PS5: 30 or 60 only (#39)
                     choice(list, stream, "ps5_bitrate_home", "Bitrate", "Auto: 30 Mbps on fast Wi-Fi, 20 otherwise",
                             listOf("Auto" to "auto", "10" to "10", "15" to "15", "20" to "20", "30" to "30", "Custom" to "custom"), "auto",
                             onPick = { if (it == "custom") customDialog(stream, "ps5_bitrate_home", "Custom bitrate", "Mbps", 2, 50, 20) })
@@ -1188,10 +1185,7 @@ class HandheldHomeActivity : Activity() {
                     choice(list, stream, "ps5_away_quality", "Resolution", "Auto follows the Wi-Fi: 1080p strong, 720p weak",
                             listOf("Auto" to "auto", "540p" to "540", "720p" to "720", "1080p" to "1080"), "auto")
                     choice(list, stream, "away_fps", "Frame rate", "60 fps is smoother; 30 fps lets a weak link keep up",
-                            listOf("60 fps" to "60", "30 fps" to "30", "Custom" to "custom"), "60",
-                            onPick = { if (it == "custom") customDialog(stream, "away_fps", "Custom frame rate", "fps", 15, 60, 60) })
-                    if (stream.getString("away_fps", "60") == "custom")
-                        customNumber(list, stream, "away_fps", "Custom frame rate", "15 to 60 fps. The PS5 may cap it at 60", "fps", 15, 60, 60)
+                            listOf("60 fps" to "60", "30 fps" to "30"), "60")   // PS5: 30 or 60 only (#39)
                     choice(list, stream, "away_bitrate", "Bitrate", "Auto: capped by the Wi-Fi link",
                             listOf("Auto" to "auto", "8" to "8", "10" to "10", "15" to "15", "Custom" to "custom"), "auto",
                             onPick = { if (it == "custom") customDialog(stream, "away_bitrate", "Custom bitrate", "Mbps", 2, 50, 10) })
