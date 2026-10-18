@@ -155,10 +155,19 @@ class HandheldHomeActivity : Activity() {
         if (stream.getString("list_resolution", null) == rawNativeSize())
             stream.edit().putString("list_resolution", nativeResolution()).apply()
         MoveToTv.handler = TvSender   // the players' Quick menu offers "Move to <TV>" through this
+        // Rebuilt for a theme change (recreate): come back to the same page, not Home (#44)
+        b?.getString(STATE_PAGE)?.let { n -> Page.values().firstOrNull { it.name == n }?.let { page = it } }
+        b?.getString(STATE_GROUP)?.let { settingsGroup = it }
         buildShell()
         bindService(Intent(this, ComputerManagerService::class.java), conn, Context.BIND_AUTO_CREATE)
         takeIntent(intent)
         (getSystemService(Context.INPUT_SERVICE) as InputManager).registerInputDeviceListener(pads, ui)
+    }
+
+    override fun onSaveInstanceState(out: Bundle) {
+        super.onSaveInstanceState(out)
+        out.putString(STATE_PAGE, page.name)
+        out.putString(STATE_GROUP, settingsGroup)
     }
 
     override fun onNewIntent(i: Intent) {
@@ -2036,6 +2045,8 @@ class HandheldHomeActivity : Activity() {
     }
 
     companion object {
+        private const val STATE_PAGE = "hh_page"
+        private const val STATE_GROUP = "hh_settings_group"
         const val EXTRA_PLAY_HERE = "play_here"
         private const val REQ_PSN_REGISTER = 41
         private const val REQ_PSN = 42

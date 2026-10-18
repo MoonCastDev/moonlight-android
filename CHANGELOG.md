@@ -1,5 +1,14 @@
 # Changelog
 
+## 12.2-test184 (2026-10-18)
+- Small fixes from the test173 pass (#44):
+  - TV: the PS5 and Xbox detail panels show the picture the profile in use streams with (for example "1080p, 60 fps (Home)") instead of always "60 fps, set by this TV's link".
+  - TV: when a box or menu closes (Save, Cancel, Back), focus goes back to the row that opened it, not the first item of the page.
+  - Handheld: choosing a theme keeps you on the Theme page; before, the app came back on Home, so the next Back closed it.
+  - Handheld: before sending a PC game to an unpaired TV, it asks the TV for its key again (the TV makes a new one each time its app starts), so a remembered key can't be stale.
+  - Both: no more "can't open computers.db" error in the log on every check (an old Moonlight database that doesn't exist on new installs).
+  - Decided: no Retro tab in the handheld's All games (#25); retro games stay under PC as the ES-DE app.
+
 ## 12.2-test183 (2026-10-18)
 - PC streams get a Custom frame rate (#42), TV and handheld: a "Custom frame rate" row under Frame rate takes any rate from 15 to 120 fps, like Custom resolution and Custom bitrate. It's saved per profile like the other PC settings. "Turn off" on the TV goes back to 60.
 

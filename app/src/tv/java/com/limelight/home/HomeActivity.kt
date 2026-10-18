@@ -821,9 +821,25 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                 tv.pill("Remove", null, false) { confirmRemovePs(c) }.apply { tag = "remove" })
         val route = if (pw != Ps5Store.Power.NOT_FOUND) "Home network" else if (Psn.signedIn(this)) "PlayStation Network" else "Needs PSN sign-in"
         return detailShell("PS", 0xFF2F5DF0.toInt(), c.name, line, states, actions,
-                panel("Stream", listOf("Route" to route, "Picture" to "60 fps, set by this TV's link", "Quality" to "Auto",
+                panel("Stream", listOf("Route" to route, "Picture" to ps5Picture(), "Quality" to "Auto",
                         "Controller" to "Your phone or a pad on this TV"),
                         "Buttons your pad doesn't have", listOf("PS button" to "L2 + Start", "Touchpad" to "Select + Start")))
+    }
+
+    /** What the PS5 streams with the profile in use (#44): its resolution and frame rate rows. */
+    private fun ps5Picture(): String {
+        val away = Profile.isAway(this)
+        val res = stream.getString(if (away) "ps5_away_quality" else "ps5_resolution", if (away) "auto" else "1080") ?: "auto"
+        val fps = stream.getString(if (away) "away_fps" else "ps5_fps_home", "60") ?: "60"
+        val r = if (res == "auto") "Auto" else "${res}p"
+        val f = if (fps == "30") "30" else "60"   // the PS5 streams at 30 or 60 only
+        return "$r, $f fps (${if (away) "Away" else "Home"})"
+    }
+
+    /** What the Xbox streams with the profile in use (#44). Xbox Remote Play is always 60 fps. */
+    private fun xboxPicture(): String {
+        val r = when (val v = stream.getString("xbox_resolution", "auto")) { "auto", null -> "Auto"; "1081" -> "1080p high"; else -> "${v}p" }
+        return "$r, 60 fps (${if (Profile.isAway(this)) "Away" else "Home"})"
     }
 
     // ---------------------------------------------------------------- Xbox
@@ -858,7 +874,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         return detailShell("XB", 0xFF107C10.toInt(), c.name,
                 (if (on) "On. " else "") + "Play opens Xbox Remote Play on this TV, at home or away, through Xbox network.",
                 listOf((if (on) "On" to "live" else "Asleep" to "rest"), "Signed in" to ""), actions,
-                panel("Stream", listOf("Route" to "Xbox network", "Picture" to "60 fps, set by this TV's link", "Type" to c.type,
+                panel("Stream", listOf("Route" to "Xbox network", "Picture" to xboxPicture(), "Type" to c.type,
                         "Controller" to "A pad on this TV"), "Buttons", listOf("Xbox button" to "Quick menu, Xbox button")))
     }
 
@@ -1768,6 +1784,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
     private fun showOverlay(kind: String, v: View, dim: Boolean = true) {
         if (kind != "idle" && kind != "incoming") FeelSounds.play(this, FeelSounds.Cue.OPEN)
         entryCancel = null   // a new overlay replaces an open entry box; entryDialog sets its own afterwards
+        if (overlayKind == null) overlayReturn = currentFocus?.tag as? String   // where focus goes back to (#44)
         overlayKind = kind
         overlay.removeAllViews()
         overlay.setBackgroundColor(if (dim) (if (tv.oled) 0xE6000000.toInt() else 0xB805080F.toInt()) else tv.p.night)
@@ -1789,7 +1806,13 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         main.descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
         entryCancel?.let { entryCancel = null; it() }   // an entry box closed without saving
         render(force = true)
+        // back to the row that opened the overlay, not the first item of the page (#44)
+        overlayReturn?.let { t -> content.findViewWithTag<View>(t)?.requestFocus() }
+        overlayReturn = null
     }
+
+    /** Tag of the view that had focus when an overlay opened. */
+    private var overlayReturn: String? = null
 
     private fun pickLanguage(langs: Array<String>, names: Array<String>, cur: Int) {
         val card = dialogCard()
