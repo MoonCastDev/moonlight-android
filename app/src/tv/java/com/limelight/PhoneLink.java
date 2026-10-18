@@ -40,6 +40,7 @@ public class PhoneLink {
 
     // GET /status: "idle", "starting" (after /play), "playing" or "failed" with the player's own words
     private static volatile String playState = "idle";
+    private static volatile long lastPlayAt;   // when the last /play came in
     private static volatile String playError = null;
     private static volatile int playSeq = 0;
 
@@ -66,6 +67,9 @@ public class PhoneLink {
                     // #41: the last stream screen closed, so nothing is playing any more. A failure stays reported
                     // (with its words) until the next /play, so the sender can still read why.
                     if (isStream(a) && streams.isEmpty() && !"failed".equals(playState)) playState = "idle";
+                    // #40: forget the sender, unless a new /play just came in (a game switch: the old screen can
+                    // close after the next game's /play has already set the sender)
+                    if (isStream(a) && streams.isEmpty() && System.currentTimeMillis() - lastPlayAt > 10_000) PhoneGamepad.forgetPhone();
                 }
             }
             @Override public void onActivityStarted(android.app.Activity a) { }
@@ -164,6 +168,7 @@ public class PhoneLink {
                         + ",\"seq\":" + playSeq + "}");
             } else if ("POST".equals(method) && path.startsWith("/play")) {
                 playSeq++; playState = "starting"; playError = null;
+                lastPlayAt = System.currentTimeMillis();
                 String json = readBody(in, clen, 16384);   // read it all: a PSN token makes it bigger than one read
                 String appId = field(json, "appId"), appName = field(json, "appName");
                 String sender = field(json, "deviceName");

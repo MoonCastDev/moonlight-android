@@ -1,5 +1,8 @@
 # Changelog
 
+## 12.2-test181 (2026-10-18)
+- Fix (#40): after a game sent by a handheld ended, the TV kept the handheld's address, and a PS5 or Xbox game started later on the TV itself kept calling that handheld for its controller every few seconds. The TV now forgets the sender when the last stream screen closes; the next game a handheld sends sets it again.
+
 ## 12.2-test180 (2026-10-18)
 - Fix (#41): the TV's link (GET /status) goes back to "idle" when the last stream screen closes, after a Stop from the handheld, a stop on the TV or the game ending. Before, it kept saying "playing" until the next game. A failed start still reports "failed" with its message until the next game, so the handheld can show why.
 
