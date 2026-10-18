@@ -1022,12 +1022,12 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                     choice(list, "ps5_resolution", "Resolution", "The PS5 streams up to 1080p", listOf("720p" to "720", "1080p" to "1080"), "1080")
                     choice(list, "ps5_fps_home", "Frame rate", "60 fps is smoother; 30 fps lets a weak link keep up",
                             listOf("60 fps" to "60", "30 fps" to "30", "Custom" to "custom"), "60",
-                            onPick = { if (it == "custom") customDialog("ps5_fps_home", "Custom frame rate", "fps", 15, 60, 60) })
+                            onPick = { if (it == "custom") customDialog("ps5_fps_home", "Custom frame rate", "fps", 15, 60, 60, cancelTo = "60") })
                     if (stream.getString("ps5_fps_home", "60") == "custom")
                         customNumber(list, "ps5_fps_home", "Custom frame rate", "15 to 60 fps. The PS5 may cap it at 60", "fps", 15, 60, 60)
                     choice(list, "ps5_bitrate_home", "Bitrate", "Auto: 30 Mbps on fast Wi-Fi or cable, 20 otherwise",
                             listOf("Auto" to "auto", "10" to "10", "15" to "15", "20" to "20", "30" to "30", "Custom" to "custom"), "auto",
-                            onPick = { if (it == "custom") customDialog("ps5_bitrate_home", "Custom bitrate", "Mbps", 2, 50, 20) })
+                            onPick = { if (it == "custom") customDialog("ps5_bitrate_home", "Custom bitrate", "Mbps", 2, 50, 20, cancelTo = "auto") })
                     if (stream.getString("ps5_bitrate_home", "auto") == "custom")
                         customNumber(list, "ps5_bitrate_home", "Custom bitrate", "2 to 50 Mbps", "Mbps", 2, 50, 20)
                     choice(list, "ps5_codec", "Video codec", "H.265 looks better at the same bitrate", listOf("H.264" to "h264", "H.265" to "h265"), "h265")
@@ -1037,12 +1037,12 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                             listOf("Auto" to "auto", "540p" to "540", "720p" to "720", "1080p" to "1080"), "auto")
                     choice(list, "away_fps", "Frame rate", "60 fps is smoother; 30 fps lets a weak link keep up",
                             listOf("60 fps" to "60", "30 fps" to "30", "Custom" to "custom"), "60",
-                            onPick = { if (it == "custom") customDialog("away_fps", "Custom frame rate", "fps", 15, 60, 60) })
+                            onPick = { if (it == "custom") customDialog("away_fps", "Custom frame rate", "fps", 15, 60, 60, cancelTo = "60") })
                     if (stream.getString("away_fps", "60") == "custom")
                         customNumber(list, "away_fps", "Custom frame rate", "15 to 60 fps. The PS5 may cap it at 60", "fps", 15, 60, 60)
                     choice(list, "away_bitrate", "Bitrate", "Auto: capped by this TV's Wi-Fi link",
                             listOf("Auto" to "auto", "8" to "8", "10" to "10", "15" to "15", "Custom" to "custom"), "auto",
-                            onPick = { if (it == "custom") customDialog("away_bitrate", "Custom bitrate", "Mbps", 2, 50, 10) })
+                            onPick = { if (it == "custom") customDialog("away_bitrate", "Custom bitrate", "Mbps", 2, 50, 10, cancelTo = "auto") })
                     if (stream.getString("away_bitrate", "auto") == "custom")
                         customNumber(list, "away_bitrate", "Custom bitrate", "2 to 50 Mbps", "Mbps", 2, 50, 10)
                     choice(list, "away_codec", "Video codec", "H.265 looks better at the same bitrate", listOf("H.264" to "h264", "H.265" to "h265"), "h265")
@@ -1163,8 +1163,11 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         action(list, "set:$key-custom", title, sub, "$cur $unit") { customDialog(key, title, unit, min, max, def) }
     }
 
-    /** Asks for a Custom number and saves it; the row switches to Custom. */
-    private fun customDialog(key: String, title: String, unit: String, min: Int, max: Int, def: Int) {
+    /**
+     * Asks for a Custom number and saves it; the row switches to Custom. [cancelTo]: picking Custom on a choice row
+     * already set the row to Custom, so closing the box without saving sets it to this option instead (#43).
+     */
+    private fun customDialog(key: String, title: String, unit: String, min: Int, max: Int, def: Int, cancelTo: String? = null) {
         val cur = stream.getString(key + "_custom", def.toString()) ?: def.toString()
         entryDialog(title, "$min to $max $unit", unit, cur, true, { v ->
             val n = v.trim().toIntOrNull()
@@ -1174,7 +1177,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                 render(force = true)
                 null
             }
-        })
+        }, onCancel = cancelTo?.let { v -> { stream.edit().putString(key, v).apply() } })
     }
 
     private fun choice(list: LinearLayout, key: String, title: String, sub: String, options: List<Pair<String, String>>, def: String,
@@ -1678,8 +1681,11 @@ class HomeActivity : Activity(), PhoneLink.Listener {
     private fun chipName(): String = com.limelight.home.Chip.name()
 
     /** A one-line entry dialog; [onSave] returns an error to show, or null when the value is good. */
+    /** Runs when the open entry box closes without a save (Cancel, B or Back). */
+    private var entryCancel: (() -> Unit)? = null
+
     private fun entryDialog(title: String, sub: String, hint: String, value: String, numbers: Boolean, onSave: (String) -> String?,
-                            clear: (() -> Unit)? = null) {
+                            clear: (() -> Unit)? = null, onCancel: (() -> Unit)? = null) {
         val card = dialogCard()
         card.addView(tv.text(title, 40, tv.p.moon, tv.display(700)))
         card.addView(tv.text(sub, 22, tv.p.dust, tv.ui(500), 3), tv.lp(-1, -2).apply { topMargin = tv.px(12) })
@@ -1690,15 +1696,31 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         card.addView(status, tv.lp(-1, -2).apply { topMargin = tv.px(16) })
         fun submit() {
             val err = onSave(field.text.toString().trim())
-            if (err == null) hideOverlay() else status.text = err
+            if (err == null) { entryCancel = null; hideOverlay() } else status.text = err
         }
         field.setOnEditorActionListener { _, _, _ -> submit(); true }
+        val save = tv.pill("Save", "A", true) { submit() }
+        // A remote or pad has to reach Save without the keyboard (#43): Down leaves the box for the buttons, and A in
+        // the box saves, as its glyph says. The key handling above leaves keys in a text box to the box itself.
+        field.setOnKeyListener { _, code, ev ->
+            if (ev.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+            when (code) {
+                KeyEvent.KEYCODE_DPAD_DOWN -> {
+                    (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
+                        .hideSoftInputFromWindow(field.windowToken, 0)
+                    save.requestFocus(); true
+                }
+                KeyEvent.KEYCODE_BUTTON_A -> { submit(); true }
+                else -> false
+            }
+        }
         card.addView(tv.row().apply {
-            addView(tv.pill("Save", "A", true) { submit() })
-            if (clear != null) addView(tv.pill("Turn off", null, false) { clear(); hideOverlay() })
+            addView(save)
+            if (clear != null) addView(tv.pill("Turn off", null, false) { entryCancel = null; clear(); hideOverlay() })
             addView(tv.pill("Cancel", "B", false) { hideOverlay() })
         }, tv.lp(-2, -2).apply { topMargin = tv.px(24) })
         showOverlay("entry", FrameLayout(this).apply { addView(card, tv.flp(1000, -2, Gravity.CENTER)) })
+        entryCancel = onCancel
         field.requestFocus()
     }
 
@@ -1736,6 +1758,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
 
     private fun showOverlay(kind: String, v: View, dim: Boolean = true) {
         if (kind != "idle" && kind != "incoming") FeelSounds.play(this, FeelSounds.Cue.OPEN)
+        entryCancel = null   // a new overlay replaces an open entry box; entryDialog sets its own afterwards
         overlayKind = kind
         overlay.removeAllViews()
         overlay.setBackgroundColor(if (dim) (if (tv.oled) 0xE6000000.toInt() else 0xB805080F.toInt()) else tv.p.night)
@@ -1755,6 +1778,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         overlay.removeAllViews()
         overlay.visibility = View.GONE
         main.descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
+        entryCancel?.let { entryCancel = null; it() }   // an entry box closed without saving
         render(force = true)
     }
 

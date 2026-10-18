@@ -1,5 +1,8 @@
 # Changelog
 
+## 12.2-test179 (2026-10-18)
+- Fix (#43): in a TV number box (Custom bitrate, Custom frame rate, custom resolution), Down on the remote or pad now leaves the box for the Save button, and A in the box saves, as its glyph says. Before, only the keyboard's Enter saved. Also, closing a Custom box without saving no longer leaves the row on Custom: it moves on to the first option.
+
 ## 12.2-test178 (2026-10-18)
 - Fix (#37 follow-up): ending a PS5 game could still crash the TV app (seen once in test177) when the screen closed before the decoder let go of its surface: the decoder then failed and chiaki copied a frame into a missing buffer. The PS5 screen now releases the decoder first and waits for it (at most half a second) before its surface goes, also when the PS5 itself ended the game; and chiaki drops a frame that has no buffer instead of crashing (native patch `native/mc_decoder_nullbuf_patch.py`).
 
