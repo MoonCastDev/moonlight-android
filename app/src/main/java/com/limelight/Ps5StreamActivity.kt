@@ -39,6 +39,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
         const val EXTRA_MORNING = "ps5_morning"          // hex, 16 bytes
         const val EXTRA_PS5 = "ps5_is_ps5"
         private const val QUIT_RP_IN_USE = 4
+        private const val SURFACE_RELEASE_WAIT_MS = 500L   // longest the screen waits for the decoder to let go
         private const val IN_USE_WAIT_MS = 30_000L   // how long to wait for another device to let go of Remote Play
         private const val KEY_TOUCHPAD = KeyEvent.KEYCODE_BUTTON_16   // internal: an odd Sony pad's touchpad click
         private val STEP_NAMES = listOf("Found your PS5", "Waking it up", "Signing in", "Starting video")
@@ -757,15 +758,23 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
     }
 
     override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, ht: Int) {}
-    // setSurface(null) waits for chiaki's decoder lock, which a running session can hold for a long time: on the UI
-    // thread that froze the app (ANR when "Move to TV" covered the player). Do it on a worker, and never on a session
-    // that is being torn down (see [teardown]).
+    // The surface is gone once this returns, so the decoder has to let go of it first (#37): a decoder still drawing
+    // into a dead surface fails, and chiaki then crashed copying a frame into a missing buffer. The release runs on a
+    // worker (it takes chiaki's decoder lock) and the wait is bounded, so a stuck session can't freeze the app.
     override fun surfaceDestroyed(holder: SurfaceHolder) {
+        if (closed) {
+            if (session != null && teardownThread == null) teardown(null)   // the PS5 quit: tear down now, not in onDestroy
+            try { teardownThread?.join(SURFACE_RELEASE_WAIT_MS) } catch (e: InterruptedException) { }
+            return
+        }
         val s = session ?: return
-        if (closed) return
-        Thread({ synchronized(sessionLock) { if (!closed && synchronized(disposed) { s !in disposed }) try { s.setSurface(null) } catch (e: Exception) { } } },
-            "ps5-surface").start()
+        val t = Thread({ synchronized(sessionLock) { if (!closed && synchronized(disposed) { s !in disposed }) try { s.setSurface(null) } catch (e: Exception) { } } },
+            "ps5-surface")
+        t.start()
+        try { t.join(SURFACE_RELEASE_WAIT_MS) } catch (e: InterruptedException) { }
     }
+
+    @Volatile private var teardownThread: Thread? = null
 
     private val sessionLock = Any()
     private val disposed = java.util.Collections.newSetFromMap(java.util.WeakHashMap<Session, Boolean>())
@@ -781,15 +790,19 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
         stopProgressWatch()
         val s = session
         session = null
-        Thread({
+        val t = Thread({
             Ps5Pad.stop()
             if (s != null) {
+                // release the decoder first, while the surface still exists (#37)
+                synchronized(sessionLock) { try { s.setSurface(null) } catch (e: Exception) { } }
                 synchronized(disposed) { disposed.add(s) }
                 try { s.stop() } catch (e: Exception) { }
                 synchronized(sessionLock) { try { s.dispose() } catch (e: Exception) { } }
             }
             if (done != null) android.os.Handler(android.os.Looper.getMainLooper()).post(done)
-        }, "ps5-teardown").start()
+        }, "ps5-teardown")
+        teardownThread = t
+        t.start()
     }
 
     /** "Move to TV": the PS5 takes one Remote Play client, so this one must be gone before the TV connects. */
