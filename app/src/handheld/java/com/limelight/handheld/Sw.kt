@@ -24,8 +24,22 @@ import com.limelight.home.Tv
  * The handheld's Switch-style kit, from mooncast-handheld-v2.html: flat charcoal (or light grey), white type, one
  * cyan double ring. Sizes are design px on a 1920 x 1080 canvas (1080 x 1920 upright), fitted to the screen by [tv].
  */
-class Sw(ctx: Context, val light: Boolean, val portrait: Boolean) {
-    val tv = Tv(ctx, false, if (portrait) 1080 else 1920, if (portrait) 1920 else 1080)
+class Sw(ctx: Context, val light: Boolean, val portrait: Boolean, val size: Size = Size.NORMAL) {
+    /**
+     * Screen size. NORMAL lays out on a 1920 x 1080 canvas (Odin, phones); COMPACT on 1240 x 1080 for small or square
+     * screens (Retroid Pocket Mini: the 1920 canvas shrank everything to 65%); LARGE is COMPACT a step bigger.
+     */
+    enum class Size { NORMAL, COMPACT, LARGE }
+
+    val compact get() = size != Size.NORMAL
+    /** Space between the screen edge and the content, in design px. */
+    val edge get() = if (portrait) 56 else if (compact) 44 else 96
+
+    val tv = when (size) {
+        Size.NORMAL -> Tv(ctx, false, if (portrait) 1080 else 1920, if (portrait) 1920 else 1080)
+        Size.COMPACT -> Tv(ctx, false, if (portrait) 1080 else 1240, if (portrait) 1440 else 1080)
+        Size.LARGE -> Tv(ctx, false, if (portrait) 940 else 1080, if (portrait) 1250 else 940)
+    }
     val c = ctx
 
     val bg = if (light) 0xFFEBEBEB.toInt() else 0xFF2B2D31.toInt()
@@ -37,6 +51,25 @@ class Sw(ctx: Context, val light: Boolean, val portrait: Boolean) {
     val ring = if (light) 0xFF00A9C2.toInt() else 0xFF2FD3E6.toInt()
 
     companion object {
+        /**
+         * The size for this screen. [choice] is the "Screen size" setting: auto, compact, normal or large. Auto goes
+         * compact when the normal 1920-wide layout would be drawn below 80% of its size (a small or near-square
+         * screen), and a step larger when Android's own Font size is set large. Pixels and Android's own scaling are
+         * used, not the panel's reported dpi, which some handhelds get wrong.
+         */
+        fun pick(ctx: Context, portrait: Boolean, choice: String?): Size {
+            when (choice) {
+                "normal" -> return Size.NORMAL
+                "compact" -> return Size.COMPACT
+                "large" -> return Size.LARGE
+            }
+            val m = ctx.resources.displayMetrics
+            val w = m.widthPixels.coerceAtLeast(1).toFloat(); val h = m.heightPixels.coerceAtLeast(1).toFloat()
+            val fit = if (portrait) minOf(w / 1080f, h / 1920f) else minOf(w / 1920f, h / 1080f)
+            if (fit >= 0.8f) return Size.NORMAL
+            return if (ctx.resources.configuration.fontScale >= 1.15f) Size.LARGE else Size.COMPACT
+        }
+
         const val PS = 0xFF2F5DF0.toInt()
         const val XB = 0xFF107C10.toInt()
         const val PC = 0xFF5B6170.toInt()

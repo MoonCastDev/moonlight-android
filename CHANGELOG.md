@@ -1,5 +1,8 @@
 # Changelog
 
+## 12.2-test187 (2026-10-18)
+- Handheld: a compact layout for small screens. On a small or near-square screen (Retroid Pocket Mini V2: 1240 x 1080) the normal 1920-wide layout was drawn at 65%, with tiny text and 40% of Home empty. The app now picks Compact by itself when the normal layout would be drawn below 80%: a 1240-wide layout with about 1.5x bigger text, tiles, buttons and rows, labels under the round buttons, and a narrower side menu in Settings. Android's own large Font size makes it a step bigger. New setting Handheld > Screen size: Auto (default), Compact, Normal, Large. The Odin and phones stay on Normal. Mockups: docs/mockups/handheld-compact (branch design/handheld-compact).
+
 ## 12.2-test186 (2026-10-18)
 - Fix (#41 follow-up): quitting a PC game from the TV's Quick menu left the TV's link reporting "failed: The stream from the PC stopped (error -1)". Quit makes the PC close the game, which ends the stream with an error code. A stream the user ended (Quit game, Disconnect, Back) no longer counts as a failure, so the link goes back to "idle".
 

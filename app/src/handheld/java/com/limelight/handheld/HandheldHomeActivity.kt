@@ -465,15 +465,15 @@ class HandheldHomeActivity : Activity() {
 
     private fun buildShell() {
         portrait = isPortrait()
-        sw = Sw(this, prefs.getString("hh_theme", "dark") == "light", portrait)
+        sw = Sw(this, prefs.getString("hh_theme", "dark") == "light", portrait, Sw.pick(this, portrait, prefs.getString("hh_screen_size", "auto")))
         root = FrameLayout(this).apply { setBackgroundColor(sw.bg) }
         wash = Wash(this)
         root.addView(wash, FrameLayout.LayoutParams(-1, -1))
         main = sw.col().apply { clipChildren = false }
 
         topBar = sw.row()
-        val side = if (portrait) 56 else 96
-        main.addView(topBar, sw.lp(-1, 96).apply { leftMargin = sw.px(side); rightMargin = sw.px(side); topMargin = sw.px(if (portrait) 56 else 44) })
+        val side = sw.edge
+        main.addView(topBar, sw.lp(-1, 96).apply { leftMargin = sw.px(side); rightMargin = sw.px(side); topMargin = sw.px(if (portrait) 56 else if (sw.compact) 24 else 44) })
 
         content = FrameLayout(this).apply { clipChildren = false; clipToPadding = false }
         main.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -485,7 +485,7 @@ class HandheldHomeActivity : Activity() {
         } else {
             foot.background = sw.topLine()
             foot.setPadding(sw.px(48), 0, sw.px(48), 0)
-            main.addView(foot, sw.lp(-1, 120).apply { leftMargin = sw.px(48); rightMargin = sw.px(48) })
+            main.addView(foot, sw.lp(-1, if (sw.compact) 100 else 120).apply { leftMargin = sw.px(if (sw.compact) 20 else 48); rightMargin = sw.px(if (sw.compact) 20 else 48) })
         }
 
         root.addView(main, FrameLayout.LayoutParams(-1, -1))
@@ -680,20 +680,22 @@ class HandheldHomeActivity : Activity() {
         gname = sw.text("", 34, sw.ring, 700)
         box.addView(gname, FrameLayout.LayoutParams(-2, -2))
         gnameBox = box
-        col.addView(part(box), sw.lp(-1, 48).apply { topMargin = sw.px(96); leftMargin = sw.px(96) })
+        val e = sw.edge
+        val ts = if (sw.compact) 330 else 380   // compact: about three and a half tiles across
+        col.addView(part(box), sw.lp(-1, 48).apply { topMargin = sw.px(if (sw.compact) 36 else 96); leftMargin = sw.px(e) })
 
-        val row = sw.row().apply { clipChildren = false; setPadding(sw.px(96), 0, sw.px(96), 0) }
+        val row = sw.row().apply { clipChildren = false; setPadding(sw.px(e), 0, sw.px(e), 0) }
         val tiles = ArrayList<View>()
-        if (games.isEmpty()) tiles += tileView(null, 380, 36, "g:add", "Add a console") { go(Page.CONSOLES) }
-        games.forEach { g -> tiles += tileView(g, 380, 36, "g:${g.key}", g.title) { play(g) } }
-        tiles += tileView(null, 380, 36, "g:all", "All games") { gamesTab = "all"; go(Page.GAMES) }
-        tiles.forEachIndexed { i, t -> row.addView(t, sw.lp(380, 380).apply { if (i > 0) leftMargin = sw.px(24) }) }
-        val scroll = RowScroll(this, sw.px(96)).apply {
+        if (games.isEmpty()) tiles += tileView(null, ts, 36, "g:add", "Add a console") { go(Page.CONSOLES) }
+        games.forEach { g -> tiles += tileView(g, ts, 36, "g:${g.key}", g.title) { play(g) } }
+        tiles += tileView(null, ts, 36, "g:all", "All games") { gamesTab = "all"; go(Page.GAMES) }
+        tiles.forEachIndexed { i, t -> row.addView(t, sw.lp(ts, ts).apply { if (i > 0) leftMargin = sw.px(24) }) }
+        val scroll = RowScroll(this, sw.px(e)).apply {
             isHorizontalScrollBarEnabled = false; isFocusable = false; clipChildren = false; clipToPadding = false
             overScrollMode = View.OVER_SCROLL_NEVER
             addView(row)
         }
-        col.addView(part(scroll), sw.lp(-1, 380).apply { topMargin = sw.px(16) })
+        col.addView(part(scroll), sw.lp(-1, ts).apply { topMargin = sw.px(16) })
         // the tile you were on (or the first) is where focus starts
         primaryView = tiles.firstOrNull { it.tag == "g:$selKey" } ?: tiles.first()
 
@@ -701,7 +703,8 @@ class HandheldHomeActivity : Activity() {
         listOf(Triple("Consoles", "consoles", Sw.C_CYAN), Triple("Play on a TV", "tv", Sw.C_AMBER), Triple("Controllers", "pad", Sw.C_BLUE),
                 Triple("Network test", "net", Sw.C_GREEN), Triple("Settings", "gear", sw.sub), Triple("Exit", "power", Sw.C_RED)).forEachIndexed { i, (label, icon, color) ->
             val btn = roundButton("rb:$icon", icon, color, 112, sw.panel) { roundAction(icon) }
-            val lab = sw.text(label, 26, sw.ring, 700).apply { gravity = Gravity.CENTER_HORIZONTAL; visibility = View.INVISIBLE }
+            // compact: labels always show (the screen has room below, and small icons alone are hard to tell apart)
+            val lab = sw.text(label, 26, if (sw.compact) sw.sub else sw.ring, 700).apply { gravity = Gravity.CENTER_HORIZONTAL; visibility = if (sw.compact) View.VISIBLE else View.INVISIBLE }
             rbLabels += btn to lab
             rounds.addView(FrameLayout(this).apply {
                 clipChildren = false
@@ -709,7 +712,7 @@ class HandheldHomeActivity : Activity() {
                 addView(lab, FrameLayout.LayoutParams(sw.px(420), -2, Gravity.CENTER_HORIZONTAL).apply { topMargin = sw.px(132) })
             }, sw.lp(112, 180).apply { if (i > 0) leftMargin = sw.px(40) })
         }
-        col.addView(part(rounds), sw.lp(-1, 180).apply { topMargin = sw.px(80) })
+        col.addView(part(rounds), sw.lp(-1, 180).apply { topMargin = sw.px(if (sw.compact) 64 else 80) })
         return col
     }
 
@@ -849,7 +852,10 @@ class HandheldHomeActivity : Activity() {
     }
 
     private fun syncLabels(v: View?) {
-        rbLabels.forEach { (b, l) -> l.visibility = if (b === v && !b.isInTouchMode) View.VISIBLE else View.INVISIBLE }
+        rbLabels.forEach { (b, l) ->
+            if (sw.compact) l.setTextColor(if (b === v && !b.isInTouchMode) sw.ring else sw.sub)   // compact: always shown, the focused one lit
+            else l.visibility = if (b === v && !b.isInTouchMode) View.VISIBLE else View.INVISIBLE
+        }
         if (gname != null && gnameTarget == null) {
             // nothing focused yet (touch): name the first tile
             val first = (content.findViewWithTag<View>("g:$selKey") ?: primaryView)
@@ -907,7 +913,7 @@ class HandheldHomeActivity : Activity() {
     // ---------------------------------------------------------------- All games
 
     private fun gamesPage(): View {
-        val col = sw.col().apply { setPadding(sw.px(if (portrait) 56 else 96), 0, sw.px(if (portrait) 56 else 96), 0); clipChildren = false }
+        val col = sw.col().apply { setPadding(sw.px(sw.edge), 0, sw.px(sw.edge), 0); clipChildren = false }
         val tabs = sw.row()
         listOf("all" to "All", "pc" to "PC", "ps" to "PlayStation", "xb" to "Xbox").forEachIndexed { i, (k, label) ->
             val on = k == gamesTab
@@ -936,9 +942,9 @@ class HandheldHomeActivity : Activity() {
             col.addView(part(pill("pill:consoles", "Go to Consoles", true) { go(Page.CONSOLES) }.apply { primaryView = this }), sw.lp(480, 112).apply { topMargin = sw.px(40) })
             return col
         }
-        val cols = if (portrait) 3 else 6
+        val cols = if (portrait) 3 else if (sw.compact) 4 else 6
         val gap = if (portrait) 22 else 24
-        val size = ((sw.designWidth - 2 * (if (portrait) 56 else 96) - (cols - 1) * gap) / cols).toInt()
+        val size = ((sw.designWidth - 2 * sw.edge - (cols - 1) * gap) / cols).toInt()
         val grid = GridLayout(this).apply { columnCount = cols; clipChildren = false }
         list.forEachIndexed { i, g ->
             grid.addView(tileView(g, size, if (portrait) 28 else 26, "g:${g.key}", g.title) { play(g) }, GridLayout.LayoutParams().apply {
@@ -997,7 +1003,7 @@ class HandheldHomeActivity : Activity() {
 
     private fun scrollPane(list: LinearLayout): View = ColScroll(this, sw.px(40)).apply {
         isVerticalScrollBarEnabled = false; isFocusable = false; clipToPadding = false; clipChildren = false
-        val side = if (portrait) 56 else 96
+        val side = sw.edge
         setPadding(sw.px(side), sw.px(30), sw.px(side), sw.px(30))
         addView(part(list))
     }
@@ -1093,7 +1099,7 @@ class HandheldHomeActivity : Activity() {
             return scrollPane(list)
         }
         val row = sw.row(Gravity.TOP)
-        val side = sw.col().apply { setPadding(sw.px(96), sw.px(20), 0, 0) }
+        val side = sw.col().apply { setPadding(sw.px(if (sw.compact) 20 else 96), sw.px(20), 0, 0) }
         groups.forEach { (k, label) ->
             val on = k == settingsGroup
             side.addView(FrameLayout(this).apply {
@@ -1110,12 +1116,12 @@ class HandheldHomeActivity : Activity() {
                 }
             }, sw.lp(-1, 92))
         }
-        row.addView(part(side), sw.lp(600, -2))
+        row.addView(part(side), sw.lp(if (sw.compact) 330 else 600, -2))
         val list = sw.col().apply { tag = "settings:list" }
         settingsRows(list, settingsGroup)
         row.addView(part(ColScroll(this, sw.px(40)).apply {
             isVerticalScrollBarEnabled = false; isFocusable = false; clipToPadding = false; clipChildren = false
-            setPadding(sw.px(40), sw.px(20), sw.px(96), sw.px(30))
+            setPadding(sw.px(if (sw.compact) 20 else 40), sw.px(20), sw.px(sw.edge), sw.px(30))
             addView(list)
         }), LinearLayout.LayoutParams(0, -1, 1f))
         primaryView = side.findViewWithTag<View>("group:$settingsGroup")
@@ -1125,6 +1131,9 @@ class HandheldHomeActivity : Activity() {
     private fun settingsRows(list: LinearLayout, group: String) {
         when (group) {
             "handheld" -> {
+                // Auto picks Compact on a small or square screen; the others force a size (recreate redraws the app)
+                choice(list, prefs, "hh_screen_size", "Screen size", "Auto fits this screen. Compact and Large make everything bigger",
+                        listOf("Auto" to "auto", "Compact" to "compact", "Normal" to "normal", "Large" to "large"), "auto") { recreate() }
                 appToggle(list, "hh_rotate", "Screen turns with the device", "Portrait when you hold it upright", true) { applyRotation() }
                 choice(list, prefs, "hh_battery_res", "On battery, stream at", "Plugged in, the Picture settings apply",
                         listOf("Same" to "same", "1080p" to "1080", "720p" to "720", "540p" to "540"), "same")
