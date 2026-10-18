@@ -1,5 +1,15 @@
 # Changelog
 
+## 12.2-test189 (2026-10-19)
+- Handheld: portrait shows the same screens as landscape, only fitted to the upright screen (it had its own Home with a big banner and a dock, and Settings without the side menu). Upright: the bottom hint bar, the tile row with tiles about a third of the screen high, the six round buttons in two rows of three with their labels beside them, and Settings with the side menu. Upright always uses the compact sizes, scaled by the screen's width, so text is the same size both ways round. This applies to phones held upright too.
+- Compact layout: a little more space between a row's title and its description, and taller rows.
+
+## 12.2-test188 (2026-10-18)
+- Handheld compact layout, from the first look on the Retroid: the round-button labels were crowding each other, so compact uses shorter ones ("Play on TV", "Network") and spaces the buttons wider; Home tiles a little bigger (350) to use more of the screen.
+
+## 12.2-test187 (2026-10-18)
+- Handheld: a compact layout for small screens. On a small or near-square screen (Retroid Pocket Mini V2: 1240 x 1080) the normal 1920-wide layout was drawn at 65%, with tiny text and 40% of Home empty. The app now picks Compact by itself when the normal layout would be drawn below 80%: a 1240-wide layout with about 1.5x bigger text, tiles, buttons and rows, labels under the round buttons, and a narrower side menu in Settings. Android's own large Font size makes it a step bigger. New setting Handheld > Screen size: Auto (default), Compact, Normal, Large. The Odin and phones stay on Normal. Mockups: docs/mockups/handheld-compact (branch design/handheld-compact).
+
 ## 12.2-test186 (2026-10-18)
 - Fix (#41 follow-up): quitting a PC game from the TV's Quick menu left the TV's link reporting "failed: The stream from the PC stopped (error -1)". Quit makes the PC close the game, which ends the stream with an error code. A stream the user ended (Quit game, Disconnect, Back) no longer counts as a failure, so the link goes back to "idle".
 
