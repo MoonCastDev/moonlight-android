@@ -1,5 +1,8 @@
 # Changelog
 
+## 12.2-test188 (2026-10-18)
+- Handheld compact layout, from the first look on the Retroid: the round-button labels were crowding each other, so compact uses shorter ones ("Play on TV", "Network") and spaces the buttons wider; Home tiles a little bigger (350) to use more of the screen.
+
 ## 12.2-test187 (2026-10-18)
 - Handheld: a compact layout for small screens. On a small or near-square screen (Retroid Pocket Mini V2: 1240 x 1080) the normal 1920-wide layout was drawn at 65%, with tiny text and 40% of Home empty. The app now picks Compact by itself when the normal layout would be drawn below 80%: a 1240-wide layout with about 1.5x bigger text, tiles, buttons and rows, labels under the round buttons, and a narrower side menu in Settings. Android's own large Font size makes it a step bigger. New setting Handheld > Screen size: Auto (default), Compact, Normal, Large. The Odin and phones stay on Normal. Mockups: docs/mockups/handheld-compact (branch design/handheld-compact).
 

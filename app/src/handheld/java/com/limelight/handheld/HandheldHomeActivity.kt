@@ -681,7 +681,7 @@ class HandheldHomeActivity : Activity() {
         box.addView(gname, FrameLayout.LayoutParams(-2, -2))
         gnameBox = box
         val e = sw.edge
-        val ts = if (sw.compact) 330 else 380   // compact: about three and a half tiles across
+        val ts = if (sw.compact) 350 else 380   // compact: about three and a half tiles across
         col.addView(part(box), sw.lp(-1, 48).apply { topMargin = sw.px(if (sw.compact) 36 else 96); leftMargin = sw.px(e) })
 
         val row = sw.row().apply { clipChildren = false; setPadding(sw.px(e), 0, sw.px(e), 0) }
@@ -700,19 +700,20 @@ class HandheldHomeActivity : Activity() {
         primaryView = tiles.firstOrNull { it.tag == "g:$selKey" } ?: tiles.first()
 
         val rounds = sw.row(Gravity.TOP).apply { gravity = Gravity.CENTER_HORIZONTAL; clipChildren = false }
-        listOf(Triple("Consoles", "consoles", Sw.C_CYAN), Triple("Play on a TV", "tv", Sw.C_AMBER), Triple("Controllers", "pad", Sw.C_BLUE),
-                Triple("Network test", "net", Sw.C_GREEN), Triple("Settings", "gear", sw.sub), Triple("Exit", "power", Sw.C_RED)).forEachIndexed { i, (label, icon, color) ->
+        // compact shows every label at once, so they're shorter there to sit side by side
+        listOf(Triple("Consoles", "consoles", Sw.C_CYAN), Triple(if (sw.compact) "Play on TV" else "Play on a TV", "tv", Sw.C_AMBER), Triple("Controllers", "pad", Sw.C_BLUE),
+                Triple(if (sw.compact) "Network" else "Network test", "net", Sw.C_GREEN), Triple("Settings", "gear", sw.sub), Triple("Exit", "power", Sw.C_RED)).forEachIndexed { i, (label, icon, color) ->
             val btn = roundButton("rb:$icon", icon, color, 112, sw.panel) { roundAction(icon) }
             // compact: labels always show (the screen has room below, and small icons alone are hard to tell apart)
-            val lab = sw.text(label, 26, if (sw.compact) sw.sub else sw.ring, 700).apply { gravity = Gravity.CENTER_HORIZONTAL; visibility = if (sw.compact) View.VISIBLE else View.INVISIBLE }
+            val lab = sw.text(label, if (sw.compact) 24 else 26, if (sw.compact) sw.sub else sw.ring, 700).apply { gravity = Gravity.CENTER_HORIZONTAL; visibility = if (sw.compact) View.VISIBLE else View.INVISIBLE }
             rbLabels += btn to lab
             rounds.addView(FrameLayout(this).apply {
                 clipChildren = false
                 addView(btn, sw.flp(112, 112))
                 addView(lab, FrameLayout.LayoutParams(sw.px(420), -2, Gravity.CENTER_HORIZONTAL).apply { topMargin = sw.px(132) })
-            }, sw.lp(112, 180).apply { if (i > 0) leftMargin = sw.px(40) })
+            }, sw.lp(112, 180).apply { if (i > 0) leftMargin = sw.px(if (sw.compact) 64 else 40) })
         }
-        col.addView(part(rounds), sw.lp(-1, 180).apply { topMargin = sw.px(if (sw.compact) 64 else 80) })
+        col.addView(part(rounds), sw.lp(-1, 180).apply { topMargin = sw.px(if (sw.compact) 72 else 80) })
         return col
     }
 
