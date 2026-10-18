@@ -1,5 +1,9 @@
 # Changelog
 
+## 12.2-test190 (2026-10-19)
+- Handheld on tall phones (Pixel): Home used only the top half of the screen. Upright, the tiles now go two across the full width and wrap into as many rows as fit above the round buttons (the last tile is All games); with height to spare, Home is centred. A near-square screen upright (Retroid) keeps one row.
+- Handheld: a back button at the top left of every page but Home, for touch screens (same as B). The bottom bar's button hints can be tapped (they do what the button does), and they're hidden when no controller is connected.
+
 ## 12.2-test189 (2026-10-19)
 - Handheld: portrait shows the same screens as landscape, only fitted to the upright screen (it had its own Home with a big banner and a dock, and Settings without the side menu). Upright: the bottom hint bar, the tile row with tiles about a third of the screen high, the six round buttons in two rows of three with their labels beside them, and Settings with the side menu. Upright always uses the compact sizes, scaled by the screen's width, so text is the same size both ways round. This applies to phones held upright too.
 - Compact layout: a little more space between a row's title and its description, and taller rows.

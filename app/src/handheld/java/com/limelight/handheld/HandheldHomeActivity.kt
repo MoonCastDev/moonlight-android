@@ -322,8 +322,8 @@ class HandheldHomeActivity : Activity() {
     }
 
     private val pads = object : InputManager.InputDeviceListener {
-        override fun onInputDeviceAdded(id: Int) { padName?.text = controllerName() }
-        override fun onInputDeviceRemoved(id: Int) { padName?.text = controllerName() }
+        override fun onInputDeviceAdded(id: Int) { buildFoot() }
+        override fun onInputDeviceRemoved(id: Int) { buildFoot() }
         override fun onInputDeviceChanged(id: Int) { padName?.text = controllerName() }
     }
 
@@ -607,6 +607,9 @@ class HandheldHomeActivity : Activity() {
                 isSoundEffectsEnabled = !FeelSounds.enabled(this@HandheldHomeActivity)
             }, sw.lp(-2, 64))
         } else {
+            // a back button you can tap: a touch screen has no B (the same as B / the system back)
+            topBar.addView(roundButton("top:back", "back", sw.ink, 84, sw.panel) { onBackPressed() }.apply { isFocusable = false },
+                    sw.lp(84, 84).apply { rightMargin = sw.px(24) })
             topBar.addView(sw.text(page.title, 44, sw.ink, 800))
         }
         topBar.addView(sw.grow())
@@ -636,6 +639,8 @@ class HandheldHomeActivity : Activity() {
         padName = sw.text(controllerName(), 28, sw.sub, 700)
         foot.addView(padName)
         foot.addView(sw.grow())
+        // button hints mean nothing without buttons: touch only (no controller) shows none
+        if (!hasController()) { part(foot); return }
         val h = when (page) {
             Page.HOME -> listOf("Y" to (if (TvFinder.target(this) != null) "Play here" else "Play on TV"), "A" to "Start")
             Page.GAMES -> listOf("L R" to "Tabs", "X" to (if (sortAz) "Recent first" else "A to Z"), "B" to "Back", "A" to "Start")
@@ -643,10 +648,14 @@ class HandheldHomeActivity : Activity() {
             Page.SETTINGS -> listOf("B" to "Back", "A" to "OK")
         }
         h.forEach { (k, l) ->
-            foot.addView(if (k.length > 1) sw.row().apply {
+            foot.addView((if (k.length > 1) sw.row().apply {
                 addView(sw.text(k, 22, sw.bg, 800).apply { gravity = Gravity.CENTER; background = sw.round(sw.ink, 23); setPadding(sw.px(14), 0, sw.px(14), 0) }, sw.lp(-2, 46).apply { rightMargin = sw.px(14) })
                 addView(sw.text(l, 28, sw.ink, 700))
-            } else sw.hint(k, l), sw.lp(-2, -2).apply { leftMargin = sw.px(40) })
+            } else sw.hint(k, l)).apply {
+                // a tap on a hint does what its button does
+                setOnClickListener { pressButton(k) }
+                isFocusable = false
+            }, sw.lp(-2, -2).apply { leftMargin = sw.px(40) })
         }
         part(foot)
     }
@@ -661,22 +670,47 @@ class HandheldHomeActivity : Activity() {
         box.addView(gname, FrameLayout.LayoutParams(-2, -2))
         gnameBox = box
         val e = sw.edge
-        // compact: about three and a half tiles across; upright the tiles take about a third of the height
-        val ts = if (portrait) minOf(420, (sw.designHeight * 0.34f).toInt()) else if (sw.compact) 350 else 380
-        col.addView(part(box), sw.lp(-1, 48).apply { topMargin = sw.px(if (sw.compact) 36 else 96); leftMargin = sw.px(e) })
-
-        val row = sw.row().apply { clipChildren = false; setPadding(sw.px(e), 0, sw.px(e), 0) }
-        val tiles = ArrayList<View>()
-        if (games.isEmpty()) tiles += tileView(null, ts, 36, "g:add", "Add a console") { go(Page.CONSOLES) }
-        games.forEach { g -> tiles += tileView(g, ts, 36, "g:${g.key}", g.title) { play(g) } }
-        tiles += tileView(null, ts, 36, "g:all", "All games") { gamesTab = "all"; go(Page.GAMES) }
-        tiles.forEachIndexed { i, t -> row.addView(t, sw.lp(ts, ts).apply { if (i > 0) leftMargin = sw.px(24) }) }
-        val scroll = RowScroll(this, sw.px(e)).apply {
-            isHorizontalScrollBarEnabled = false; isFocusable = false; clipChildren = false; clipToPadding = false
-            overScrollMode = View.OVER_SCROLL_NEVER
-            addView(row)
+        val gap = 24
+        val headTop = if (sw.compact) 36 else 96
+        // Upright the height decides: the free height after the top bar, the bottom bar, the name line and the
+        // round buttons (two rows). A tall phone wraps the tiles into rows of two across the full width, as many rows
+        // as fit; a near-square screen (Retroid upright) keeps one row, about a third of the height.
+        val freeH = sw.designHeight - (24 + 96) - 100 - (headTop + 48 + 16) - (56 + 110 * 2 + 24) - 40
+        val wide = ((sw.designWidth - 2 * e - gap) / 2f).toInt()
+        val gridRows = if (portrait) ((freeH + gap) / (wide + gap)).toInt() else 0
+        val ts = when {
+            portrait && gridRows >= 2 -> wide
+            portrait -> minOf(wide, (sw.designHeight * 0.34f).toInt(), freeH.toInt()).coerceAtLeast(240)
+            sw.compact -> 350   // about three and a half tiles across
+            else -> 380
         }
-        col.addView(part(scroll), sw.lp(-1, ts).apply { topMargin = sw.px(16) })
+        col.addView(part(box), sw.lp(-1, 48).apply { topMargin = sw.px(headTop); leftMargin = sw.px(e) })
+
+        val tiles = ArrayList<View>()
+        val shown = if (gridRows >= 2) games.take(gridRows * 2 - 1) else games   // the last cell is All games
+        if (games.isEmpty()) tiles += tileView(null, ts, 36, "g:add", "Add a console") { go(Page.CONSOLES) }
+        shown.forEach { g -> tiles += tileView(g, ts, 36, "g:${g.key}", g.title) { play(g) } }
+        tiles += tileView(null, ts, 36, "g:all", "All games") { gamesTab = "all"; go(Page.GAMES) }
+        if (gridRows >= 2) {
+            val grid = GridLayout(this).apply { columnCount = 2; clipChildren = false }
+            tiles.forEachIndexed { i, t ->
+                grid.addView(t, GridLayout.LayoutParams().apply {
+                    width = sw.px(ts); height = sw.px(ts)
+                    if (i % 2 == 1) leftMargin = sw.px(gap)
+                    if (i >= 2) topMargin = sw.px(gap)
+                })
+            }
+            col.addView(part(grid), sw.lp(-2, -2).apply { topMargin = sw.px(16); leftMargin = sw.px(e) })
+        } else {
+            val row = sw.row().apply { clipChildren = false; setPadding(sw.px(e), 0, sw.px(e), 0) }
+            tiles.forEachIndexed { i, t -> row.addView(t, sw.lp(ts, ts).apply { if (i > 0) leftMargin = sw.px(gap) }) }
+            val scroll = RowScroll(this, sw.px(e)).apply {
+                isHorizontalScrollBarEnabled = false; isFocusable = false; clipChildren = false; clipToPadding = false
+                overScrollMode = View.OVER_SCROLL_NEVER
+                addView(row)
+            }
+            col.addView(part(scroll), sw.lp(-1, ts).apply { topMargin = sw.px(16) })
+        }
         // the tile you were on (or the first) is where focus starts
         primaryView = tiles.firstOrNull { it.tag == "g:$selKey" } ?: tiles.first()
 
@@ -706,6 +740,8 @@ class HandheldHomeActivity : Activity() {
         }
         if (portrait) col.addView(part(rounds), sw.lp(-2, -2).apply { topMargin = sw.px(56); leftMargin = sw.px(sw.edge) })
         else col.addView(part(rounds), sw.lp(-1, 180).apply { topMargin = sw.px(if (sw.compact) 72 else 80) })
+        // upright with height to spare (a tall phone, few games): centre it rather than leave one gap at the bottom
+        if (portrait) return FrameLayout(this).apply { clipChildren = false; addView(col, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER_VERTICAL)) }
         return col
     }
 
@@ -1829,6 +1865,19 @@ class HandheldHomeActivity : Activity() {
         if (Build.MANUFACTURER.equals("AYN", true) || Build.MODEL.contains("Odin", true)) "Odin" else "device"
 
     /** The first real game controller's name, for the hint bar. */
+    private fun hasController(): Boolean = controllerName() != "Touch screen"
+
+    /** A tapped hint: the same as pressing that button on the pad. */
+    private fun pressButton(k: String) {
+        val code = when (k) {
+            "A" -> KeyEvent.KEYCODE_BUTTON_A; "B" -> KeyEvent.KEYCODE_BUTTON_B; "X" -> KeyEvent.KEYCODE_BUTTON_X
+            "Y" -> KeyEvent.KEYCODE_BUTTON_Y; "L R" -> KeyEvent.KEYCODE_BUTTON_R1; else -> return
+        }
+        // A starts what's selected; after a tap nothing has focus, so use what the page starts on
+        if (code == KeyEvent.KEYCODE_BUTTON_A && (currentFocus == null || currentFocus?.isInTouchMode == true)) { primaryView?.performClick(); return }
+        dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code)); dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code))
+    }
+
     private fun controllerName(): String {
         for (id in InputDevice.getDeviceIds()) {
             val d = InputDevice.getDevice(id) ?: continue

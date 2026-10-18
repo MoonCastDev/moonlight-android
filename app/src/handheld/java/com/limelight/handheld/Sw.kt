@@ -256,6 +256,7 @@ class Icon(ctx: Context, private val kind: String, private val color: Int) : Vie
             }
             "home" -> cv.drawPath(Path().apply { moveTo(8f, 22f); lineTo(24f, 9f); lineTo(40f, 22f); lineTo(40f, 40f); lineTo(8f, 40f); close() }, p)
             "grid" -> { rr(cv, 8f, 8f, 13f, 13f, 2f); rr(cv, 27f, 8f, 13f, 13f, 2f); rr(cv, 8f, 27f, 13f, 13f, 2f); rr(cv, 27f, 27f, 13f, 13f, 2f) }
+            "back" -> { line(cv, 29f, 10f, 15f, 24f); line(cv, 15f, 24f, 29f, 38f) }
         }
         cv.restore()
     }
