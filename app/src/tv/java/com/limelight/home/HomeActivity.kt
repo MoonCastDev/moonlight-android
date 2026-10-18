@@ -956,6 +956,10 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                 action(list, "set:customres", "Custom resolution", "Any size, for example this TV's exact panel. Sunshine scales to it",
                         if (customRes) res.replace("x", " × ") else "Off") { customResolution(res, customRes) }
                 choice(list, "list_fps", "Frame rate", "60 is the smoothest. 30 uses less data", listOf("30" to "30", "60" to "60", "90" to "90", "120" to "120"), "60")
+                val fps = stream.getString("list_fps", "60") ?: "60"
+                val customFps = fps !in listOf("30", "60", "90", "120")
+                action(list, "set:customfps", "Custom frame rate", "Any rate between the steps above, for example to match this TV",
+                        if (customFps) "$fps fps" else "Off") { customFrameRate(fps, customFps) }
                 bitrate(list)
                 val kbps = stream.getInt("seekbar_bitrate_kbps", 0)
                 val customRate = kbps != 0 && kbps / 1000 !in listOf(10, 20, 30, 50, 80)
@@ -1731,6 +1735,16 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                 else -> { stream.edit().putString("list_resolution", "${w}x$h").apply(); render(force = true); null }
             }
         }, clear = if (isCustom) ({ stream.edit().putString("list_resolution", "1920x1080").apply(); render(force = true) }) else null)
+    }
+
+    /** PC frame rate (#42): saved straight into list_fps as a number, like the steps, so the stream reads it as is. */
+    private fun customFrameRate(current: String, isCustom: Boolean) {
+        entryDialog("Custom frame rate", "In fps, from 15 to 120. The PC streams at the rate you pick.",
+                "For example 45", if (isCustom) current else "", true, onSave = { raw ->
+            val v = raw.toIntOrNull()
+            if (v == null || v !in 15..120) "A number from 15 to 120."
+            else { stream.edit().putString("list_fps", v.toString()).apply(); render(force = true); null }
+        }, clear = if (isCustom) ({ stream.edit().putString("list_fps", "60").apply(); render(force = true) }) else null)
     }
 
     private fun customBitrate(kbps: Int) {
