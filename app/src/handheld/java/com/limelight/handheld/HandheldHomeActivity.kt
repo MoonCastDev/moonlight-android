@@ -135,8 +135,6 @@ class HandheldHomeActivity : Activity() {
     private var gname: TextView? = null
     private var gnameBox: View? = null
     private var gnameTarget: View? = null
-    private var hero: FrameLayout? = null
-    private var heroName: TextView? = null
 
     private val prefs: SharedPreferences by lazy { getSharedPreferences("mc_tv", Context.MODE_PRIVATE) }
     private val stream: SharedPreferences by lazy { android.preference.PreferenceManager.getDefaultSharedPreferences(this) }
@@ -473,20 +471,16 @@ class HandheldHomeActivity : Activity() {
 
         topBar = sw.row()
         val side = sw.edge
-        main.addView(topBar, sw.lp(-1, 96).apply { leftMargin = sw.px(side); rightMargin = sw.px(side); topMargin = sw.px(if (portrait) 56 else if (sw.compact) 24 else 44) })
+        main.addView(topBar, sw.lp(-1, 96).apply { leftMargin = sw.px(side); rightMargin = sw.px(side); topMargin = sw.px(if (sw.compact) 24 else 44) })
 
         content = FrameLayout(this).apply { clipChildren = false; clipToPadding = false }
         main.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
 
         foot = sw.row()
-        if (portrait) {
-            foot.setBackgroundColor(sw.panel)
-            main.addView(foot, sw.lp(-1, 220))
-        } else {
-            foot.background = sw.topLine()
-            foot.setPadding(sw.px(48), 0, sw.px(48), 0)
-            main.addView(foot, sw.lp(-1, if (sw.compact) 100 else 120).apply { leftMargin = sw.px(if (sw.compact) 20 else 48); rightMargin = sw.px(if (sw.compact) 20 else 48) })
-        }
+        // the same hint bar upright and on its side (portrait used to have a dock of its own)
+        foot.background = sw.topLine()
+        foot.setPadding(sw.px(48), 0, sw.px(48), 0)
+        main.addView(foot, sw.lp(-1, if (sw.compact) 100 else 120).apply { leftMargin = sw.px(if (sw.compact) 20 else 48); rightMargin = sw.px(if (sw.compact) 20 else 48) })
 
         root.addView(main, FrameLayout.LayoutParams(-1, -1))
         overlay = FrameLayout(this).apply { visibility = View.GONE; isClickable = true }
@@ -544,13 +538,13 @@ class HandheldHomeActivity : Activity() {
         val focusTag = currentFocus?.tag as? String
         stagger = ArrayList()
         rbLabels.clear()
-        gname = null; gnameBox = null; gnameTarget = null; hero = null; heroName = null
+        gname = null; gnameBox = null; gnameTarget = null
         buildTop()
         buildFoot()
         content.removeAllViews()
         primaryView = null
         val pg = when (page) {
-            Page.HOME -> if (portrait) homePortrait() else homeLandscape()
+            Page.HOME -> homeLandscape()   // one Home for both ways round, fitted to the screen
             Page.GAMES -> gamesPage()
             Page.CONSOLES -> consolesPage()
             Page.SETTINGS -> settingsPage()
@@ -637,20 +631,6 @@ class HandheldHomeActivity : Activity() {
     private fun buildFoot() {
         foot.removeAllViews()
         padName = null
-        if (portrait) {
-            foot.gravity = Gravity.TOP
-            foot.setPadding(0, sw.px(36), 0, 0)
-            listOf(Triple(Page.HOME, "home", Sw.C_CYAN), Triple(Page.GAMES, "grid", Sw.C_BLUE),
-                    Triple(Page.CONSOLES, "consoles", Sw.C_AMBER), Triple(Page.SETTINGS, "gear", sw.sub)).forEach { (p, icon, color) ->
-                val on = p == page
-                foot.addView(sw.col().apply {
-                    gravity = Gravity.CENTER_HORIZONTAL
-                    addView(roundButton("dock:${p.name}", icon, color, 104, sw.bg) { FeelSounds.play(this@HandheldHomeActivity, FeelSounds.Cue.TAB); go(p) }, sw.lp(104, 104))
-                    addView(sw.text(if (p == Page.GAMES) "Games" else p.title, 24, if (on) sw.ring else sw.sub, 700), sw.lp(-2, -2).apply { topMargin = sw.px(14) })
-                }, LinearLayout.LayoutParams(0, -2, 1f))
-            }
-            return
-        }
         foot.gravity = Gravity.CENTER_VERTICAL
         foot.addView(Glyph(this, "pad", sw.sub), sw.lp(74, 38).apply { rightMargin = sw.px(14) })
         padName = sw.text(controllerName(), 28, sw.sub, 700)
@@ -681,7 +661,8 @@ class HandheldHomeActivity : Activity() {
         box.addView(gname, FrameLayout.LayoutParams(-2, -2))
         gnameBox = box
         val e = sw.edge
-        val ts = if (sw.compact) 350 else 380   // compact: about three and a half tiles across
+        // compact: about three and a half tiles across; upright the tiles take about a third of the height
+        val ts = if (portrait) minOf(420, (sw.designHeight * 0.34f).toInt()) else if (sw.compact) 350 else 380
         col.addView(part(box), sw.lp(-1, 48).apply { topMargin = sw.px(if (sw.compact) 36 else 96); leftMargin = sw.px(e) })
 
         val row = sw.row().apply { clipChildren = false; setPadding(sw.px(e), 0, sw.px(e), 0) }
@@ -699,7 +680,10 @@ class HandheldHomeActivity : Activity() {
         // the tile you were on (or the first) is where focus starts
         primaryView = tiles.firstOrNull { it.tag == "g:$selKey" } ?: tiles.first()
 
-        val rounds = sw.row(Gravity.TOP).apply { gravity = Gravity.CENTER_HORIZONTAL; clipChildren = false }
+        // upright: two rows of three, each label beside its button (six in a row came out cramped)
+        val rounds: ViewGroup = if (portrait) GridLayout(this).apply { columnCount = 3; clipChildren = false }
+                else sw.row(Gravity.TOP).apply { gravity = Gravity.CENTER_HORIZONTAL; clipChildren = false }
+        val cell = ((sw.designWidth - 2 * sw.edge) / 3f).toInt()
         // compact shows every label at once, so they're shorter there to sit side by side
         listOf(Triple("Consoles", "consoles", Sw.C_CYAN), Triple(if (sw.compact) "Play on TV" else "Play on a TV", "tv", Sw.C_AMBER), Triple("Controllers", "pad", Sw.C_BLUE),
                 Triple(if (sw.compact) "Network" else "Network test", "net", Sw.C_GREEN), Triple("Settings", "gear", sw.sub), Triple("Exit", "power", Sw.C_RED)).forEachIndexed { i, (label, icon, color) ->
@@ -707,60 +691,26 @@ class HandheldHomeActivity : Activity() {
             // compact: labels always show (the screen has room below, and small icons alone are hard to tell apart)
             val lab = sw.text(label, if (sw.compact) 24 else 26, if (sw.compact) sw.sub else sw.ring, 700).apply { gravity = Gravity.CENTER_HORIZONTAL; visibility = if (sw.compact) View.VISIBLE else View.INVISIBLE }
             rbLabels += btn to lab
-            rounds.addView(FrameLayout(this).apply {
+            if (portrait) {
+                lab.gravity = Gravity.CENTER_VERTICAL
+                rounds.addView(sw.row().apply {
+                    clipChildren = false
+                    addView(btn, sw.lp(110, 110))
+                    addView(lab, sw.lp(-2, -2).apply { leftMargin = sw.px(20) })
+                }, GridLayout.LayoutParams().apply { width = sw.px(cell); height = sw.px(110); if (i >= 3) topMargin = sw.px(24) })
+            } else rounds.addView(FrameLayout(this).apply {
                 clipChildren = false
                 addView(btn, sw.flp(112, 112))
                 addView(lab, FrameLayout.LayoutParams(sw.px(420), -2, Gravity.CENTER_HORIZONTAL).apply { topMargin = sw.px(132) })
             }, sw.lp(112, 180).apply { if (i > 0) leftMargin = sw.px(if (sw.compact) 64 else 40) })
         }
-        col.addView(part(rounds), sw.lp(-1, 180).apply { topMargin = sw.px(if (sw.compact) 72 else 80) })
+        if (portrait) col.addView(part(rounds), sw.lp(-2, -2).apply { topMargin = sw.px(56); leftMargin = sw.px(sw.edge) })
+        else col.addView(part(rounds), sw.lp(-1, 180).apply { topMargin = sw.px(if (sw.compact) 72 else 80) })
         return col
     }
 
     /** Where focus lands when a page opens (each page sets it while it builds). */
     private var primaryView: View? = null
-
-    private fun homePortrait(): View {
-        val games = homeGames()
-        if (selKey == null || games.none { it.key == selKey }) selKey = games.firstOrNull()?.key
-        val sel = games.firstOrNull { it.key == selKey }
-        val col = sw.col().apply { setPadding(sw.px(56), 0, sw.px(56), sw.px(40)); clipChildren = false }
-        heroName = sw.text(sel?.title ?: "Add a console", 44, sw.ring, 700)
-        col.addView(part(heroName!!), sw.lp(-1, -2).apply { topMargin = sw.px(44) })
-        val heroTile = if (sel != null) tileView(sel, 968, 60, "hero", sel.title) { play(sel) }
-                       else tileView(null, 968, 60, "hero", "Add a console") { go(Page.CONSOLES) }
-        hero = heroTile
-        col.addView(part(heroTile), sw.lp(-1, 560).apply { topMargin = sw.px(26) })
-        col.addView(part(sw.row().apply {
-            addView(pill("pill:here", "Play here", true) { gameFor(selKey)?.let { playHere(it) } ?: go(Page.CONSOLES) }, LinearLayout.LayoutParams(0, sw.px(112), 1f))
-            addView(pill("pill:tv", "Play on TV", false) { playWhere(gameFor(selKey)) }, LinearLayout.LayoutParams(0, sw.px(112), 1f).apply { leftMargin = sw.px(20) })
-        }), sw.lp(-1, 112).apply { topMargin = sw.px(40) })
-        col.addView(part(sw.text("Recent", 34, sw.ink, 800)), sw.lp(-2, -2).apply { topMargin = sw.px(56) })
-
-        val dw = sw.designWidth
-        val size = ((dw - 112 - 44) / 3f).toInt()
-        val grid = GridLayout(this).apply { columnCount = 3; clipChildren = false }
-        val list = games.take(8).map { g ->
-            tileView(g, size, 28, "g:${g.key}", g.title) {
-                // a tap picks it for the big tile; A on a pad starts it
-                if (it.isInTouchMode) { selKey = g.key; FeelSounds.play(this, FeelSounds.Cue.SELECT); render(force = true); (content.getChildAt(0) as? ViewGroup)?.scrollTo(0, 0) }
-                else play(g)
-            }
-        } + tileView(null, size, 28, "g:all", "All games") { gamesTab = "all"; go(Page.GAMES) }
-        list.forEachIndexed { i, t ->
-            grid.addView(t, GridLayout.LayoutParams().apply {
-                width = sw.px(size); height = sw.px(size)
-                if (i % 3 != 0) leftMargin = sw.px(22)
-                topMargin = sw.px(22)
-            })
-        }
-        col.addView(part(grid), sw.lp(-2, -2))
-        primaryView = heroTile
-        return ColScroll(this, sw.px(40)).apply {
-            isVerticalScrollBarEnabled = false; isFocusable = false; clipToPadding = false; clipChildren = false
-            addView(col)
-        }
-    }
 
     private fun roundAction(icon: String) {
         when (icon) {
@@ -848,7 +798,6 @@ class HandheldHomeActivity : Activity() {
                 fadeSwap(gname!!, v.getTag(R.id.hh_title) as? String ?: "")
                 placeName()
             }
-            if (portrait && page == Page.HOME && t.startsWith("g:") && t != "g:all") updateHero()
         }
     }
 
@@ -866,27 +815,6 @@ class HandheldHomeActivity : Activity() {
     }
 
     /** Upright, moving over the Recent grid puts that game in the big tile without rebuilding the page. */
-    private fun updateHero() {
-        val g = gameFor(selKey) ?: return
-        heroName?.let { fadeSwap(it, g.title) }
-        val h = hero ?: return
-        h.background = sw.art(g.seed)
-        h.setTag(R.id.hh_title, g.title)
-        h.setTag(R.id.hh_tint, sw.tint(g.seed))
-        h.removeAllViews()
-        val title = sw.text(g.title, 60, 0xFFFFFFFF.toInt(), 800, 3).apply {
-            gravity = Gravity.BOTTOM; setPadding(sw.px(40), 0, sw.px(40), sw.px(36)); setShadowLayer(sw.pxf(10), 0f, sw.pxf(2), 0x59000000)
-        }
-        if (g.pc != null && g.app != null) {
-            val img = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
-            h.addView(img, FrameLayout.LayoutParams(-1, -1)); h.addView(title, FrameLayout.LayoutParams(-1, -1))
-            loader(g.pc).populateImageView(g.app, img, title)
-        } else h.addView(title, FrameLayout.LayoutParams(-1, -1))
-        h.addView(sw.badge(g.src, 24), sw.flp(-2, 48).apply { leftMargin = sw.px(18); topMargin = sw.px(18) })
-        if (g.running) h.addView(sw.live(24), sw.flp(-2, 48, Gravity.END).apply { rightMargin = sw.px(18); topMargin = sw.px(18) })
-        h.setOnClickListener { play(g) }
-    }
-
     private fun placeName() {
         val n = gname ?: return
         val t = gnameTarget ?: return
@@ -1016,13 +944,13 @@ class HandheldHomeActivity : Activity() {
         list.addView(sw.row().apply {
             this.tag = tag
             background = sw.bottomLine()
-            setPadding(sw.px(26), sw.px(18), sw.px(26), sw.px(18))
-            minimumHeight = sw.px(116)
+            setPadding(sw.px(26), sw.px(if (sw.compact) 24 else 18), sw.px(26), sw.px(if (sw.compact) 24 else 18))
+            minimumHeight = sw.px(if (sw.compact) 128 else 116)
             addView(sw.text(icon, 22, 0xFFFFFFFF.toInt(), 800).apply { gravity = Gravity.CENTER; background = sw.round(iconColor, 14) },
                     sw.lp(64, 64).apply { rightMargin = sw.px(26) })
             addView(sw.col().apply {
                 addView(sw.text(title, 30, sw.ink, 700))
-                if (sub != null) addView(sw.text(sub, 23, sw.sub, 600, 2), sw.lp(-2, -2).apply { topMargin = sw.px(8) })
+                if (sub != null) addView(sw.text(sub, 23, sw.sub, 600, 2), sw.lp(-2, -2).apply { topMargin = sw.px(sw.lineGap) })
             }, LinearLayout.LayoutParams(0, -2, 1f))
             if (right != null) addView(sw.text(right, 28, sw.ring, 700), sw.lp(-2, -2).apply { leftMargin = sw.px(24) })
             sw.focusable(this)
@@ -1090,15 +1018,6 @@ class HandheldHomeActivity : Activity() {
             "ps" to "PlayStation", "xbox" to "Xbox", "theme" to "Theme", "about" to "About")
 
     private fun settingsPage(): View {
-        if (portrait) {
-            val list = sw.col()
-            groups.forEachIndexed { i, (k, label) ->
-                list.addView(sw.text(label, 26, sw.sub, 800), sw.lp(-2, -2).apply { topMargin = sw.px(if (i == 0) 0 else 40); bottomMargin = sw.px(10); leftMargin = sw.px(26) })
-                settingsRows(list, k)
-            }
-            primaryView = null
-            return scrollPane(list)
-        }
         val row = sw.row(Gravity.TOP)
         val side = sw.col().apply { setPadding(sw.px(if (sw.compact) 20 else 96), sw.px(20), 0, 0) }
         groups.forEach { (k, label) ->
@@ -1275,14 +1194,14 @@ class HandheldHomeActivity : Activity() {
         list.addView(sw.row().apply {
             tag = "set:$key"
             background = sw.bottomLine()
-            setPadding(sw.px(26), sw.px(18), sw.px(26), sw.px(18))
-            minimumHeight = sw.px(116)
+            setPadding(sw.px(26), sw.px(if (sw.compact) 24 else 18), sw.px(26), sw.px(if (sw.compact) 24 else 18))
+            minimumHeight = sw.px(if (sw.compact) 128 else 116)
             addView(sw.col().apply {
                 addView(sw.text(title, 30, sw.ink, 700))
-                if (sub != null) addView(sw.text(sub, 23, sw.sub, 600, 2), sw.lp(-2, -2).apply { topMargin = sw.px(8) })
+                if (sub != null) addView(sw.text(sub, 23, sw.sub, 600, 2), sw.lp(-2, -2).apply { topMargin = sw.px(sw.lineGap) })
             }, LinearLayout.LayoutParams(0, -2, 1f))
             if (value != null) addView(value, (value.layoutParams as? LinearLayout.LayoutParams ?: sw.lp(-2, -2)).apply { leftMargin = sw.px(24) })
-            if (!portrait) setOnKeyListener { _, code, e ->
+            setOnKeyListener { _, code, e ->
                 if (code == KeyEvent.KEYCODE_DPAD_LEFT && e.action == KeyEvent.ACTION_DOWN)
                     content.findViewWithTag<View>("group:$settingsGroup")?.requestFocus() ?: false
                 else false
@@ -1966,7 +1885,7 @@ class HandheldHomeActivity : Activity() {
                             gamesTab = tabs[(tabs.indexOf(gamesTab) + step + tabs.size) % tabs.size]
                             FeelSounds.play(this, FeelSounds.Cue.TAB, 0.3f * step); render(force = true); return true
                         }
-                        Page.SETTINGS -> if (!portrait) {
+                        Page.SETTINGS -> run {
                             val i = groups.indexOfFirst { it.first == settingsGroup }
                             settingsGroup = groups[(i + step + groups.size) % groups.size].first
                             FeelSounds.play(this, FeelSounds.Cue.TAB, 0.3f * step); render(force = true)

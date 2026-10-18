@@ -31,15 +31,25 @@ class Sw(ctx: Context, val light: Boolean, val portrait: Boolean, val size: Size
      */
     enum class Size { NORMAL, COMPACT, LARGE }
 
-    val compact get() = size != Size.NORMAL
+    /**
+     * Compact sizes (edges, tiles, side menu). Upright is always compact: portrait shows the same screens as landscape,
+     * only fitted to a narrower, taller screen.
+     */
+    val compact get() = size != Size.NORMAL || portrait
     /** Space between the screen edge and the content, in design px. */
-    val edge get() = if (portrait) 56 else if (compact) 44 else 96
+    val edge get() = if (portrait) 40 else if (compact) 44 else 96
 
+    // Upright: the width sets the scale (1080 wide, or 940 for Large), so text stays the size it is in landscape
+    // compact and the height is whatever the screen has (see [designHeight]).
     val tv = when (size) {
-        Size.NORMAL -> Tv(ctx, false, if (portrait) 1080 else 1920, if (portrait) 1920 else 1080)
-        Size.COMPACT -> Tv(ctx, false, if (portrait) 1080 else 1240, if (portrait) 1440 else 1080)
-        Size.LARGE -> Tv(ctx, false, if (portrait) 940 else 1080, if (portrait) 1250 else 940)
+        Size.NORMAL -> if (portrait) Tv(ctx, false, 1080, 0) else Tv(ctx, false, 1920, 1080)
+        Size.COMPACT -> if (portrait) Tv(ctx, false, 1080, 0) else Tv(ctx, false, 1240, 1080)
+        Size.LARGE -> if (portrait) Tv(ctx, false, 940, 0) else Tv(ctx, false, 1080, 940)
     }
+    /** The design canvas height this screen really has. */
+    val designHeight: Float get() = c.resources.displayMetrics.heightPixels / tv.pxf(1)
+    /** Extra space between a row's title and its description on the compact layout. */
+    val lineGap get() = if (compact) 12 else 8
     val c = ctx
 
     val bg = if (light) 0xFFEBEBEB.toInt() else 0xFF2B2D31.toInt()
