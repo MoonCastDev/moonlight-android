@@ -31,6 +31,8 @@ class TvControllerActivity : Activity() {
     companion object {
         const val EXTRA_TV = "tv_id"
         const val EXTRA_DELAY = "send_delay_ms"
+        /** Player 2: join the PC game already playing on the TV with this device's own controller session. */
+        const val EXTRA_JOIN = "join"
         private val COMBO = intArrayOf(4, 5, 8, 9)   // LB RB Select Start
         private const val LINK_WAIT_MS = 8000L
         /** Settings, Controllers: "direct" (to the PC, fastest) or "tv" (through the TV). */
@@ -59,6 +61,8 @@ class TvControllerActivity : Activity() {
     private var menu = false          // the pad drives the on-screen buttons instead of the game
     private var comboPending = false
     private var attempt = 0
+    /** Joined someone else's game as player 2: never sends or stops the TV's game, and never uses its relay. */
+    private var joining = false
 
     // PC games: the controller goes straight to the PC as its own controller-only session (DirectPad); if that can't
     // connect, the TV relays it after all (/pad). PS5 and Xbox always go through the TV.
@@ -74,6 +78,10 @@ class TvControllerActivity : Activity() {
                 runOnUiThread {
                     if (mine != attempt || state != State.PLAYING || isFinishing) return@runOnUiThread
                     if (st != null) {
+                        if (joining && st.first != "playing" && st.first != "starting") {
+                            stopDirect(); state = State.FAILED; error = "The game on ${tv0.name} ended."
+                            setMenu(true); refresh(); return@runOnUiThread
+                        }
                         tvState = st.first
                         if (st.first == "failed") {
                             stopDirect(); ui.removeCallbacks(linkTimeout)
@@ -144,6 +152,19 @@ class TvControllerActivity : Activity() {
         val tv0 = TvFinder.byId(this, i.getStringExtra(EXTRA_TV))
         if (t == null || tv0 == null) { finish(); return }
         target = t; tv = tv0
+        joining = i.getBooleanExtra(EXTRA_JOIN, false)
+        if (joining) {
+            // player 2: our own controller-only session to the game the TV is playing, nothing sent to the TV
+            b.fill(0f); a.fill(0f)
+            title.text = t.title
+            attempt++
+            state = State.PLAYING; error = null
+            startDirect(t)
+            ui.removeCallbacks(statusPoll); ui.postDelayed(statusPoll, 2000)
+            FeelSounds.play(this, FeelSounds.Cue.LAUNCH)
+            setMenu(false); refresh()
+            return
+        }
         // one server for the app, one key per TV: a re-send reuses both, so the TV's open link keeps working
         PadLink.onClients = clientsListener
         padKey = PadLink.keyFor(tv0.id)   // starts the server if needed: up before /play, the TV connects right after
@@ -257,6 +278,12 @@ class TvControllerActivity : Activity() {
     /** The direct session can't connect: ask the TV to relay the controller after all, and say so. */
     private fun fallBack(reason: String) {
         if (!directMode) return
+        if (joining) {   // the TV's relay is player 1's: player 2 needs its own session
+            val pc = direct?.pcName ?: "the PC"
+            stopDirect()
+            fail("Couldn't join as player 2: $pc didn't take a second controller ($reason). This ${deviceShort()} needs to be paired with $pc.")
+            return
+        }
         val pc = direct?.pcName ?: "the PC"
         android.util.Log.i("MoonCast-Controller", "direct controller to $pc: $reason; using the TV's relay")
         stopDirect()
@@ -322,7 +349,8 @@ class TvControllerActivity : Activity() {
 
     private fun refresh() {
         val t = target ?: return; val tvName = tv?.name ?: "the TV"
-        where.text = when (state) { State.SENDING -> "Sending to $tvName"; State.PLAYING -> "Playing on $tvName"; State.FAILED -> "Couldn't play on $tvName" }
+        where.text = if (joining) (if (state == State.FAILED) "Player 2 on $tvName" else "Player 2 on $tvName")
+            else when (state) { State.SENDING -> "Sending to $tvName"; State.PLAYING -> "Playing on $tvName"; State.FAILED -> "Couldn't play on $tvName" }
         status.setTextColor(if (state == State.FAILED) Sw.DANGER else sw.sub)
         status.text = when (state) {
             State.SENDING -> "Starting ${t.title} on $tvName…"
@@ -330,7 +358,7 @@ class TvControllerActivity : Activity() {
             State.PLAYING -> if (directMode) {
                 val d = direct; val pc = d?.pcName ?: "the PC"
                 when (d?.state) {
-                    DirectPad.State.CONNECTED -> "Controller connected (direct to $pc)"
+                    DirectPad.State.CONNECTED -> if (joining) "You're player 2 (direct to $pc)" else "Controller connected (direct to $pc)"
                     DirectPad.State.CONNECTING -> if (directEverUp) "Reconnecting to $pc…" else "Connecting the controller to $pc…"
                     else -> "Waiting for ${t.title} to start on $pc…"
                 }
@@ -346,9 +374,14 @@ class TvControllerActivity : Activity() {
         val focusedLabel = (currentFocus as? TextView)?.text?.toString()
         buttons.removeAllViews()
         val list = ArrayList<Pair<String, () -> Unit>>()
-        if (state == State.FAILED || (state == State.PLAYING && noLink)) list += "Try again" to { attempt++; send(0, retried = false) }
-        list += "Play here instead" to { playHere() }
-        list += (if (state == State.FAILED) "Back" else "Stop") to { stopAndLeave() }
+        if (joining) {
+            if (state == State.FAILED && error?.startsWith("Couldn't join") == true) list += "Try again" to { target?.let { attempt++; state = State.PLAYING; error = null; startDirect(it); setMenu(false); refresh() } }
+            list += (if (state == State.FAILED) "Back" else "Leave") to { leaveJoin() }
+        } else {
+            if (state == State.FAILED || (state == State.PLAYING && noLink)) list += "Try again" to { attempt++; send(0, retried = false) }
+            list += "Play here instead" to { playHere() }
+            list += (if (state == State.FAILED) "Back" else "Stop") to { stopAndLeave() }
+        }
         list.forEachIndexed { i, (label, fn) ->
             buttons.addView(pill(label, i == 0, fn), sw.lp(-2, 112).apply { if (i > 0) leftMargin = sw.px(28) })
         }
@@ -414,6 +447,14 @@ class TvControllerActivity : Activity() {
         FeelSounds.play(this, FeelSounds.Cue.BACK)
         if (state != State.PLAYING) { PadLink.stop(); attempt++; finish(); return }   // nothing is playing on the TV yet
         leave("Stopping on ${tv?.name ?: "the TV"}…") { }
+    }
+
+    /** Player 2 leaves: only our own session ends; player 1's game on the TV keeps going. */
+    private fun leaveJoin() {
+        FeelSounds.play(this, FeelSounds.Cue.BACK)
+        attempt++
+        stopDirect()
+        finish()
     }
 
     private var leaving = false
