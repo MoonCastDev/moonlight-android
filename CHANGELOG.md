@@ -1,5 +1,8 @@
 # Changelog
 
+## 12.2-test191 (2026-10-19)
+- Handheld: the menus keep the phone's own status bar and navigation, like any app, instead of hiding them and drawing MoonCast's own clock and battery. Content stays clear of the status bar, the navigation and the camera cutout. Games are still full screen.
+
 ## 12.2-test190 (2026-10-19)
 - Handheld on tall phones (Pixel): Home used only the top half of the screen. Upright, the tiles now go two across the full width and wrap into as many rows as fit above the round buttons (the last tile is All games); with height to spare, Home is centred. A near-square screen upright (Retroid) keeps one row.
 - Handheld: a back button at the top left of every page but Home, for touch screens (same as B). The bottom bar's button hints can be tapped (they do what the button does), and they're hidden when no controller is connected.

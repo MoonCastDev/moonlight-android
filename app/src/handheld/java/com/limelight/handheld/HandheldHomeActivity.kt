@@ -100,9 +100,6 @@ class HandheldHomeActivity : Activity() {
     private lateinit var foot: LinearLayout
     private lateinit var overlay: FrameLayout
     private lateinit var glide: FocusGlide
-    private var clock: TextView? = null
-    private var battText: TextView? = null
-    private var battGlyph: Glyph? = null
     private var padName: TextView? = null
     private var portrait = false
     private val ui = Handler(Looper.getMainLooper())
@@ -245,14 +242,18 @@ class HandheldHomeActivity : Activity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) immersive()
+        if (hasFocus) systemBars()
     }
 
+    /**
+     * The menus keep the phone's own status bar (clock, battery, notifications) and navigation, like any app; only a
+     * game is full screen (its own activity). Icons dark on the light theme.
+     */
     @Suppress("DEPRECATION")
-    private fun immersive() {
-        window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_FULLSCREEN or
-                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
-                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+    private fun systemBars() {
+        window.decorView.systemUiVisibility = if (sw.light)
+            View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or (if (android.os.Build.VERSION.SDK_INT >= 26) View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR else 0)
+        else 0
     }
 
     override fun onConfigurationChanged(c: Configuration) {
@@ -327,10 +328,9 @@ class HandheldHomeActivity : Activity() {
         override fun onInputDeviceChanged(id: Int) { padName?.text = controllerName() }
     }
 
-    /** Clock, battery and PS5 probes while the home is on screen. */
+    /** PS5 and TV probes while the home is on screen. */
     private val tick = object : Runnable {
         override fun run() {
-            updateStatus()
             probeConsoles()
             // MoonCast TVs: the known ones every half minute, a full sweep every two minutes (a couple of seconds' work)
             val now = System.currentTimeMillis()
@@ -343,19 +343,6 @@ class HandheldHomeActivity : Activity() {
         }
     }
 
-    private fun updateStatus() {
-        clock?.text = DateFormat.getTimeFormat(this).format(Date())
-        val bat = try { registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED)) } catch (e: Exception) { null }
-        if (bat != null) {
-            val lv = bat.getIntExtra(BatteryManager.EXTRA_LEVEL, -1); val sc = bat.getIntExtra(BatteryManager.EXTRA_SCALE, 100)
-            if (lv >= 0 && sc > 0) {
-                val pct = lv * 100 / sc
-                val plugged = bat.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) != 0
-                battText?.text = if (plugged) "$pct% ⚡" else "$pct%"
-                battGlyph?.let { it.level = pct; it.invalidate() }
-            }
-        }
-    }
 
     // ---------------------------------------------------------------- data
 
@@ -486,6 +473,15 @@ class HandheldHomeActivity : Activity() {
         overlay = FrameLayout(this).apply { visibility = View.GONE; isClickable = true }
         root.addView(overlay, FrameLayout.LayoutParams(-1, -1))
         setContentView(root)
+        // drawn edge to edge (target SDK 36): keep everything clear of the status bar, the navigation and any cutout
+        root.setOnApplyWindowInsetsListener { v, ins ->
+            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                val b = ins.getInsets(android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.displayCutout())
+                v.setPadding(b.left, b.top, b.right, b.bottom)
+            } else @Suppress("DEPRECATION") v.setPadding(ins.systemWindowInsetLeft, ins.systemWindowInsetTop, ins.systemWindowInsetRight, ins.systemWindowInsetBottom)
+            ins
+        }
+        systemBars()
 
         // the Switch ring: a background-coloured gap, then cyan, standing off the item, breathing slowly
         glide = FocusGlide(root).apply {
@@ -613,14 +609,8 @@ class HandheldHomeActivity : Activity() {
             topBar.addView(sw.text(page.title, 44, sw.ink, 800))
         }
         topBar.addView(sw.grow())
-        clock = sw.text("", 30, sw.ink, 700)
-        topBar.addView(clock)
-        battGlyph = Glyph(this, "battery", sw.ink)
-        topBar.addView(battGlyph, sw.lp(58, 28).apply { leftMargin = sw.px(26); rightMargin = sw.px(10) })
-        battText = sw.text("", 30, sw.ink, 700)
-        topBar.addView(battText)
+        // the clock and battery are the phone's own status bar now
         part(topBar)
-        updateStatus()
     }
 
     private fun avatar(): View {
