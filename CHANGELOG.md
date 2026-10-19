@@ -1,5 +1,8 @@
 # Changelog
 
+## 12.2-test192 (2026-10-19)
+- Handheld: the status bar and navigation bar take the app's background colour instead of black (Android 14 and older), so the menus look like one surface.
+
 ## 12.2-test191 (2026-10-19)
 - Handheld: the menus keep the phone's own status bar and navigation, like any app, instead of hiding them and drawing MoonCast's own clock and battery. Content stays clear of the status bar, the navigation and the camera cutout. Games are still full screen.
 

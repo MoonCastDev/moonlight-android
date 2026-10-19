@@ -251,6 +251,9 @@ class HandheldHomeActivity : Activity() {
      */
     @Suppress("DEPRECATION")
     private fun systemBars() {
+        // bars the colour of the app (Android 14 and older draw them black; 15+ is edge to edge and shows the app)
+        window.statusBarColor = sw.bg
+        window.navigationBarColor = sw.bg
         window.decorView.systemUiVisibility = if (sw.light)
             View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or (if (android.os.Build.VERSION.SDK_INT >= 26) View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR else 0)
         else 0
