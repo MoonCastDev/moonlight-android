@@ -117,6 +117,23 @@ object TvSender : MoveToTv.Handler {
         } catch (e: Exception) { null } finally { c?.disconnect() }
     }
 
+    /** A PC game playing on a TV right now (GET /status, version 7+): enough to join it as player 2. */
+    class NowPlaying(val pcUuid: String, val pcName: String, val appId: Int, val appName: String, val sender: String)
+
+    /** Blocking. The PC game [tv] is playing, or null (idle, a console, or an older TV). */
+    fun nowPlaying(tv: TvFinder.Tv): NowPlaying? {
+        if (tv.ip.isEmpty() || tv.version < 7) return null
+        var c: HttpURLConnection? = null
+        return try {
+            c = URL("http://${tv.ip}:${TvFinder.PORT}/status").openConnection() as HttpURLConnection
+            c.connectTimeout = 1500; c.readTimeout = 2000
+            if (c.responseCode != 200) return null
+            val j = JSONObject(c.inputStream.bufferedReader().use { it.readText() })
+            if (j.optString("state") != "playing" || j.optString("pc").isEmpty()) return null
+            NowPlaying(j.optString("pc"), j.optString("pcName"), j.optInt("appId"), j.optString("appName"), j.optString("sender"))
+        } catch (e: Exception) { null } finally { c?.disconnect() }
+    }
+
     /** Blocking. The direct controller session failed: ask [tv] to relay the pad after all (POST /pad, version 4+). */
     fun useRelay(tv: TvFinder.Tv, padKey: String): Boolean {
         if (tv.ip.isEmpty() || tv.version < 4) return false

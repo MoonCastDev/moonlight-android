@@ -331,9 +331,39 @@ class HandheldHomeActivity : Activity() {
         override fun onInputDeviceChanged(id: Int) { padName?.text = controllerName() }
     }
 
+    /** A TV nearby playing a PC game this device could join as player 2 (not its own game). Shown on Home. */
+    private var joinOffer: Pair<TvFinder.Tv, TvSender.NowPlaying>? = null
+    private var joinCheckAt = 0L
+    private fun checkJoin() {
+        val myPcs = pcs.values.filter { paired(it) }.mapNotNull { it.uuid }.toSet()
+        val tvs = TvFinder.known(this).filter { TvFinder.isHere(it) && it.version >= 7 }
+        if (tvs.isEmpty() || myPcs.isEmpty()) { if (joinOffer != null) { joinOffer = null; if (page == Page.HOME) buildTop() }; return }
+        Thread({
+            val me = TvFinder.myIp()
+            val found = tvs.firstNotNullOfOrNull { tv ->
+                TvSender.nowPlaying(tv)?.takeIf { it.pcUuid in myPcs && it.sender != me }?.let { tv to it }
+            }
+            runOnUiThread {
+                val was = joinOffer
+                if (was?.first?.id != found?.first?.id || was?.second?.appId != found?.second?.appId) {
+                    joinOffer = found
+                    if (page == Page.HOME && !isFinishing) buildTop()
+                }
+            }
+        }, "join-check").start()
+    }
+
+    private fun joinAsPlayerTwo(tv: TvFinder.Tv, np: TvSender.NowPlaying) {
+        val t = MoveToTv.Target("pc", np.appName.ifBlank { "the game" }, np.pcUuid, np.pcName, np.appId)
+        FeelSounds.play(this, FeelSounds.Cue.LAUNCH)
+        startActivity(t.put(Intent(this, TvControllerActivity::class.java))
+                .putExtra(TvControllerActivity.EXTRA_TV, tv.id).putExtra(TvControllerActivity.EXTRA_JOIN, true))
+    }
+
     /** PS5 and TV probes while the home is on screen. */
     private val tick = object : Runnable {
         override fun run() {
+            if (page == Page.HOME && System.currentTimeMillis() - joinCheckAt > 8_000) { joinCheckAt = System.currentTimeMillis(); checkJoin() }
             probeConsoles()
             // MoonCast TVs: the known ones every half minute, a full sweep every two minutes (a couple of seconds' work)
             val now = System.currentTimeMillis()
@@ -605,6 +635,17 @@ class HandheldHomeActivity : Activity() {
                 isFocusable = false   // a tap target only; the pad starts on the games
                 isSoundEffectsEnabled = !FeelSounds.enabled(this@HandheldHomeActivity)
             }, sw.lp(-2, 64))
+            // a TV nearby is playing a PC game this device can join: player 2 with its own controller
+            joinOffer?.let { (tv, np) ->
+                topBar.addView(sw.row().apply {
+                    tag = "top:join"
+                    background = sw.round(sw.ring, 32)
+                    setPadding(sw.px(26), 0, sw.px(26), 0)
+                    addView(sw.text("Join ${tv.name} as player 2", 24, 0xFF0B1A1C.toInt(), 800))
+                    sw.focusable(this)   // reachable with the pad too (Up from the games)
+                    setOnClickListener { joinAsPlayerTwo(tv, np) }
+                }, sw.lp(-2, 64).apply { leftMargin = sw.px(16) })
+            }
         } else {
             // a back button you can tap: a touch screen has no B (the same as B / the system back)
             topBar.addView(roundButton("top:back", "back", sw.ink, 84, sw.panel) { onBackPressed() }.apply { isFocusable = false },

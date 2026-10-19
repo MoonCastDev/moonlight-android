@@ -36,11 +36,16 @@ public class PhoneLink {
      *  4 = /play "pad":"direct" (the sender's controller goes straight to the PC) and POST /pad (relay after all).
      *  5 = with "pad":"direct" the TV's stream registers no gamepad at all, so the sender's session is pad 0.
      *  6 = GET /status: how the stream the last /play started is going ({"state","error","seq"}). */
-    public static final int PROTOCOL_VERSION = 6;
+    public static final int PROTOCOL_VERSION = 7;   // 7 = GET /status says which PC game is playing (player 2 can join)
 
     // GET /status: "idle", "starting" (after /play), "playing" or "failed" with the player's own words
     private static volatile String playState = "idle";
     private static volatile long lastPlayAt;   // when the last /play came in
+    // The PC game on screen now (GET /status), so another handheld can join it as player 2 with its own controller
+    // session. Empty for a PS5 or Xbox (one controller there) and when nothing is playing.
+    private static volatile String nowPcUuid = "", nowPcName = "", nowAppName = "";
+    private static volatile int nowAppId = 0;
+    private static volatile String nowSender = "";   // the address of the device that sent it ("" if started on the TV)
     private static volatile String playError = null;
     private static volatile int playSeq = 0;
 
@@ -48,6 +53,8 @@ public class PhoneLink {
     private static final java.util.Set<android.app.Activity> streams =
             java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
     private static boolean tracking;
+
+    private static String s(String v) { return v == null ? "" : v; }
 
     private static synchronized void track(Context app) {
         if (tracking || !(app instanceof android.app.Application)) return;
@@ -60,13 +67,22 @@ public class PhoneLink {
             private boolean isStream(android.app.Activity a) {
                 return a instanceof Game || a instanceof Ps5StreamActivity || a instanceof XboxStreamActivity;
             }
-            @Override public void onActivityCreated(android.app.Activity a, android.os.Bundle b) { if (isStream(a)) synchronized (streams) { streams.add(a); } }
+            @Override public void onActivityCreated(android.app.Activity a, android.os.Bundle b) {
+                if (isStream(a)) synchronized (streams) { streams.add(a); }
+                if (a instanceof Game) {   // a PC game, sent or started on the TV: remember which, for player 2
+                    Intent i = a.getIntent();
+                    nowPcUuid = s(i.getStringExtra(Game.EXTRA_PC_UUID)); nowPcName = s(i.getStringExtra(Game.EXTRA_PC_NAME));
+                    nowAppName = s(i.getStringExtra(Game.EXTRA_APP_NAME)); nowAppId = i.getIntExtra(Game.EXTRA_APP_ID, 0);
+                    if (System.currentTimeMillis() - lastPlayAt > 30_000) nowSender = "";   // started on the TV itself
+                } else if (isStream(a)) { nowPcUuid = ""; nowAppId = 0; }
+            }
             @Override public void onActivityDestroyed(android.app.Activity a) {
                 synchronized (streams) {
                     streams.remove(a);
                     // #41: the last stream screen closed, so nothing is playing any more. A failure stays reported
                     // (with its words) until the next /play, so the sender can still read why.
                     if (isStream(a) && streams.isEmpty() && !"failed".equals(playState)) playState = "idle";
+                    if (isStream(a) && streams.isEmpty()) { nowPcUuid = ""; nowPcName = ""; nowAppName = ""; nowAppId = 0; }
                     // #40: forget the sender, unless a new /play just came in (a game switch: the old screen can
                     // close after the next game's /play has already set the sender)
                     if (isStream(a) && streams.isEmpty() && System.currentTimeMillis() - lastPlayAt > 10_000) PhoneGamepad.forgetPhone();
@@ -165,10 +181,14 @@ public class PhoneLink {
                         + ",\"paired\":" + pairedNow(pc) + "}");
             } else if ("GET".equals(method) && path.startsWith("/status")) {
                 send(s, 200, "{\"state\":" + quote(playState) + ",\"error\":" + quote(playError == null ? "" : playError)
-                        + ",\"seq\":" + playSeq + "}");
+                        + ",\"seq\":" + playSeq
+                        + ",\"pc\":" + quote(nowPcUuid) + ",\"pcName\":" + quote(nowPcName)
+                        + ",\"appId\":" + nowAppId + ",\"appName\":" + quote(nowAppName)
+                        + ",\"sender\":" + quote(nowSender) + "}");
             } else if ("POST".equals(method) && path.startsWith("/play")) {
                 playSeq++; playState = "starting"; playError = null;
                 lastPlayAt = System.currentTimeMillis();
+                try { nowSender = s.getInetAddress().getHostAddress(); } catch (Exception ignored) { nowSender = ""; }
                 String json = readBody(in, clen, 16384);   // read it all: a PSN token makes it bigger than one read
                 String appId = field(json, "appId"), appName = field(json, "appName");
                 String sender = field(json, "deviceName");
