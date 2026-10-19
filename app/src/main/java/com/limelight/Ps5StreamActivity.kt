@@ -558,9 +558,37 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
         return super.dispatchKeyEvent(e)
     }
 
+    // A DualSense / DualShock 4 on a newer kernel (hid-playstation: Pixel, Retroid, Odin) shows its touchpad as a
+    // separate input device, a small mouse/touchpad: its click is a mouse button, not a gamepad key, so it never
+    // reached the PS5. Only a Sony touchpad counts, so a real mouse or the screen can't press it.
+    private val sonyTouchpad = HashMap<Int, Boolean>()
+    private fun isSonyTouchpad(deviceId: Int): Boolean = sonyTouchpad.getOrPut(deviceId) {
+        val d = InputDevice.getDevice(deviceId)
+        d != null && d.vendorId == 0x054c &&
+                (d.supportsSource(InputDevice.SOURCE_TOUCHPAD) || d.supportsSource(InputDevice.SOURCE_MOUSE))
+    }
+    /** The touchpad's click, from either way Android reports it. True when it was the Sony touchpad. */
+    private fun touchpadClick(e: MotionEvent): Boolean {
+        if (!isSonyTouchpad(e.deviceId)) return false
+        val down = when (e.actionMasked) {
+            MotionEvent.ACTION_BUTTON_PRESS -> true
+            MotionEvent.ACTION_BUTTON_RELEASE -> false
+            MotionEvent.ACTION_DOWN -> e.buttonState != 0 || (e.source and InputDevice.SOURCE_MOUSE) == InputDevice.SOURCE_MOUSE
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> false
+            else -> return true   // finger moves on the pad: nothing yet, and don't let them move a pointer
+        }
+        if (down == held.contains(KEY_TOUCHPAD)) return true
+        if (down) held.add(KEY_TOUCHPAD) else held.remove(KEY_TOUCHPAD)
+        sendLocal()
+        return true
+    }
+
+    override fun dispatchTouchEvent(e: MotionEvent): Boolean = touchpadClick(e) || super.dispatchTouchEvent(e)
+
     override fun dispatchGenericMotionEvent(e: MotionEvent): Boolean {
         if (menu.isShowing) return menu.onMotion(e)
         if (e.deviceId in mutedPads) return true
+        if (touchpadClick(e)) return true
         if ((e.source and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK && e.action == MotionEvent.ACTION_MOVE) {
             padDeviceId = e.deviceId
             fun dz(v: Float) = if (Math.abs(v) < 0.08f) 0f else v

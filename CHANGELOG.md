@@ -1,5 +1,8 @@
 # Changelog
 
+## 12.2-test193 (2026-10-19)
+- Fix: clicking a DualSense's (or DualShock 4's) touchpad did nothing in PS5 Remote Play on newer devices (Pixel, Retroid, Odin). There Android shows the touchpad as a separate small mouse, so its click came as a mouse button, not a controller button. The PS5 screen now sends it as the touchpad button. Only a Sony touchpad counts.
+
 ## 12.2-test192 (2026-10-19)
 - Handheld: the status bar and navigation bar take the app's background colour instead of black (Android 14 and older), so the menus look like one surface.
 
