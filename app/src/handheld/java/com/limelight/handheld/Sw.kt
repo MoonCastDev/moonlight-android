@@ -43,13 +43,19 @@ class Sw(ctx: Context, val light: Boolean, val portrait: Boolean, val size: Size
     // compact and the height is whatever the screen has (see [designHeight]). A wide upright screen (a foldable open,
     // a tablet: 600 dp and up) gets a wider canvas, so things keep a phone's real size and more of them fit.
     private val upright = portraitCanvas(ctx)
+    private val wide = ctx.resources.configuration.smallestScreenWidthDp >= 600
     val tv = when (size) {
-        Size.NORMAL -> if (portrait) Tv(ctx, false, upright, 0) else Tv(ctx, false, 1920, 1080)
+        // on its side a big screen likewise keeps a phone's real size (the 1920 x 1080 canvas blew it up 1.3 times)
+        Size.NORMAL -> if (portrait) Tv(ctx, false, upright, 0)
+                       else if (wide) ctx.resources.configuration.let { Tv(ctx, false, Math.round(it.screenWidthDp / 0.38f), Math.round(it.screenHeightDp / 0.38f)) }
+                       else Tv(ctx, false, 1920, 1080)
         Size.COMPACT -> if (portrait) Tv(ctx, false, upright, 0) else Tv(ctx, false, 1240, 1080)
         Size.LARGE -> if (portrait) Tv(ctx, false, upright * 940 / 1080, 0) else Tv(ctx, false, 1080, 940)
     }
-    /** The design canvas height this screen really has. */
-    val designHeight: Float get() = c.resources.displayMetrics.heightPixels / tv.pxf(1)
+    /** The status bar, navigation and cutout, in px: the menus are laid out inside them (set by the activity). */
+    var bars = Rect()
+    /** The design canvas height this screen really has for the app, inside the system bars. */
+    val designHeight: Float get() = (c.resources.displayMetrics.heightPixels - bars.top - bars.bottom) / tv.pxf(1)
     /** Extra space between a row's title and its description on the compact layout. */
     val lineGap get() = if (compact) 12 else 8
     val c = ctx
@@ -127,7 +133,7 @@ class Sw(ctx: Context, val light: Boolean, val portrait: Boolean, val size: Size
     fun px(v: Number) = tv.px(v)
     fun pxf(v: Number) = tv.pxf(v)
     /** The design canvas width this screen really has (wider than 1920 on a 20:9 phone). */
-    val designWidth: Float get() = c.resources.displayMetrics.widthPixels / tv.pxf(1)
+    val designWidth: Float get() = (c.resources.displayMetrics.widthPixels - bars.left - bars.right) / tv.pxf(1)
 
     fun ui(w: Int = 700) = tv.ui(w)
     fun text(s: CharSequence, size: Number, color: Int = ink, weight: Int = 700, lines: Int = 1): TextView =

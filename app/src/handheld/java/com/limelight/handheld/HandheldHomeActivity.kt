@@ -268,6 +268,14 @@ class HandheldHomeActivity : Activity() {
         render(force = true)
     }
 
+    /** The status bar, navigation (or Samsung's taskbar) and cutout the menus sit inside, in px. */
+    private fun systemBarSizes(): android.graphics.Rect {
+        if (Build.VERSION.SDK_INT < 30) return android.graphics.Rect()
+        val i = windowManager.currentWindowMetrics.windowInsets.getInsetsIgnoringVisibility(
+                android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.displayCutout())
+        return android.graphics.Rect(i.left, i.top, i.right, i.bottom)
+    }
+
     private fun isPortrait() = resources.displayMetrics.let { it.heightPixels > it.widthPixels }
 
     private fun applyRotation() {
@@ -454,6 +462,7 @@ class HandheldHomeActivity : Activity() {
     private fun buildShell() {
         portrait = isPortrait()
         sw = Sw(this, prefs.getString("hh_theme", "dark") == "light", portrait, Sw.pick(this, portrait, prefs.getString("hh_screen_size", "auto")))
+        sw.bars = systemBarSizes()
         root = FrameLayout(this).apply { setBackgroundColor(sw.bg) }
         wash = Wash(this)
         root.addView(wash, FrameLayout.LayoutParams(-1, -1))

@@ -1,5 +1,9 @@
 # Changelog
 
+## 12.2-test200 (2026-10-20)
+- Fix (test199): on the Fold's cover screen Home's bottom row of round buttons ran under the bottom bar. Home measured its height including the status bar and navigation, so it thought two rows of tiles fit. It now lays out inside them (also Samsung's taskbar on an open Fold).
+- Handheld on a big screen on its side (an open Fold): the 1920 x 1080 canvas made everything 1.3 times a phone's size, so only one row of tiles fit and the grid never showed. On its side it now keeps a phone's real size too: a centred grid of tiles (five across, two rows on the Fold) with every round button labelled.
+
 ## 12.2-test199 (2026-10-20)
 - Handheld UI polish, no new features (mockups in docs/mockups/small-touches on design/handheld-compact):
   - Spacing: the two rows of round buttons sit 48 apart (were 24); the spare height on a tall screen goes a third above Home and the rest below, so there's no big gap over the tiles; the name line sits closer to its tiles.
