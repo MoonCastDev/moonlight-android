@@ -522,6 +522,8 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
         else -> null
     }
 
+    private var backPressedClosed = false
+
     override fun dispatchKeyEvent(raw: KeyEvent): Boolean {
         val e = if (isOddSony(raw.deviceId)) oddSonyKey(raw.scanCode)?.let {
             KeyEvent(raw.downTime, raw.eventTime, raw.action, it, raw.repeatCount, raw.metaState, raw.deviceId, raw.scanCode, raw.flags, raw.source)
@@ -529,11 +531,14 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
         val code = e.keyCode
         val fromPad = (e.source and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD ||
                 (e.source and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
-        if (menu.isShowing) return menu.onKey(e)
+        if (menu.isShowing) { backPressedClosed = false; return menu.onKey(e) }
         if (fromPad) padDeviceId = e.deviceId
         // the system Back (Odin's back key / a TV remote) opens the Quick menu; the pad's B button is Circle
         if (code == KeyEvent.KEYCODE_BACK && !fromPad) {
-            if (e.action == KeyEvent.ACTION_UP) openMenu()
+            // #57: open only on a release whose press came while the menu was closed (Back closing the menu
+            // on its press used to reopen it on the release)
+            if (e.action == KeyEvent.ACTION_DOWN && e.repeatCount == 0) backPressedClosed = true
+            else if (e.action == KeyEvent.ACTION_UP) { if (backPressedClosed) openMenu(); backPressedClosed = false }
             return true
         }
         if (fromPad && e.deviceId in mutedPads) return true

@@ -1,5 +1,8 @@
 # Changelog
 
+## 12.2-test195 (2026-10-20)
+- Fix (#57): a keyboard or TV-remote Back closed the in-game Quick menu and then opened it again straight away (the menu closed on the key's press, and the release counted as a new Back). It now stays closed. PC, PS5 and Xbox streams.
+
 ## 12.2-test194 (2026-10-19)
 - New: player 2 from a second handheld. While a TV plays a PC game, another MoonCast handheld on the same Wi-Fi, paired with that PC, shows "Join <TV> as player 2" on its Home. Joining opens the controller screen with this device's own controller-only session to the same game, so the PC sees a second controller (couch co-op on the TV). It never sends or stops the TV's game: Leave only ends player 2, and player 2 leaves by itself when the game ends. PC games only (a PS5 or Xbox takes one controller). The TV app reports the PC game it's playing in GET /status (link version 7); the TV needs this build too.
 
