@@ -22,11 +22,18 @@ public final class PadSkin {
     public static final String PREF = "mc_osc_style";
     public static final String NONE = "classic";
     public static final String PS = "ps";
+    /** How visible the skin is, in percent (50 = half see-through). */
+    public static final String OPACITY_PREF = "mc_osc_opacity";
+    public static final int DEFAULT_OPACITY = 50;
+
+    public static int opacity(Context context) {
+        return android.preference.PreferenceManager.getDefaultSharedPreferences(context).getInt(OPACITY_PREF, DEFAULT_OPACITY);
+    }
 
     // what a button is drawn as
     public static final int TRIANGLE = 1, CIRCLE = 2, SQUARE = 3, CROSS = 4;
     public static final int SHOULDER_L = 5, SHOULDER = 6, SHOULDER_R = 7;
-    public static final int CREATE = 8, OPTIONS = 9, TOUCHPAD = 10, MENU = 11;
+    public static final int CREATE = 8, OPTIONS = 9, TOUCHPAD = 10, MENU = 11, PSHOME = 12;
 
     private static final int KEY_TOP = 0xFF55565B, KEY_MID = 0xFF3B3C40, KEY_BOTTOM = 0xFF2A2B2E;
     private static final int KEY_EDGE = 0xFF1D1E21, LABEL = 0xFFD2D4D9;
@@ -93,6 +100,7 @@ public final class PadSkin {
     private void label(Canvas c, String s, float x, float y, float size, int color) {
         text.setTextSize(size);
         text.setColor(color);
+        if (color == LABEL) text.setShadowLayer(Math.max(2, size * .12f), 0, 1, 0xE6000000); else text.clearShadowLayer();
         Paint.FontMetrics m = text.getFontMetrics();
         c.drawText(s, x, y - (m.ascent + m.descent) / 2, text);
     }
@@ -166,6 +174,7 @@ public final class PadSkin {
             case OPTIONS: options(c, w, h, pressed); break;
             case TOUCHPAD: touchpad(c, w, h, pressed); break;
             case MENU: menu(c, w, h, pressed); break;
+            case PSHOME: psHome(c, w, h, pressed); break;
         }
     }
 
@@ -223,7 +232,7 @@ public final class PadSkin {
         c.drawRoundRect(rect, s * .18f, s * .18f, fill);
         line.setColor(KEY_EDGE); line.setStrokeWidth(2);
         c.drawRoundRect(rect, s * .18f, s * .18f, line);
-        label(c, "CREATE", cx, h * .36f + s * 1.05f, s * .5f, 0xB3D2D4D9);
+        label(c, "CREATE", cx, h * .36f + s * 1.05f, s * .5f, LABEL);
     }
 
     private void options(Canvas c, float w, float h, boolean pressed) {
@@ -236,7 +245,7 @@ public final class PadSkin {
         keyFill(cy - s * .45f, cy + s * .45f, pressed);
         c.drawPath(path, fill);
         edge(c, KEY_EDGE, 2);
-        label(c, "OPTIONS", cx, h * .36f + s * 1.05f, s * .5f, 0xB3D2D4D9);
+        label(c, "OPTIONS", cx, h * .36f + s * 1.05f, s * .5f, LABEL);
     }
 
     private void touchpad(Canvas c, float w, float h, boolean pressed) {
@@ -248,7 +257,7 @@ public final class PadSkin {
         c.drawRoundRect(rect, rr, rr, fill);
         line.setColor(0x9986888D); line.setStrokeWidth(2);
         c.drawRoundRect(rect, rr, rr, line);
-        label(c, "TOUCHPAD", w / 2, rect.centerY(), Math.min(rect.height() * .30f, rect.width() * .11f), 0xFF6C6E73);
+        label(c, "TOUCHPAD", w / 2, rect.centerY(), Math.min(rect.height() * .30f, rect.width() * .11f), LABEL);
     }
 
     private void menu(Canvas c, float w, float h, boolean pressed) {
@@ -259,6 +268,16 @@ public final class PadSkin {
         c.drawCircle(cx, cy, r, line);
         plainFill(0xFFC9CBD0);
         for (int i = -1; i <= 1; i++) c.drawCircle(cx + i * r * .32f, cy, r * .09f, fill);
+    }
+
+    private void psHome(Canvas c, float w, float h, boolean pressed) {
+        float cx = w / 2, cy = h / 2 + (pressed ? 1.5f : 0), r = Math.min(w, h) / 2 * .85f;
+        keyFill(cy - r, cy + r, pressed);
+        c.drawCircle(cx, cy, r, fill);
+        line.setColor(KEY_EDGE); line.setStrokeWidth(2);
+        c.drawCircle(cx, cy, r, line);
+        label(c, "PS", cx, cy + 1.5f, r * .78f, 0xFF151517);
+        label(c, "PS", cx, cy, r * .78f, LABEL);
     }
 
     // ---- stick: a faint well and a dark cap that follows the thumb a little

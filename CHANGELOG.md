@@ -1,5 +1,14 @@
 # Changelog
 
+## 12.2-test223 (2026-10-20)
+- On-screen controller, PlayStation skin, after the first try (mockups v9 to v14 in docs/mockups/onscreen-pad):
+  - The d-pad and the shape buttons sit higher (60% down the screen instead of 73%); the sticks moved in closer under them.
+  - The d-pad, the shape buttons and the shoulder keys are 10% bigger, with 5% more room between them, so a thumb doesn't catch the wrong one.
+  - The shoulder keys are stacked in the top corners: L2 over L1, R2 over R1.
+  - A PS button between the sticks, above the touchpad, as on the DualSense (the controller's home button).
+  - Half see-through by default. Settings, Controls, "Controller transparency" (shown with the PlayStation skin): 0% to 85%.
+  - Create, Touchpad and Options labels are drawn solid with a dark edge, so they read over bright scenes.
+
 ## 12.2-test222 (2026-10-20)
 - On-screen controller, PlayStation skin (#74, first step), for PC games. Settings, Controls, "On-screen controller": Off, PlayStation or Classic (Moonlight's outline keys, as before).
   - Same engine as Moonlight's on-screen controller (touch, sliding a thumb from key to key, what's sent to the PC); only the look and the layout are new.

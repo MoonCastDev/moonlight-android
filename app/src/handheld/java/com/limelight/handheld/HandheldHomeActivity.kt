@@ -1265,6 +1265,9 @@ class HandheldHomeActivity : Activity() {
                             .putString(com.limelight.binding.input.virtual_controller.PadSkin.PREF, if (next == "off") osc else next).apply()
                     render(force = true)
                 }
+                if (osc == "ps") intChoice(list, com.limelight.binding.input.virtual_controller.PadSkin.OPACITY_PREF, "Controller transparency",
+                        "How much of the game shows through the keys", listOf(50, 30, 15, 70, 85, 100),
+                        com.limelight.binding.input.virtual_controller.PadSkin.DEFAULT_OPACITY) { "${100 - it}%" }
                 toggle(list, "checkbox_multi_controller", "More than one player", "On a PC each pad is its own player", true)
                 intChoice(list, "seekbar_deadzone", "Stick deadzone", "Raise it if a character drifts on its own", listOf(3, 5, 7, 10, 15), 7) { "$it%" }
                 toggle(list, "checkbox_flip_face_buttons", "Swap A and B", "For Nintendo-style layouts", false)

@@ -39,6 +39,7 @@ public abstract class VirtualControllerElement extends View {
     // MoonCast skins
     public static final int EID_MENU = 17;
     public static final int EID_TOUCHPAD = 18;
+    public static final int EID_PSHOME = 19;
     public static final int EID_PLATE = 100;
 
     protected VirtualController virtualController;
@@ -315,7 +316,7 @@ public abstract class VirtualControllerElement extends View {
     public void setOpacity(int opacity) {
         if (virtualController.skin != null) {
             // a drawn skin fades as a whole, so the game shows through it evenly
-            setAlpha(.95f * opacity / 100f);
+            setAlpha(opacity / 100f);
             return;
         }
         int hexOpacity = opacity * 255 / 100;
