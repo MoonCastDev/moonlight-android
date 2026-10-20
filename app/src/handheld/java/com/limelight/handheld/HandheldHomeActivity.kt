@@ -34,7 +34,6 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.limelight.AppView
-import com.limelight.PcView
 import com.limelight.R
 import com.limelight.binding.PlatformBinding
 import com.limelight.binding.crypto.AndroidCryptoProvider
@@ -1000,8 +999,6 @@ class HandheldHomeActivity : Activity() {
         listRow(list, "add:ps", "PS", Sw.PS, "Register a PS5", if (Psn.signedIn(this)) "Link it with the code from its Remote Play settings" else "Sign in to PlayStation Network, then link it", null) { registerPs() }
         if (Xbox.signedIn(this)) listRow(list, "add:xb", "XB", Sw.XB, "Find my Xbox", "Signed in" + (Xbox.gamertag(this)?.let { " as $it" } ?: ""), null) { refreshXboxes(true) }
         else listRow(list, "add:xb", "XB", Sw.XB, "Sign in to Xbox", "Play your Xbox here, at home or away", null) { xboxSignIn() }
-        listRow(list, "add:moonlight", "PC", sw.tile, "Manage PCs", "The full PC list: pair, wake, rename, remove", null) {
-            startActivity(Intent(this, PcView::class.java)) }
         primaryView = null
         return scrollPane(list)
     }
@@ -1047,6 +1044,8 @@ class HandheldHomeActivity : Activity() {
                     opts += Opt("✕", Sw.DANGER, "Quit ${run.appName}", "Closes it on the PC") { quit(d, run) }
                 }
                 opts += Opt("PC", Sw.PC, "Show its games") { gamesTab = "pc"; go(Page.GAMES) }
+                val hidden = hiddenIds(d)
+                if (hidden.isNotEmpty()) opts += Opt("–", Sw.PC, "Hidden games", "${hidden.size} hidden. Show them again") { hiddenGames(d) }
                 opts += Opt("↯", Sw.C_GREEN, "Test the network") { networkTest() }
                 opts += Opt("PC", Sw.PC, "Unpair", "You'll pair it again with a PIN to play") { confirmUnpair(d) }
             }
@@ -1113,6 +1112,24 @@ class HandheldHomeActivity : Activity() {
                     runOnUiThread { toast(if (ok) "Waking ${c.name}" else "Couldn't wake ${c.name}") } }.start() }), listOf("Close" to {}))
     }
 
+    /** The games hidden from All games on this PC, each one shown again with a press. */
+    private fun hiddenGames(d: ComputerDetails) {
+        val hidden = hiddenIds(d)
+        val names = (apps[d.uuid] ?: emptyList()).associate { it.appId to it.appName }
+        val p = getSharedPreferences(AppView.HIDDEN_APPS_PREF_FILENAME, MODE_PRIVATE)
+        fun show(ids: Collection<Int>) {
+            val set = HashSet(p.getStringSet(d.uuid, emptySet())!!); ids.forEach { set.remove(it.toString()) }
+            p.edit().putStringSet(d.uuid, set).apply(); render(force = true)
+        }
+        // a hidden game the PC no longer lists (renamed or removed in Sunshine) still shows, by its number
+        val opts = hidden.sortedBy { (names[it] ?: "~$it").lowercase() }.map { id ->
+            val name = names[id] ?: "Game $id (not on the PC now)"
+            Opt("+", Sw.LIVE, name, "Show it in All games again") { show(listOf(id)); toast("$name is back in All games") }
+        }
+        dialog("Hidden games", "On ${d.name}. Hidden games don't show in All games or on Home.", opts,
+                listOf("Show all" to { show(hidden); toast("All hidden games are back") }, "Close" to {}))
+    }
+
     private fun gameMenu(g: Game) {
         val pc = g.pc ?: return; val app = g.app ?: return
         val running = app.appId == pc.runningGameId
@@ -1120,7 +1137,7 @@ class HandheldHomeActivity : Activity() {
                 Opt("▶", Sw.LIVE, if (running) "Resume here" else "Play here") { playHere(g) },
                 Opt("TV", sw.ring, "Play on a TV") { playWhere(g) },
                 if (running) Opt("✕", Sw.DANGER, "Quit game", "Closes it on the PC") { quit(pc, app) } else null,
-                Opt("–", Sw.PC, "Hide from All games", "Show it again from the PC's full game list (Manage PCs)") {
+                Opt("–", Sw.PC, "Hide from All games", "Show it again from the PC's menu in Consoles, Hidden games") {
                     val p = getSharedPreferences(AppView.HIDDEN_APPS_PREF_FILENAME, MODE_PRIVATE)
                     val set = HashSet(p.getStringSet(pc.uuid, emptySet())!!); set.add(app.appId.toString())
                     p.edit().putStringSet(pc.uuid, set).apply(); render(force = true); toast("${app.appName} hidden")
@@ -1303,7 +1320,6 @@ class HandheldHomeActivity : Activity() {
                 val ver = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (e: Exception) { "" }
                 info(list, "MoonCast", ver ?: "")
                 action(list, "about:add", "Add a PC by its address", "For a PC this device doesn't find on its own", null) { addPcByAddress() }
-                action(list, "about:pcs", "Manage PCs", "The full PC list", null) { startActivity(Intent(this, PcView::class.java)) }
                 action(list, "about:all", "All settings", "Every option, including the rare ones", null) {
                     startActivity(Intent(this, StreamSettings::class.java)) }
             }
