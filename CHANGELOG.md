@@ -1,5 +1,8 @@
 # Changelog
 
+## 12.2-test202 (2026-10-20)
+- Handheld polish: a dialog with many options (a PC's menu) showed four and cut the fifth near its top edge. It now shows as many as the screen has room for, and when it has to scroll it cuts a row through the middle so it's plain there's more. The symbols in the Consoles list (+) fill their squares like the dialogs'.
+
 ## 12.2-test200 (2026-10-20)
 - Fix (test199): on the Fold's cover screen Home's bottom row of round buttons ran under the bottom bar. Home measured its height including the status bar and navigation, so it thought two rows of tiles fit. It now lays out inside them (also Samsung's taskbar on an open Fold).
 - Handheld on a big screen on its side (an open Fold): the 1920 x 1080 canvas made everything 1.3 times a phone's size, so only one row of tiles fit and the grid never showed. On its side it now keeps a phone's real size too: a centred grid of tiles (five across, two rows on the Fold) with every round button labelled.

@@ -1013,8 +1013,9 @@ class HandheldHomeActivity : Activity() {
             background = sw.bottomLine()
             setPadding(sw.px(26), sw.px(if (sw.compact) 24 else 18), sw.px(26), sw.px(if (sw.compact) 24 else 18))
             minimumHeight = sw.px(if (sw.compact) 128 else 116)
-            addView(sw.text(icon, 22, 0xFFFFFFFF.toInt(), 800).apply { gravity = Gravity.CENTER; background = sw.round(iconColor, 14) },
-                    sw.lp(64, 64).apply { rightMargin = sw.px(26) })
+            // a symbol fills its square; a short word (PC, PS) stays the size of a badge
+            addView(sw.text(icon, if (icon.length == 1) 34 else 22, 0xFFFFFFFF.toInt(), 800).apply { gravity = Gravity.CENTER; background = sw.round(iconColor, 16) },
+                    sw.lp(68, 68).apply { rightMargin = sw.px(26) })
             addView(sw.col().apply {
                 addView(sw.text(title, 30, sw.ink, 700))
                 if (sub != null) addView(sw.text(sub, 23, sw.sub, 600, 2), sw.lp(-2, -2).apply { topMargin = sw.px(sw.lineGap) })
@@ -1813,7 +1814,10 @@ class HandheldHomeActivity : Activity() {
         val firstOn = opts.indexOfFirst { it.enabled }
         val list = sw.col()
         opts.forEachIndexed { i, o -> list.addView(optRow(o, if (i == firstOn) "primary" else "opt:$i")) }
-        if (opts.size > 4) card.addView(ColScroll(this, sw.px(30)).apply { isVerticalScrollBarEnabled = false; addView(list) }, sw.lp(-1, 560))
+        // as many options as the screen has room for; past that the list scrolls, cut through the middle of a row
+        // so it's plain there's more (a row is about 132 tall with its gap)
+        val fit = ((sw.designHeight - 620) / 132f).toInt().coerceIn(3, 8)
+        if (opts.size > fit) card.addView(ColScroll(this, sw.px(30)).apply { isVerticalScrollBarEnabled = false; addView(list) }, sw.lp(-1, fit * 132 - 66))
         else card.addView(list, sw.lp(-1, -2))
         buttons(card, btns, primary = firstOn < 0)
         showOverlay("dialog", card)
