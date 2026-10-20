@@ -180,6 +180,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     public static final String EXTRA_UNIQUEID = "UniqueId";
     public static final String EXTRA_PC_UUID = "UUID";
     public static final String EXTRA_PC_NAME = "PcName";
+    /** The PC was already running this game when it was started here (player 2 on its own screen, or a resume). */
+    public static final String EXTRA_JOINING = "Joining";
     public static final String EXTRA_APP_HDR = "HDR";
     public static final String EXTRA_SERVER_CERT = "ServerCert";
 
@@ -465,6 +467,29 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                 else {
                     chosenFrameRate = roundedRefreshRate - 1;
                     LimeLog.info("Adjusting FPS target for screen to " + chosenFrameRate);
+                }
+            }
+        }
+
+        // #58: joining a game the PC already plays. The PC keeps the size the first device started it at (a host that
+        // matches its display to each client only does so on a launch), so asking for more than this screen just sends
+        // a bigger, softer picture: the Odin set to 4K got an 80 Mbps 4K stream of a 1240x696 desktop. Ask for at most
+        // this screen's own 16:9 size.
+        if (getIntent().getBooleanExtra(EXTRA_JOINING, false)) {
+            android.graphics.Point real = new android.graphics.Point();
+            getWindowManager().getDefaultDisplay().getRealSize(real);
+            int sw = Math.max(real.x, real.y), sh = Math.min(real.x, real.y);
+            int fw = sw, fh = sw * 9 / 16;
+            if (fh > sh) { fh = sh; fw = sh * 16 / 9; }
+            fw &= ~1; fh &= ~1;
+            if (fw > 0 && fh > 0 && (long) prefConfig.width * prefConfig.height > (long) fw * fh) {
+                LimeLog.info("Joining a running game: " + prefConfig.width + "x" + prefConfig.height + " capped to this screen, " + fw + "x" + fh);
+                prefConfig.width = fw; prefConfig.height = fh;
+                // the bitrate was worked out for the bigger size (80 Mbps at 4K): no more than the usual for this one
+                int def = PreferenceConfiguration.getDefaultBitrate(fw + "x" + fh, Integer.toString(prefConfig.fps));
+                if (def > 0 && prefConfig.bitrate > def) {
+                    LimeLog.info("Joining: bitrate " + prefConfig.bitrate + " kbps capped to " + def + " kbps");
+                    prefConfig.bitrate = def;
                 }
             }
         }

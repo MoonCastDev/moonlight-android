@@ -723,7 +723,8 @@ class HandheldHomeActivity : Activity() {
         val tiles = ArrayList<View>()
         val shown = if (gridRows >= 2) games.take(gridRows * 2 - 1) else games   // the last cell is All games
         if (games.isEmpty()) tiles += tileView(null, ts, 36, "g:add", "Add a console") { go(Page.CONSOLES) }
-        shown.forEach { g -> tiles += tileView(g, ts, 36, "g:${g.key}", g.title) { play(g) } }
+        // a game the PC already plays (someone else's, on their own screen): starting it here joins it as player 2
+        shown.forEach { g -> tiles += tileView(g, ts, 36, "g:${g.key}", if (g.running) "${g.title}  ·  Running, join as player 2" else g.title) { play(g) } }
         tiles += tileView(null, ts, 36, "g:all", "All games") { gamesTab = "all"; go(Page.GAMES) }
         if (gridRows >= 2) {
             val grid = GridLayout(this).apply { columnCount = 2; clipChildren = false }

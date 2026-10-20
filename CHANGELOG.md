@@ -1,5 +1,11 @@
 # Changelog
 
+## 12.2-test197 (2026-10-20)
+- Player 2 on its own screen (#58, from the test): the capped size kept the bitrate worked out for the bigger one (the Odin joined at 1920x1080 but still at 80 Mbps). The bitrate is now capped to the usual one for the new size too.
+
+## 12.2-test196 (2026-10-20)
+- Player 2 on its own screen (#58): a device joining a PC game that's already playing asks for at most its own screen's size. The PC keeps the size the first device started at, so the Odin set to 4K used to get an 80 Mbps 4K stream of a 1240x696 desktop; it now gets 1920x1080. On the handheld's Home, a game the PC is already playing says "Running, join as player 2" next to its name.
+
 ## 12.2-test195 (2026-10-20)
 - Fix (#57): a keyboard or TV-remote Back closed the in-game Quick menu and then opened it again straight away (the menu closed on the key's press, and the release counted as a new Back). It now stays closed. PC, PS5 and Xbox streams.
 
