@@ -1584,6 +1584,11 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                     "pc", appName != null ? appName : "Your game", getIntent().getStringExtra(EXTRA_PC_UUID), pcName,
                     getIntent().getIntExtra(EXTRA_APP_ID, 0), null, null, null, true, null));
             if (move != null) items.add(move);
+            // after a fold the PC can still be drawing at the other screen's size: a restart launches it at this one
+            if (getIntent().getBooleanExtra(EXTRA_REFITTED, false)) {
+                items.add(new com.limelight.home.QuickMenu.Item("⟳", "Restart at this size",
+                        "Quits the game and starts it again in this screen's shape. Unsaved progress is lost", true, this::restartGameHere));
+            }
             items.add(new com.limelight.home.QuickMenu.Item("←", "Disconnect", "The game keeps running", false, this::finish));
             items.add(new com.limelight.home.QuickMenu.Item("✕", "Quit game", null, true, this::quitOnHostAndFinish));
             quickMenu.show(appName != null ? appName : "Your game",
@@ -1618,20 +1623,40 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     // Quit the game on the PC (not just this stream), then leave. Public for the TV's /stop {"quit":true}.
     public void quitOnHostAndFinish() {
         endedByUser = true;   // the PC closing the game ends the stream with an error code; that's this quit
-        final Intent i = getIntent();
-        new Thread(() -> {
-            try {
-                X509Certificate cert = null;
-                byte[] der = i.getByteArrayExtra(EXTRA_SERVER_CERT);
-                if (der != null) cert = (X509Certificate) CertificateFactory.getInstance("X.509").generateCertificate(new ByteArrayInputStream(der));
-                new NvHTTP(new ComputerDetails.AddressTuple(i.getStringExtra(EXTRA_HOST), i.getIntExtra(EXTRA_PORT, NvHTTP.DEFAULT_HTTP_PORT)),
-                        i.getIntExtra(EXTRA_HTTPS_PORT, 0), i.getStringExtra(EXTRA_UNIQUEID), cert,
-                        PlatformBinding.getCryptoProvider(Game.this)).quitApp();
-            } catch (Exception e) {
-                LimeLog.warning("Quick menu quit: " + e);
-            }
-        }, "mc-quit").start();
+        new Thread(this::quitAppOnHost, "mc-quit").start();
         finish();
+    }
+
+    /** Close the running game on the PC (blocks: call it off the main thread). */
+    private void quitAppOnHost() {
+        final Intent i = getIntent();
+        try {
+            X509Certificate cert = null;
+            byte[] der = i.getByteArrayExtra(EXTRA_SERVER_CERT);
+            if (der != null) cert = (X509Certificate) CertificateFactory.getInstance("X.509").generateCertificate(new ByteArrayInputStream(der));
+            new NvHTTP(new ComputerDetails.AddressTuple(i.getStringExtra(EXTRA_HOST), i.getIntExtra(EXTRA_PORT, NvHTTP.DEFAULT_HTTP_PORT)),
+                    i.getIntExtra(EXTRA_HTTPS_PORT, 0), i.getStringExtra(EXTRA_UNIQUEID), cert,
+                    PlatformBinding.getCryptoProvider(Game.this)).quitApp();
+        } catch (Exception e) {
+            LimeLog.warning("Quick menu quit: " + e);
+        }
+    }
+
+    /** Set on a stream reconnected after a fold: the PC may still draw at the old size until the game restarts. */
+    public static final String EXTRA_REFITTED = "mc_refitted";
+
+    /**
+     * Quit the game on the PC and start it again here, so the PC launches it at this screen's size and shape (a PC
+     * sets its resolution when a game launches). Unsaved progress in the game is lost.
+     */
+    private void restartGameHere() {
+        trace("restarting the game at this screen's size");
+        getIntent().removeExtra(EXTRA_REFITTED);
+        endedByUser = true;
+        stopConnection(() -> new Thread(() -> {
+            quitAppOnHost();
+            runOnUiThread(() -> { if (!isFinishing()) { reconnecting = false; reconnectHere("game restarted"); } });
+        }, "mc-restart").start());
     }
 
     // The open menu takes every key; the TV remote's Back opens it (Moonlight would send it to the PC as Select).
@@ -2418,6 +2443,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
      * then build the stream screen again, which joins the game that's still running.
      */
     private void restartForScreen() {
+        getIntent().putExtra(EXTRA_REFITTED, true);
         stopConnection(() -> { if (!isFinishing()) recreate(); });
     }
 
@@ -2606,6 +2632,11 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     @Override
     public void connectionStarted() {
         com.limelight.home.StreamReport.playing();
+        if (getIntent().getBooleanExtra(EXTRA_REFITTED, false)) {
+            runOnUiThread(() -> Toast.makeText(Game.this,
+                    "Bars still there? Open the Quick menu (Back, or " + com.limelight.home.QuickMenu.COMBO_LABEL + ") and choose Restart at this size",
+                    Toast.LENGTH_LONG).show());
+        }
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
@@ -2836,6 +2867,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         surfaceLostMidStream = false;
         stoppedAwhile = false;
         trace("reconnecting (" + why + ")");
+        if (!"game restarted".equals(why)) getIntent().putExtra(EXTRA_REFITTED, true);
         Toast.makeText(this, "Fitting the stream to this screen…", Toast.LENGTH_SHORT).show();
         recreate();
     }
