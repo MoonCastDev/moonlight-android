@@ -1255,6 +1255,16 @@ class HandheldHomeActivity : Activity() {
                 action(list, "padpair", "Pair a controller", "Opens Bluetooth settings. Put the pad in pairing mode first", null) { pairController() }
                 choice(list, prefs, TvControllerActivity.PAD_PREF, "Controller on a TV", "For PC games sent to a TV. Direct is fastest: it skips the TV's Wi-Fi",
                         listOf("Direct to the PC" to "direct", "Through the TV" to "tv"), "direct")
+                // the on-screen controller for PC games (Moonlight's engine, drawn by PadSkin)
+                val osc = if (!stream.getBoolean("checkbox_show_onscreen_controls", false)) "off"
+                        else stream.getString(com.limelight.binding.input.virtual_controller.PadSkin.PREF, "classic") ?: "classic"
+                srow(list, "osc", "On-screen controller", "Touch keys over PC games, with a light tick on each press", value(when (osc) {
+                        "ps" -> "PlayStation"; "classic" -> "Classic"; else -> "Off" })) {
+                    val next = when (osc) { "off" -> "ps"; "ps" -> "classic"; else -> "off" }
+                    stream.edit().putBoolean("checkbox_show_onscreen_controls", next != "off")
+                            .putString(com.limelight.binding.input.virtual_controller.PadSkin.PREF, if (next == "off") osc else next).apply()
+                    render(force = true)
+                }
                 toggle(list, "checkbox_multi_controller", "More than one player", "On a PC each pad is its own player", true)
                 intChoice(list, "seekbar_deadzone", "Stick deadzone", "Raise it if a character drifts on its own", listOf(3, 5, 7, 10, 15), 7) { "$it%" }
                 toggle(list, "checkbox_flip_face_buttons", "Swap A and B", "For Nintendo-style layouts", false)

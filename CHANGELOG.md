@@ -1,5 +1,14 @@
 # Changelog
 
+## 12.2-test222 (2026-10-20)
+- On-screen controller, PlayStation skin (#74, first step), for PC games. Settings, Controls, "On-screen controller": Off, PlayStation or Classic (Moonlight's outline keys, as before).
+  - Same engine as Moonlight's on-screen controller (touch, sliding a thumb from key to key, what's sent to the PC); only the look and the layout are new.
+  - The look of the v8 mockup: dark keys over faint see-through plates, the game showing through.
+  - Laid out on Delta's landscape positions: L1 L2 ... R2 R1 along the top, the d-pad lower left, the shape buttons lower right, both sticks low between them, Create, touchpad and Options along the bottom middle, and MoonCast's menu key at the top middle (opens the Quick menu; it replaces Moonlight's gear, which sat where L1 is).
+  - A very light tick under the finger on each press, each new d-pad direction and each stick touch.
+  - The PC is told it's a PlayStation pad (when no real controller is attached), so games show the PlayStation symbols and the touchpad click works. Double tap a stick for L3 / R3.
+  - PS5 and Xbox Remote Play don't use it yet.
+
 ## 12.2-test221 (2026-10-20)
 - MoonCast's own logo (R2, the synthwave moon: a sunset-striped moon on a night sky, mockups in docs/mockups/logo on design/handheld-compact) replaces Moonlight's wheel everywhere it showed:
   - the app icon on every device (all sizes; Android's adaptive icon with a night-sky background, and a one-colour version for themed icons);
