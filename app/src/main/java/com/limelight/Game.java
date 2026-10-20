@@ -1597,10 +1597,15 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     }
 
     // The open menu takes every key; the TV remote's Back opens it (Moonlight would send it to the PC as Select).
+    // #57: the menu closes on Back's press; its release then came here with the menu gone and opened it again.
+    // Open only on a release whose press came while the menu was closed.
+    private boolean backPressedClosed;
+
     private Boolean quickMenuKey(KeyEvent event) {
-        if (quickMenu != null && quickMenu.isShowing()) return quickMenu.onKey(event);
+        if (quickMenu != null && quickMenu.isShowing()) { backPressedClosed = false; return quickMenu.onKey(event); }
         if (com.limelight.home.QuickMenu.isRemoteBack(event)) {
-            if (event.getAction() == KeyEvent.ACTION_UP) openQuickMenu();
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) backPressedClosed = true;
+            else if (event.getAction() == KeyEvent.ACTION_UP) { if (backPressedClosed) openQuickMenu(); backPressedClosed = false; }
             return true;
         }
         return null;
