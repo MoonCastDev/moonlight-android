@@ -485,6 +485,12 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             if (fw > 0 && fh > 0 && (long) prefConfig.width * prefConfig.height > (long) fw * fh) {
                 LimeLog.info("Joining a running game: " + prefConfig.width + "x" + prefConfig.height + " capped to this screen, " + fw + "x" + fh);
                 prefConfig.width = fw; prefConfig.height = fh;
+                // the bitrate was worked out for the bigger size (80 Mbps at 4K): no more than the usual for this one
+                int def = PreferenceConfiguration.getDefaultBitrate(fw + "x" + fh, Integer.toString(prefConfig.fps));
+                if (def > 0 && prefConfig.bitrate > def) {
+                    LimeLog.info("Joining: bitrate " + prefConfig.bitrate + " kbps capped to " + def + " kbps");
+                    prefConfig.bitrate = def;
+                }
             }
         }
 
