@@ -1,5 +1,8 @@
 # Changelog
 
+## 12.2-test211 (2026-10-20)
+- TEST ONLY: a small yellow text box at the top left of a PC stream traces what the phone reports, with the time: FOLDED or UNFOLDED and the stream's size at start, each screen-size change, the video surface lost or replaced, the stream screen hidden or shown again, and the check 1.5 seconds after a change (screen size, stream size, connected, Native, and whether it reconnects). To find why unfolding doesn't reconnect; it comes out again once that's fixed.
+
 ## 12.2-test210 (2026-10-20)
 - Fix (test207-209): unfolding mid-game kept the stream going at the cover's size and never reconnected. The size check ran only at the moment the screen changed, when the new screen's size may not be known yet, and it measured the display's mode, which can still report the other panel for a moment. It now checks again once the screen settles, after every change, and measures the app's own full-screen window. The "MoonCast:" log lines show the sizes it saw.
 
