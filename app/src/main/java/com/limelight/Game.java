@@ -1584,11 +1584,6 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                     "pc", appName != null ? appName : "Your game", getIntent().getStringExtra(EXTRA_PC_UUID), pcName,
                     getIntent().getIntExtra(EXTRA_APP_ID, 0), null, null, null, true, null));
             if (move != null) items.add(move);
-            // after a fold the PC can still be drawing at the other screen's size: a restart launches it at this one
-            if (getIntent().getBooleanExtra(EXTRA_REFITTED, false)) {
-                items.add(new com.limelight.home.QuickMenu.Item("⟳", "Restart at this size",
-                        "Quits the game and starts it again in this screen's shape. Unsaved progress is lost", true, this::restartGameHere));
-            }
             items.add(new com.limelight.home.QuickMenu.Item("←", "Disconnect", "The game keeps running", false, this::finish));
             items.add(new com.limelight.home.QuickMenu.Item("✕", "Quit game", null, true, this::quitOnHostAndFinish));
             quickMenu.show(appName != null ? appName : "Your game",
@@ -1642,22 +1637,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         }
     }
 
-    /** Set on a stream reconnected after a fold: the PC may still draw at the old size until the game restarts. */
-    public static final String EXTRA_REFITTED = "mc_refitted";
 
-    /**
-     * Quit the game on the PC and start it again here, so the PC launches it at this screen's size and shape (a PC
-     * sets its resolution when a game launches). Unsaved progress in the game is lost.
-     */
-    private void restartGameHere() {
-        trace("restarting the game at this screen's size");
-        getIntent().removeExtra(EXTRA_REFITTED);
-        endedByUser = true;
-        stopConnection(() -> new Thread(() -> {
-            quitAppOnHost();
-            runOnUiThread(() -> { if (!isFinishing()) { reconnecting = false; reconnectHere("game restarted"); } });
-        }, "mc-restart").start());
-    }
 
     // The open menu takes every key; the TV remote's Back opens it (Moonlight would send it to the PC as Select).
     // #57: the menu closes on Back's press; its release then came here with the menu gone and opened it again.
@@ -2438,23 +2418,12 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         else if (done != null) runOnUiThread(done);
     }
 
-    /**
-     * Reconnect at the size of the screen this is on now (Native follows the screen): end this stream, telling the PC,
-     * then build the stream screen again, which joins the game that's still running.
-     */
-    private void restartForScreen() {
-        getIntent().putExtra(EXTRA_REFITTED, true);
-        stopConnection(() -> { if (!isFinishing()) recreate(); });
-    }
-
     private final Runnable fitScreen = () -> {
         trace("check: screen " + PreferenceConfiguration.nativeResolution(Game.this) + ", stream "
                 + (prefConfig != null ? prefConfig.width + "x" + prefConfig.height : "?") + ", connected " + connected
                 + ", Native " + PreferenceConfiguration.nativeWholeScreen(Game.this) + " -> " + (needsRefit() ? "RECONNECT" : "no"));
         if (needsRefit()) {
-            LimeLog.info("MoonCast: screen size changed mid-stream, reconnecting");
-            Toast.makeText(Game.this, "Fitting the stream to this screen…", Toast.LENGTH_SHORT).show();
-            restartForScreen();
+            reconnectHere("size changed");
         }
     };
 
@@ -2632,11 +2601,6 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     @Override
     public void connectionStarted() {
         com.limelight.home.StreamReport.playing();
-        if (getIntent().getBooleanExtra(EXTRA_REFITTED, false)) {
-            runOnUiThread(() -> Toast.makeText(Game.this,
-                    "Bars still there? Open the Quick menu (Back, or " + com.limelight.home.QuickMenu.COMBO_LABEL + ") and choose Restart at this size",
-                    Toast.LENGTH_LONG).show());
-        }
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
@@ -2860,16 +2824,23 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     private boolean surfaceLostMidStream;
     private boolean reconnecting;
 
-    /** Start the stream again on this screen (Native: at its size); the game is still running on the PC. */
+    /**
+     * Folded or unfolded mid-game (Native): quit the game on the PC and start it again on this screen. A PC sets its
+     * resolution when a game launches, so only a fresh launch fills the new screen; a reconnect alone kept the other
+     * screen's size inside the new frame. Unsaved progress in the game is lost.
+     */
     private void reconnectHere(String why) {
-        if (reconnecting) return;   // a fold can bring both a new surface and onStart: rebuild once
+        if (reconnecting) return;   // a fold can bring a new surface, onStart and a size change: restart once
         reconnecting = true;
         surfaceLostMidStream = false;
         stoppedAwhile = false;
-        trace("reconnecting (" + why + ")");
-        if (!"game restarted".equals(why)) getIntent().putExtra(EXTRA_REFITTED, true);
-        Toast.makeText(this, "Fitting the stream to this screen…", Toast.LENGTH_SHORT).show();
-        recreate();
+        trace("restarting the game for this screen (" + why + ")");
+        Toast.makeText(this, "Restarting the game for this screen…", Toast.LENGTH_SHORT).show();
+        endedByUser = true;
+        stopConnection(() -> new Thread(() -> {
+            quitAppOnHost();
+            runOnUiThread(() -> { if (!isFinishing()) recreate(); });
+        }, "mc-refit").start());
     }
 
     @Override
