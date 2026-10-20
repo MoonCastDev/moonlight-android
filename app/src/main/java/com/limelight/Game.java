@@ -1618,21 +1618,26 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     // Quit the game on the PC (not just this stream), then leave. Public for the TV's /stop {"quit":true}.
     public void quitOnHostAndFinish() {
         endedByUser = true;   // the PC closing the game ends the stream with an error code; that's this quit
-        final Intent i = getIntent();
-        new Thread(() -> {
-            try {
-                X509Certificate cert = null;
-                byte[] der = i.getByteArrayExtra(EXTRA_SERVER_CERT);
-                if (der != null) cert = (X509Certificate) CertificateFactory.getInstance("X.509").generateCertificate(new ByteArrayInputStream(der));
-                new NvHTTP(new ComputerDetails.AddressTuple(i.getStringExtra(EXTRA_HOST), i.getIntExtra(EXTRA_PORT, NvHTTP.DEFAULT_HTTP_PORT)),
-                        i.getIntExtra(EXTRA_HTTPS_PORT, 0), i.getStringExtra(EXTRA_UNIQUEID), cert,
-                        PlatformBinding.getCryptoProvider(Game.this)).quitApp();
-            } catch (Exception e) {
-                LimeLog.warning("Quick menu quit: " + e);
-            }
-        }, "mc-quit").start();
+        new Thread(this::quitAppOnHost, "mc-quit").start();
         finish();
     }
+
+    /** Close the running game on the PC (blocks: call it off the main thread). */
+    private void quitAppOnHost() {
+        final Intent i = getIntent();
+        try {
+            X509Certificate cert = null;
+            byte[] der = i.getByteArrayExtra(EXTRA_SERVER_CERT);
+            if (der != null) cert = (X509Certificate) CertificateFactory.getInstance("X.509").generateCertificate(new ByteArrayInputStream(der));
+            new NvHTTP(new ComputerDetails.AddressTuple(i.getStringExtra(EXTRA_HOST), i.getIntExtra(EXTRA_PORT, NvHTTP.DEFAULT_HTTP_PORT)),
+                    i.getIntExtra(EXTRA_HTTPS_PORT, 0), i.getStringExtra(EXTRA_UNIQUEID), cert,
+                    PlatformBinding.getCryptoProvider(Game.this)).quitApp();
+        } catch (Exception e) {
+            LimeLog.warning("Quick menu quit: " + e);
+        }
+    }
+
+
 
     // The open menu takes every key; the TV remote's Back opens it (Moonlight would send it to the PC as Select).
     // #57: the menu closes on Back's press; its release then came here with the menu gone and opened it again.
@@ -2413,22 +2418,12 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         else if (done != null) runOnUiThread(done);
     }
 
-    /**
-     * Reconnect at the size of the screen this is on now (Native follows the screen): end this stream, telling the PC,
-     * then build the stream screen again, which joins the game that's still running.
-     */
-    private void restartForScreen() {
-        stopConnection(() -> { if (!isFinishing()) recreate(); });
-    }
-
     private final Runnable fitScreen = () -> {
         trace("check: screen " + PreferenceConfiguration.nativeResolution(Game.this) + ", stream "
                 + (prefConfig != null ? prefConfig.width + "x" + prefConfig.height : "?") + ", connected " + connected
                 + ", Native " + PreferenceConfiguration.nativeWholeScreen(Game.this) + " -> " + (needsRefit() ? "RECONNECT" : "no"));
         if (needsRefit()) {
-            LimeLog.info("MoonCast: screen size changed mid-stream, reconnecting");
-            Toast.makeText(Game.this, "Fitting the stream to this screen…", Toast.LENGTH_SHORT).show();
-            restartForScreen();
+            reconnectHere("size changed");
         }
     };
 
@@ -2829,15 +2824,23 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     private boolean surfaceLostMidStream;
     private boolean reconnecting;
 
-    /** Start the stream again on this screen (Native: at its size); the game is still running on the PC. */
+    /**
+     * Folded or unfolded mid-game (Native): quit the game on the PC and start it again on this screen. A PC sets its
+     * resolution when a game launches, so only a fresh launch fills the new screen; a reconnect alone kept the other
+     * screen's size inside the new frame. Unsaved progress in the game is lost.
+     */
     private void reconnectHere(String why) {
-        if (reconnecting) return;   // a fold can bring both a new surface and onStart: rebuild once
+        if (reconnecting) return;   // a fold can bring a new surface, onStart and a size change: restart once
         reconnecting = true;
         surfaceLostMidStream = false;
         stoppedAwhile = false;
-        trace("reconnecting (" + why + ")");
-        Toast.makeText(this, "Fitting the stream to this screen…", Toast.LENGTH_SHORT).show();
-        recreate();
+        trace("restarting the game for this screen (" + why + ")");
+        Toast.makeText(this, "Restarting the game for this screen…", Toast.LENGTH_SHORT).show();
+        endedByUser = true;
+        stopConnection(() -> new Thread(() -> {
+            quitAppOnHost();
+            runOnUiThread(() -> { if (!isFinishing()) recreate(); });
+        }, "mc-refit").start());
     }
 
     @Override

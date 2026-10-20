@@ -1,5 +1,11 @@
 # Changelog
 
+## 12.2-test215 (2026-10-20)
+- PC streams with Native, at Saleh's request: folding or unfolding mid-game now restarts the game by itself on the new screen ("Restarting the game for this screen…"): it quits the game on the PC and launches it again, so the PC uses the new screen's shape and the picture fills it. A reconnect alone kept the other screen's size inside the new frame. Unsaved progress in the game is lost on each fold or unfold. The Quick menu's "Restart at this size" and its hint (test213) are gone.
+
+## 12.2-test213 (2026-10-20)
+- PC streams: after a fold or unfold reconnects the stream, the PC can still be drawing at the other screen's size (a PC sets its resolution when a game launches), so bars stay. A hint now says so, and the Quick menu (Back, or Select + Start + LB + RB) has "Restart at this size": it quits the game on the PC and starts it again here, so it launches in this screen's shape. Unsaved progress in the game is lost, so it's only offered, never done by itself. Only PC streams, only after a fold reconnect.
+
 ## 12.2-test212 (2026-10-20)
 - Fix, found with the test211 trace on the Fold ("Native false"): picking Resolution in Settings could leave it showing Native with the screen's size saved but Native's switch off, so the stream kept that size after a fold. The page redrew before the pick's switch was saved, and the redraw put the screen size back. The pick is now saved first. A saved size that is the current screen's own now counts as Native, which repairs phones already in that state (open MoonCast or Settings on that screen once). The test trace stays for one more try.
 
