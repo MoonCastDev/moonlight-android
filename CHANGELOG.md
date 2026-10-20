@@ -1,5 +1,8 @@
 # Changelog
 
+## 12.2-test208 (2026-10-20)
+- Fix (test207): unfolding the Fold mid-game ended the PC stream instead of reconnecting. Switching screens hides the app for a moment, and the stream screen closed as soon as it was hidden (Moonlight's own behaviour), so the reconnect never ran. Now, when hidden, it ends the stream as before but waits 2 seconds before closing; if it comes back in that time (a fold or unfold), it reconnects at the new screen's size ("Fitting the stream to this screen…"). Leaving the app or turning the screen off closes it 2 seconds later, as before. PS5 and Xbox streams still end on a fold (issue filed).
+
 ## 12.2-test207 (2026-10-20)
 - PC streams with Resolution on Native: folding or unfolding a foldable mid-game now reconnects by itself at the new screen's size, about 1.5 seconds after the screen settles ("Fitting the stream to this screen…"; a short blackout, the game keeps running on the PC). The Quick menu's "Fit this screen" is gone. Not in picture-in-picture. (With a PC that sets its own resolution only when a game launches, the PC keeps its desktop size until the game is started again.)
 

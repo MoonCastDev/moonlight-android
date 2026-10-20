@@ -1171,7 +1171,32 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             }
         }
 
-        finish();
+        // Being rebuilt (Fit to the screen, recreate): the new one reconnects; finishing here would end it.
+        if (isChangingConfigurations()) return;
+        if (isFinishing() || streamView == null) { finish(); return; }
+        // A foldable switching screens hides this for a moment: stopped, then started again on the other screen.
+        // Close only if it doesn't come back; if it does, reconnect, at the new screen's size with Native.
+        stoppedAwhile = true;
+        streamView.removeCallbacks(closeIfGone);
+        streamView.postDelayed(closeIfGone, 2000);
+    }
+
+    /** Stopped, and waiting to see whether it comes back (a fold or unfold) before closing. */
+    private boolean stoppedAwhile;
+    private final Runnable closeIfGone = () -> { if (stoppedAwhile && !isFinishing()) finish(); };
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        if (stoppedAwhile) {
+            // back within a moment (folded or unfolded): the stream ended when it was hidden, so start it again
+            stoppedAwhile = false;
+            streamView.removeCallbacks(closeIfGone);
+            if (!isFinishing()) {
+                Toast.makeText(this, "Fitting the stream to this screen…", Toast.LENGTH_SHORT).show();
+                recreate();
+            }
+        }
     }
 
     private void setInputGrabState(boolean grab) {
