@@ -64,6 +64,8 @@ public class ServerHelper {
         intent.putExtra(Game.EXTRA_UNIQUEID, managerBinder.getUniqueId());
         intent.putExtra(Game.EXTRA_PC_UUID, computer.uuid);
         intent.putExtra(Game.EXTRA_PC_NAME, computer.name);
+        // the PC already plays this game: joining it (another device's game, or ours from before) - see Game (#58)
+        intent.putExtra(Game.EXTRA_JOINING, app.getAppId() != 0 && computer.runningGameId == app.getAppId());
         try {
             if (computer.serverCert != null) {
                 intent.putExtra(Game.EXTRA_SERVER_CERT, computer.serverCert.getEncoded());
