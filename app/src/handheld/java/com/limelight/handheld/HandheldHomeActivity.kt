@@ -61,6 +61,7 @@ import com.limelight.nvstream.http.NvApp
 import com.limelight.nvstream.http.NvHTTP
 import com.limelight.nvstream.http.PairingManager
 import com.limelight.nvstream.wol.WakeOnLanSender
+import com.limelight.preferences.PreferenceConfiguration
 import com.limelight.preferences.StreamSettings
 import com.limelight.utils.CacheHelper
 import com.limelight.utils.ServerHelper
@@ -149,6 +150,12 @@ class HandheldHomeActivity : Activity() {
         // Native used to be the raw panel size, which no longer matches the list: move that saved value to the new Native.
         if (stream.getString("list_resolution", null) == rawNativeSize())
             stream.edit().putString("list_resolution", nativeResolution()).apply()
+        // Native follows the screen a stream starts on (a foldable's cover or inner screen). It used to be saved as one
+        // size, of the screen the app first opened on: any saved size that isn't one of the fixed steps was that.
+        if (!stream.contains(PreferenceConfiguration.NATIVE_RES_PREF_STRING))
+            stream.edit().putBoolean(PreferenceConfiguration.NATIVE_RES_PREF_STRING,
+                    stream.getString("list_resolution", null).let { it == null || it !in RES_STEPS.map { s -> s.second } || it == nativeResolution() }).apply()
+        syncNativeRes()
         MoveToTv.handler = TvSender   // the players' Quick menu offers "Move to <TV>" through this
         // Rebuilt for a theme change (recreate): come back to the same page, not Home (#44)
         b?.getString(STATE_PAGE)?.let { n -> Page.values().firstOrNull { it.name == n }?.let { page = it } }
@@ -261,6 +268,7 @@ class HandheldHomeActivity : Activity() {
 
     override fun onConfigurationChanged(c: Configuration) {
         super.onConfigurationChanged(c)
+        syncNativeRes()   // folded or unfolded: Native is now the other screen
         // a turn or any size change: rebuild, everything is laid out in code for the new shape
         overlayKind = null
         glide.detach()
@@ -1170,10 +1178,14 @@ class HandheldHomeActivity : Activity() {
                 // Home and Away: one switch for PC, PlayStation and Xbox. Each profile keeps its own settings.
                 choice(list, stream, Profile.PREF, "Streaming profile", "Home: best quality on your network. Away: lighter settings for PlayStation Network and slower links",
                         listOf("Home" to "home", "Away" to "away"), "home")
+                syncNativeRes()
                 val native = nativeResolution()
-                val presets = listOf("720p" to "1280x720", "1080p" to "1920x1080", "1440p" to "2560x1440", "4K" to "3840x2160")
-                choice(list, stream, "list_resolution", "Resolution", "Native is this screen: ${native.replace("x", " × ")}",
-                        if (presets.any { it.second == native }) presets else presets + ("Native" to native), native)
+                val presets = RES_STEPS
+                // Native is kept as "this screen", whichever screen a stream starts on
+                choice(list, stream, "list_resolution", "Resolution", "Native is the screen you play on, now ${native.replace("x", " × ")}",
+                        if (presets.any { it.second == native }) presets else presets + ("Native" to native), native) { v ->
+                    stream.edit().putBoolean(PreferenceConfiguration.NATIVE_RES_PREF_STRING, v == native).apply()
+                }
                 choice(list, stream, "list_fps", "Frame rate", "60 is the smoothest. 30 uses less data and battery", listOf("30" to "30", "60" to "60", "90" to "90", "120" to "120"), "60")
                 // #42: any PC frame rate, saved straight into list_fps as a number
                 val fps = stream.getString("list_fps", "60") ?: "60"
@@ -1985,18 +1997,13 @@ class HandheldHomeActivity : Activity() {
         return "${w and 1.inv()}x${h and 1.inv()}"
     }
 
-    private fun nativeResolution(): String {
-        @Suppress("DEPRECATION") val d = windowManager.defaultDisplay
-        var w: Int; var h: Int
-        if (Build.VERSION.SDK_INT >= 23) { val m = d.mode; w = m.physicalWidth; h = m.physicalHeight }
-        else { val p = android.graphics.Point(); @Suppress("DEPRECATION") d.getRealSize(p); w = p.x; h = p.y }
-        if (h > w) { val t = w; w = h; h = t }
-        // The largest 16:9 size that fits this screen (even numbers, for the encoder). Most games are 16:9, so this
-        // fills the screen instead of leaving bars on a near-square panel such as the 1240x1080 Retroid.
-        val h169 = (w * 9 / 16) and 1.inv()
-        if (h169 <= h) return "${w and 1.inv()}x$h169"
-        return "${(h * 16 / 9) and 1.inv()}x${h and 1.inv()}"
+    /** With Native on, the saved size is this screen's, so the settings and Moonlight's own pages show it. */
+    private fun syncNativeRes() {
+        if (stream.getBoolean(PreferenceConfiguration.NATIVE_RES_PREF_STRING, false) && stream.getString("list_resolution", null) != nativeResolution())
+            stream.edit().putString("list_resolution", nativeResolution()).apply()
     }
+
+    private fun nativeResolution(): String = PreferenceConfiguration.nativeResolution169(this)
 
     private fun chipName(): String = com.limelight.home.Chip.name()
 
@@ -2109,6 +2116,9 @@ class HandheldHomeActivity : Activity() {
     }
 
     companion object {
+        /** The fixed resolution steps; anything else saved was a screen's own size (Native). */
+        val RES_STEPS = listOf("720p" to "1280x720", "1080p" to "1920x1080", "1440p" to "2560x1440", "4K" to "3840x2160")
+
         private const val STATE_PAGE = "hh_page"
         private const val STATE_GROUP = "hh_settings_group"
         const val EXTRA_PLAY_HERE = "play_here"

@@ -1546,6 +1546,13 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                     "pc", appName != null ? appName : "Your game", getIntent().getStringExtra(EXTRA_PC_UUID), pcName,
                     getIntent().getIntExtra(EXTRA_APP_ID, 0), null, null, null, true, null));
             if (move != null) items.add(move);
+            // a foldable folded or unfolded mid-game: the stream keeps the size it started at until it reconnects
+            String screen = PreferenceConfiguration.nativeResolution169(Game.this);
+            if (connected && prefConfig != null && android.preference.PreferenceManager.getDefaultSharedPreferences(Game.this).getBoolean(PreferenceConfiguration.NATIVE_RES_PREF_STRING, false)
+                    && !screen.equals(prefConfig.width + "x" + prefConfig.height)) {
+                items.add(new com.limelight.home.QuickMenu.Item("⤢", "Fit this screen",
+                        "Reconnects at " + screen.replace("x", " × ") + ". The game keeps running", false, this::restartForScreen));
+            }
             items.add(new com.limelight.home.QuickMenu.Item("←", "Disconnect", "The game keeps running", false, this::finish));
             items.add(new com.limelight.home.QuickMenu.Item("✕", "Quit game", null, true, this::quitOnHostAndFinish));
             quickMenu.show(appName != null ? appName : "Your game",
@@ -2373,6 +2380,14 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             }.start();
         }
         else if (done != null) runOnUiThread(done);
+    }
+
+    /**
+     * Reconnect at the size of the screen this is on now (Native follows the screen): end this stream, telling the PC,
+     * then build the stream screen again, which joins the game that's still running.
+     */
+    private void restartForScreen() {
+        stopConnection(() -> { if (!isFinishing()) recreate(); });
     }
 
     // "Move to TV" (handheld): end this stream (disconnect, the game keeps running) before the TV joins it.
