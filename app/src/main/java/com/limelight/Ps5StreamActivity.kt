@@ -83,7 +83,9 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
         }
         setContentView(android.widget.FrameLayout(this).apply {
             setBackgroundColor(0xFF000000.toInt())
-            addView(sv, android.widget.FrameLayout.LayoutParams(-1, -1))
+            // the PS5 always sends 16:9: keep that shape on any screen (a foldable's near-square inner one too),
+            // following Picture shape; it re-fits by itself when the screen changes size (a fold or unfold)
+            addView(ShapeBox(this@Ps5StreamActivity).apply { addView(sv) }, android.widget.FrameLayout.LayoutParams(-1, -1))
             addView(status, android.widget.FrameLayout.LayoutParams(-1, -1))
             addView(steps, android.widget.FrameLayout.LayoutParams(dp(1100), -2, android.view.Gravity.CENTER_HORIZONTAL or android.view.Gravity.BOTTOM).apply { bottomMargin = dp(220) })
         })
@@ -793,6 +795,33 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
     }
 
     override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, ht: Int) {}
+
+    /**
+     * Holds the video at 16:9 by Settings, Video, Picture shape and Zoom (shared with the PC and Xbox players): Fit
+     * keeps the shape with bars, Fill covers the screen and crops, Stretch fills it ignoring the shape.
+     */
+    private class ShapeBox(ctx: android.content.Context) : android.widget.FrameLayout(ctx) {
+        private val prefs = android.preference.PreferenceManager.getDefaultSharedPreferences(ctx)
+        override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
+            val c = getChildAt(0) ?: return
+            val w = r - l; val h = b - t
+            val shape = prefs.getString("list_video_scale_mode", if (prefs.getBoolean("checkbox_stretch_video", false)) "stretch" else "fit")
+            val zoom = prefs.getInt("seekbar_video_zoom", 100) / 100f
+            var vw = w.toFloat(); var vh = h.toFloat()
+            if (shape != "stretch" && w > 0 && h > 0) {
+                val ratio = 16f / 9f
+                val wide = w.toFloat() / h > ratio
+                // Fit: the whole picture inside; Fill: the screen covered, the overflow cut off
+                if (wide == (shape == "fill")) { vw = w.toFloat(); vh = w / ratio } else { vh = h.toFloat(); vw = h * ratio }
+            }
+            vw *= zoom; vh *= zoom
+            val cw = Math.round(vw); val ch = Math.round(vh)
+            if (c.measuredWidth != cw || c.measuredHeight != ch)
+                c.measure(MeasureSpec.makeMeasureSpec(cw, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(ch, MeasureSpec.EXACTLY))
+            val x = (w - cw) / 2; val y = (h - ch) / 2
+            c.layout(x, y, x + cw, y + ch)
+        }
+    }
     // The surface is gone once this returns, so the decoder has to let go of it first (#37): a decoder still drawing
     // into a dead surface fails, and chiaki then crashed copying a frame into a missing buffer. The release runs on a
     // worker (it takes chiaki's decoder lock) and the wait is bounded, so a stuck session can't freeze the app.

@@ -1,5 +1,10 @@
 # Changelog
 
+## 12.2-test214 (2026-10-20)
+- PS5 streams now keep the picture's 16:9 shape and follow Picture shape and Zoom (Settings, Video), like the PC and Xbox players: the video view used to fill the whole screen, so the PS5's 16:9 picture was stretched to the screen's shape (a little on the Fold's cover, about a third taller on the open screen). Fit keeps bars, Fill crops to cover the screen, Stretch fills it. It re-fits by itself when the screen changes size, so a fold or unfold keeps the right shape. On a 16:9 TV, Fit looks as before.
+- Xbox streams: Stretch is worked out again when the screen changes size (it was worked out once at the start). Fit and Fill already followed the screen.
+- PS5 and Xbox never get "Restart at this size": a console streams 16:9 at its own resolution whatever the phone asks for, and Remote Play can't restart a console game. (A fold doesn't hide the app on the Fold, it only swaps the video surface, which the PS5 and Xbox players already carry over; to confirm on the device, #68.)
+
 ## 12.2-test213 (2026-10-20)
 - PC streams: after a fold or unfold reconnects the stream, the PC can still be drawing at the other screen's size (a PC sets its resolution when a game launches), so bars stay. A hint now says so, and the Quick menu (Back, or Select + Start + LB + RB) has "Restart at this size": it quits the game on the PC and starts it again here, so it launches in this screen's shape. Unsaved progress in the game is lost, so it's only offered, never done by itself. Only PC streams, only after a fold reconnect.
 
