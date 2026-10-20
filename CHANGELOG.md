@@ -1,5 +1,8 @@
 # Changelog
 
+## 12.2-test216 (2026-10-20)
+- Foldables: one stream shape for both screens, so folding or unfolding mid-game just re-fits the picture, instantly, with no reconnect and no game restart. MoonCast remembers the screens it runs on; once it has seen two clearly different shapes (the Fold's cover, 1.58 : 1, and its inner screen, 1.32 : 1), Native is a shape between them (1.45 : 1, 2448 × 1696 on the Fold). Picture shape decides how it fills each screen: Fill (the default on a foldable) trims about 8% (4% per edge), Stretch keeps everything and bends it about 8%, Fit leaves thin bars. Settings shows "Native suits both your screens". Until both screens have been seen, the first fold still restarts the game once (test215); after that a stream that ends on a fold only reconnects. Phones and handhelds with one screen keep the screen's own Native.
+
 ## 12.2-test215 (2026-10-20)
 - PC streams with Native, at Saleh's request: folding or unfolding mid-game now restarts the game by itself on the new screen ("Restarting the game for this screen…"): it quits the game on the PC and launches it again, so the PC uses the new screen's shape and the picture fills it. A reconnect alone kept the other screen's size inside the new frame. Unsaved progress in the game is lost on each fold or unfold. The Quick menu's "Restart at this size" and its hint (test213) are gone.
 
