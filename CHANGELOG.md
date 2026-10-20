@@ -1,5 +1,10 @@
 # Changelog
 
+## 12.2-test218 (2026-10-20)
+- Handheld: "Hidden games" in a PC's menu (Consoles), when it has any: lists the games hidden from All games (also ones the PC no longer lists), each shown again with a press, or "Show all". Hiding a game now points there.
+- "Manage PCs" (Moonlight's own PC list) is gone from the handheld, in Consoles and in Settings, About: everything it offered for players is in MoonCast now (pair, wake, unpair, remove, resume, quit, games, network test, add by address, the away address, and now hidden games).
+- The two remaining ways into Moonlight's PC list open MoonCast's home instead: the full settings screen after a language change (Android 12 and older), and a shortcut that names a PC but no game.
+
 ## 12.2-test217 (2026-10-20)
 - Clean-up: the test-only fold trace (the yellow box on PC streams, test211) is gone; the fold steps are still written to the log ("MoonCast fold:").
 - No "Moonlight" anywhere you can see it, in both apps:
