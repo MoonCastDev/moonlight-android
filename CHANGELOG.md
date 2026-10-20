@@ -1,5 +1,13 @@
 # Changelog
 
+## 12.2-test220 (2026-10-20)
+- Handheld on its side: everything sat far in from the left. Android reserves the whole edge for the small camera hole (104 px on the Fold's cover), and MoonCast's own margin came on top of it. Now the content keeps all of a system bar but only as much of the cutout as its margin doesn't already cover, so it moves about 90 px left and still clears the camera.
+
+## 12.2-test219 (2026-10-20)
+- Handheld on its side (the Fold's cover screen): the background and its colour wash stopped short of the camera cutout and the status bar, leaving a strip down the left and across the top. They now go edge to edge; the content and dialogs stay clear of the bars and the cutout.
+- The row of tiles fades out at its edges, so a tile cut at the edge reads as "more this way" instead of a hard cut.
+- On a touch screen (no controller connected) the round buttons always show their labels, spaced wider so long ones don't touch, and Home shares out spare height (a third above, the rest below) on its side too, as it does upright.
+
 ## 12.2-test218 (2026-10-20)
 - Handheld: "Hidden games" in a PC's menu (Consoles), when it has any: lists the games hidden from All games (also ones the PC no longer lists), each shown again with a press, or "Show all". Hiding a game now points there.
 - "Manage PCs" (Moonlight's own PC list) is gone from the handheld, in Consoles and in Settings, About: everything it offered for players is in MoonCast now (pair, wake, unpair, remove, resume, quit, games, network test, add by address, the away address, and now hidden games).
