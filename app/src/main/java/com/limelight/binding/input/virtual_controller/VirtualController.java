@@ -69,9 +69,9 @@ public class VirtualController {
         this.handler = new Handler(Looper.getMainLooper());
 
         String style = android.preference.PreferenceManager.getDefaultSharedPreferences(context).getString(PadSkin.PREF, PadSkin.NONE);
-        if (PadSkin.PS.equals(style)) {
-            skin = new PadSkin(context);
-            if (controllerHandler != null) controllerHandler.setOscPlayStation(true);
+        if (PadSkin.PS.equals(style) || PadSkin.XBOX.equals(style)) {
+            skin = new PadSkin(context, PadSkin.XBOX.equals(style));
+            if (controllerHandler != null) controllerHandler.setOscType(skin.xbox ? com.limelight.nvstream.jni.MoonBridge.LI_CTYPE_XBOX : com.limelight.nvstream.jni.MoonBridge.LI_CTYPE_PS);
         }
 
         buttonConfigure = new Button(context);
@@ -175,7 +175,8 @@ public class VirtualController {
         if (skin != null) {
             // the skin has its own layout; the gear would sit on L1, so the Quick menu key replaces it
             buttonConfigure.setVisibility(View.GONE);
-            VirtualControllerConfigurationLoader.createPlayStationLayout(this, context);
+            if (skin.xbox) VirtualControllerConfigurationLoader.createXboxLayout(this, context);
+            else VirtualControllerConfigurationLoader.createPlayStationLayout(this, context);
             return;
         }
 

@@ -427,6 +427,66 @@ public class VirtualControllerConfigurationLoader {
         controller.setOpacity(PadSkin.opacity(context));
     }
 
+    // ---- MoonCast Xbox skin: the real Xbox arrangement (left stick up, d-pad down beside it), same sizes as the PlayStation skin
+
+    public static void createXboxLayout(final VirtualController controller, final Context context) {
+        DisplayMetrics screen = context.getResources().getDisplayMetrics();
+        float W = Math.max(screen.widthPixels, screen.heightPixels), H = Math.min(screen.widthPixels, screen.heightPixels);
+        if (screen.heightPixels > screen.widthPixels) {
+            W = screen.widthPixels;
+            H = screen.heightPixels;
+        }
+        float u = Math.min(W, H);
+
+        // LT over LB, RT over RB
+        float sh = u * .096f * 1.1f, sw = W * .12f * 1.1f, gap = H * .017f + sh * .05f, m = sh * .125f;
+        float top = H * .045f + sh / 2, low = top + sh + gap, lx = W * .024f + sw / 2, rx = W * .976f - sw / 2;
+        place(controller, skinned(createLeftTrigger(1, "LT", -1, controller, context), PadSkin.TRIGGER_L), lx, top, sw + 2 * m, sh + 2 * m);
+        place(controller, skinned(createDigitalButton(VirtualControllerElement.EID_LB, ControllerPacket.LB_FLAG, 0, 1, "LB", -1, controller, context), PadSkin.SHOULDER_L),
+                lx, low, sw + 2 * m, sh + 2 * m);
+        place(controller, skinned(createRightTrigger(1, "RT", -1, controller, context), PadSkin.TRIGGER_R), rx, top, sw + 2 * m, sh + 2 * m);
+        place(controller, skinned(createDigitalButton(VirtualControllerElement.EID_RB, ControllerPacket.RB_FLAG, 0, 1, "RB", -1, controller, context), PadSkin.SHOULDER_R),
+                rx, low, sw + 2 * m, sh + 2 * m);
+
+        DigitalButton menu = skinned(createDigitalButton(VirtualControllerElement.EID_MENU, 0, 0, 4, "", -1, controller, context), PadSkin.MENU);
+        menu.addDigitalButtonListener(new DigitalButton.DigitalButtonListener() {
+            @Override public void onClick() {}
+            @Override public void onLongClick() {}
+            @Override public void onRelease() {
+                if (context instanceof com.limelight.Game) ((com.limelight.Game) context).openQuickMenu();
+            }
+        });
+        place(controller, menu, W * .5f, H * .085f, u * .075f, u * .075f);
+
+        // left stick up on the left (a little bigger: the thumb rests there), d-pad lower, beside it
+        float ls = 2 * 1.9f * u * .08f;
+        place(controller, createLeftStick(controller, context), W * .125f, H * .60f, ls, ls);
+        float dr = u * .105f;
+        place(controller, createDigitalPad(controller, context), W * .285f, H * .78f, 2 * 1.14f * dr, 2 * 1.14f * dr);
+
+        // A B X Y on their plate, right: Y up, B right, A down, X left
+        float fr = u * .107f, fx = W * .875f, fy = H * .60f, d = fr * .98f * 1.05f, br = fr * .46f * 1.1f, b = 2 * br / .9f;
+        float plate = 2 * (d + br * 1.12f) / .97f;
+        place(controller, new PadPlate(controller, context, VirtualControllerElement.EID_PLATE), fx, fy, plate, plate);
+        place(controller, skinned(createDigitalButton(VirtualControllerElement.EID_Y, ControllerPacket.Y_FLAG, 0, 1, "Y", -1, controller, context), PadSkin.XY), fx, fy - d, b, b);
+        place(controller, skinned(createDigitalButton(VirtualControllerElement.EID_B, ControllerPacket.B_FLAG, 0, 1, "B", -1, controller, context), PadSkin.XB), fx + d, fy, b, b);
+        place(controller, skinned(createDigitalButton(VirtualControllerElement.EID_A, ControllerPacket.A_FLAG, 0, 1, "A", -1, controller, context), PadSkin.XA), fx, fy + d, b, b);
+        place(controller, skinned(createDigitalButton(VirtualControllerElement.EID_X, ControllerPacket.X_FLAG, 0, 1, "X", -1, controller, context), PadSkin.XX), fx - d, fy, b, b);
+
+        float st = 2 * 1.9f * u * .075f;
+        place(controller, createRightStick(controller, context), W * .72f, H * .82f, st, st);
+
+        // Xbox (guide) button between the sticks; View, Share, Menu along the bottom middle
+        place(controller, skinned(createDigitalButton(VirtualControllerElement.EID_PSHOME, ControllerPacket.SPECIAL_BUTTON_FLAG, 0, 2, "", -1, controller, context), PadSkin.XHOME),
+                W * .5f, H * .79f, u * .065f, u * .065f);
+        float k = u * .09f, ky = H * .875f + u * .012f;
+        place(controller, skinned(createDigitalButton(VirtualControllerElement.EID_BACK, ControllerPacket.BACK_FLAG, 0, 2, "VIEW", -1, controller, context), PadSkin.VIEW), W * .405f, ky, k, k);
+        place(controller, skinned(createDigitalButton(VirtualControllerElement.EID_SHARE, ControllerPacket.MISC_FLAG, 0, 2, "SHARE", -1, controller, context), PadSkin.SHARE), W * .5f, ky, k, k);
+        place(controller, skinned(createDigitalButton(VirtualControllerElement.EID_START, ControllerPacket.PLAY_FLAG, 0, 3, "MENU", -1, controller, context), PadSkin.XMENU), W * .595f, ky, k, k);
+
+        controller.setOpacity(PadSkin.opacity(context));
+    }
+
     public static void saveProfile(final VirtualController controller,
                                    final Context context) {
         SharedPreferences.Editor prefEditor = context.getSharedPreferences(OSC_PREFERENCE, Activity.MODE_PRIVATE).edit();

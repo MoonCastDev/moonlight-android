@@ -1259,13 +1259,13 @@ class HandheldHomeActivity : Activity() {
                 val osc = if (!stream.getBoolean("checkbox_show_onscreen_controls", false)) "off"
                         else stream.getString(com.limelight.binding.input.virtual_controller.PadSkin.PREF, "classic") ?: "classic"
                 srow(list, "osc", "On-screen controller", "Touch keys over PC games, with a light tick on each press", value(when (osc) {
-                        "ps" -> "PlayStation"; "classic" -> "Classic"; else -> "Off" })) {
-                    val next = when (osc) { "off" -> "ps"; "ps" -> "classic"; else -> "off" }
+                        "ps" -> "PlayStation"; "xbox" -> "Xbox"; "classic" -> "Classic"; else -> "Off" })) {
+                    val next = when (osc) { "off" -> "ps"; "ps" -> "xbox"; "xbox" -> "classic"; else -> "off" }
                     stream.edit().putBoolean("checkbox_show_onscreen_controls", next != "off")
                             .putString(com.limelight.binding.input.virtual_controller.PadSkin.PREF, if (next == "off") osc else next).apply()
                     render(force = true)
                 }
-                if (osc == "ps") intChoice(list, com.limelight.binding.input.virtual_controller.PadSkin.OPACITY_PREF, "Controller transparency",
+                if (osc == "ps" || osc == "xbox") intChoice(list, com.limelight.binding.input.virtual_controller.PadSkin.OPACITY_PREF, "Controller transparency",
                         "How much of the game shows through the keys", listOf(50, 30, 15, 70, 85, 100),
                         com.limelight.binding.input.virtual_controller.PadSkin.DEFAULT_OPACITY) { "${100 - it}%" }
                 toggle(list, "checkbox_multi_controller", "More than one player", "On a PC each pad is its own player", true)

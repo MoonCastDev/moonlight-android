@@ -22,6 +22,7 @@ public final class PadSkin {
     public static final String PREF = "mc_osc_style";
     public static final String NONE = "classic";
     public static final String PS = "ps";
+    public static final String XBOX = "xbox";
     /** How visible the skin is, in percent (50 = half see-through). */
     public static final String OPACITY_PREF = "mc_osc_opacity";
     public static final int DEFAULT_OPACITY = 50;
@@ -34,6 +35,8 @@ public final class PadSkin {
     public static final int TRIANGLE = 1, CIRCLE = 2, SQUARE = 3, CROSS = 4;
     public static final int SHOULDER_L = 5, SHOULDER = 6, SHOULDER_R = 7;
     public static final int CREATE = 8, OPTIONS = 9, TOUCHPAD = 10, MENU = 11, PSHOME = 12;
+    // Xbox
+    public static final int XA = 13, XB = 14, XX = 15, XY = 16, TRIGGER_L = 17, TRIGGER_R = 18, XHOME = 19, VIEW = 20, XMENU = 21, SHARE = 22;
 
     private static final int KEY_TOP = 0xFF55565B, KEY_MID = 0xFF3B3C40, KEY_BOTTOM = 0xFF2A2B2E;
     private static final int KEY_EDGE = 0xFF1D1E21, LABEL = 0xFFD2D4D9;
@@ -44,8 +47,11 @@ public final class PadSkin {
     private final Path path = new Path();
     private final RectF rect = new RectF();
     private final Vibrator vibrator;
+    /** Xbox look (A B X Y, one-piece d-pad, triggers) instead of PlayStation. */
+    final boolean xbox;
 
-    PadSkin(Context context) {
+    PadSkin(Context context, boolean xbox) {
+        this.xbox = xbox;
         line.setStyle(Paint.Style.STROKE);
         line.setStrokeJoin(Paint.Join.ROUND);
         line.setStrokeCap(Paint.Cap.ROUND);
@@ -122,6 +128,10 @@ public final class PadSkin {
     // ---- d-pad: four arrow keys on the plate
 
     void dpad(Canvas c, float w, float h, int direction) {
+        if (xbox) {
+            xdpad(c, w, h, direction);
+            return;
+        }
         float cx = w / 2, cy = h / 2, r = Math.min(w, h) / 2 / 1.36f;
         plate(c, cx, cy, r * 1.32f);
         for (int i = 0; i < 4; i++) {
@@ -175,6 +185,14 @@ public final class PadSkin {
             case TOUCHPAD: touchpad(c, w, h, pressed); break;
             case MENU: menu(c, w, h, pressed); break;
             case PSHOME: psHome(c, w, h, pressed); break;
+            case XA: letterKey(c, w, h, "A", 0xFF5FCB5A, pressed); break;
+            case XB: letterKey(c, w, h, "B", 0xFFF0574F, pressed); break;
+            case XX: letterKey(c, w, h, "X", 0xFF4D96FF, pressed); break;
+            case XY: letterKey(c, w, h, "Y", 0xFFF2C230, pressed); break;
+            case TRIGGER_L: case TRIGGER_R: trigger(c, shape == TRIGGER_L, w, h, pressed, text); break;
+            case XHOME: xHome(c, w, h, pressed); break;
+            case VIEW: case XMENU: smallKey(c, shape, w, h, pressed); break;
+            case SHARE: share(c, w, h, pressed); break;
         }
     }
 
@@ -278,6 +296,130 @@ public final class PadSkin {
         c.drawCircle(cx, cy, r, line);
         label(c, "PS", cx, cy + 1.5f, r * .78f, 0xFF151517);
         label(c, "PS", cx, cy, r * .78f, LABEL);
+    }
+
+    // ---- Xbox
+
+    private void letterKey(Canvas c, float w, float h, String letter, int color, boolean pressed) {
+        float cx = w / 2, cy = h / 2 + (pressed ? 1.5f : 0), r = Math.min(w, h) / 2 * .9f;
+        capFill(cx, cy, r, pressed);
+        c.drawCircle(cx, cy, r, fill);
+        line.setColor(0xFF141518); line.setStrokeWidth(Math.max(2, r * .04f));
+        c.drawCircle(cx, cy, r, line);
+        line.setColor(0x14FFFFFF);
+        c.drawCircle(cx, cy, r * .93f, line);
+        label(c, letter, cx, cy + r * .04f, r * .95f, color);
+        if (pressed) {
+            plainFill((color & 0x00FFFFFF) | 0x26000000);
+            c.drawCircle(cx, cy, r, fill);
+        }
+    }
+
+    /** One-piece cross on a faint round base; the pressed arm darkens and dips. */
+    private void xdpad(Canvas c, float w, float h, int direction) {
+        float cx = w / 2, cy = h / 2, r = Math.min(w, h) / 2 / 1.14f;
+        plainFill(0x598F9196);
+        c.drawCircle(cx, cy, r * 1.12f, fill);
+        line.setColor(0x73FFFFFF); line.setStrokeWidth(Math.max(2, r * .015f));
+        c.drawCircle(cx, cy, r * 1.12f, line);
+        float a = r * .34f, k = a * .4f;
+        path.reset();
+        path.moveTo(cx - a, cy - r + k);
+        path.quadTo(cx - a, cy - r, cx - a + k, cy - r); path.lineTo(cx + a - k, cy - r); path.quadTo(cx + a, cy - r, cx + a, cy - r + k);
+        path.lineTo(cx + a, cy - a); path.lineTo(cx + r - k, cy - a); path.quadTo(cx + r, cy - a, cx + r, cy - a + k);
+        path.lineTo(cx + r, cy + a - k); path.quadTo(cx + r, cy + a, cx + r - k, cy + a); path.lineTo(cx + a, cy + a);
+        path.lineTo(cx + a, cy + r - k); path.quadTo(cx + a, cy + r, cx + a - k, cy + r); path.lineTo(cx - a + k, cy + r);
+        path.quadTo(cx - a, cy + r, cx - a, cy + r - k); path.lineTo(cx - a, cy + a); path.lineTo(cx - r + k, cy + a);
+        path.quadTo(cx - r, cy + a, cx - r, cy + a - k); path.lineTo(cx - r, cy - a + k); path.quadTo(cx - r, cy - a, cx - r + k, cy - a);
+        path.lineTo(cx - a, cy - a); path.close();
+        keyFill(cy - r, cy + r, false);
+        c.drawPath(path, fill);
+        edge(c, KEY_EDGE, Math.max(2, r * .02f));
+        int[] bit = {DigitalPad.DIGITAL_PAD_DIRECTION_UP, DigitalPad.DIGITAL_PAD_DIRECTION_RIGHT,
+                DigitalPad.DIGITAL_PAD_DIRECTION_DOWN, DigitalPad.DIGITAL_PAD_DIRECTION_LEFT};
+        for (int i = 0; i < 4; i++) {
+            boolean down = (direction & bit[i]) != 0;
+            c.save();
+            c.rotate(90 * i, cx, cy);
+            if (down) {
+                // the pressed arm lightens, like the PlayStation keys
+                plainFill(0x33FFFFFF);
+                c.drawRect(cx - a, cy - r, cx + a, cy - a, fill);
+            }
+            path.reset();
+            path.moveTo(cx, cy - r * .84f);
+            path.lineTo(cx - r * .11f, cy - r * .69f);
+            path.lineTo(cx + r * .11f, cy - r * .69f);
+            path.close();
+            plainFill(down ? 0xFFD2D4D9 : 0xFF8A8C91);
+            c.drawPath(path, fill);
+            c.restore();
+        }
+    }
+
+    private void trigger(Canvas c, boolean left, float w, float h, boolean pressed, String s) {
+        float pad = h * .1f, x = pad, y = pad + (pressed ? 1.5f : 0), kw = w - 2 * pad, kh = h - 2 * pad, k = kh * .55f;
+        path.reset();
+        if (left) {
+            path.moveTo(x, y + kh); path.lineTo(x, y + k); path.quadTo(x, y, x + k, y);
+            path.lineTo(x + kw - k * .3f, y); path.quadTo(x + kw, y, x + kw, y + kh * .5f); path.lineTo(x + kw, y + kh);
+        } else {
+            path.moveTo(x + kw, y + kh); path.lineTo(x + kw, y + k); path.quadTo(x + kw, y, x + kw - k, y);
+            path.lineTo(x + k * .3f, y); path.quadTo(x, y, x, y + kh * .5f); path.lineTo(x, y + kh);
+        }
+        path.close();
+        keyFill(y, y + kh, pressed);
+        c.drawPath(path, fill);
+        edge(c, KEY_EDGE, Math.max(2, kh * .03f));
+        label(c, s, x + kw / 2, y + kh * .55f + 1.5f, kh * .38f, 0xFF151517);
+        label(c, s, x + kw / 2, y + kh * .55f, kh * .38f, LABEL);
+    }
+
+    private void xHome(Canvas c, float w, float h, boolean pressed) {
+        float cx = w / 2, cy = h / 2 + (pressed ? 1.5f : 0), r = Math.min(w, h) / 2 * .78f;
+        line.setColor(pressed ? 0xE6FFFFFF : 0x8CFFFFFF); line.setStrokeWidth(r * .12f);
+        c.drawCircle(cx, cy, r * 1.18f, line);
+        keyFill(cy - r, cy + r, pressed);
+        c.drawCircle(cx, cy, r, fill);
+        line.setColor(KEY_EDGE); line.setStrokeWidth(2);
+        c.drawCircle(cx, cy, r, line);
+        line.setColor(LABEL); line.setStrokeWidth(r * .13f);
+        c.drawCircle(cx, cy, r * .5f, line);
+    }
+
+    /** View (two windows) or Menu (three lines): a small round key with its name under it. */
+    private void smallKey(Canvas c, int shape, float w, float h, boolean pressed) {
+        float cx = w / 2, cy = h * .38f + (pressed ? 1.5f : 0), r = w * .27f;
+        keyFill(cy - r, cy + r, pressed);
+        c.drawCircle(cx, cy, r, fill);
+        line.setColor(KEY_EDGE); line.setStrokeWidth(2);
+        c.drawCircle(cx, cy, r, line);
+        line.setColor(0xFFC9CBD0); line.setStrokeWidth(r * .1f);
+        if (shape == VIEW) {
+            rect.set(cx - r * .45f, cy - r * .36f, cx + r * .07f, cy + r * .06f);
+            c.drawRoundRect(rect, 3, 3, line);
+            rect.set(cx - r * .15f, cy - r * .08f, cx + r * .37f, cy + r * .34f);
+            plainFill(0xFF3B3C40);
+            c.drawRoundRect(rect, 3, 3, fill);
+            c.drawRoundRect(rect, 3, 3, line);
+        } else {
+            for (int i = -1; i <= 1; i++) c.drawLine(cx - r * .38f, cy + i * r * .26f, cx + r * .38f, cy + i * r * .26f, line);
+        }
+        label(c, shape == VIEW ? "VIEW" : "MENU", cx, h * .85f, w * .2f, LABEL);
+    }
+
+    private void share(Canvas c, float w, float h, boolean pressed) {
+        float cx = w / 2, cy = h * .38f + (pressed ? 1.5f : 0), pw = w * .62f, ph = w * .38f;
+        rect.set(cx - pw / 2, cy - ph / 2, cx + pw / 2, cy + ph / 2);
+        keyFill(rect.top, rect.bottom, pressed);
+        c.drawRoundRect(rect, ph / 2, ph / 2, fill);
+        line.setColor(KEY_EDGE); line.setStrokeWidth(2);
+        c.drawRoundRect(rect, ph / 2, ph / 2, line);
+        line.setColor(LABEL); line.setStrokeWidth(ph * .09f);
+        c.drawLine(cx, cy - ph * .28f, cx, cy + ph * .2f, line);
+        c.drawLine(cx - ph * .18f, cy - ph * .1f, cx, cy - ph * .28f, line);
+        c.drawLine(cx + ph * .18f, cy - ph * .1f, cx, cy - ph * .28f, line);
+        label(c, "SHARE", cx, h * .85f, w * .2f, LABEL);
     }
 
     // ---- stick: a faint well and a dark cap that follows the thumb a little

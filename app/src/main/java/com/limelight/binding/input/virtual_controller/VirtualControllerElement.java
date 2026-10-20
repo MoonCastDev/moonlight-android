@@ -40,6 +40,7 @@ public abstract class VirtualControllerElement extends View {
     public static final int EID_MENU = 17;
     public static final int EID_TOUCHPAD = 18;
     public static final int EID_PSHOME = 19;
+    public static final int EID_SHARE = 20;
     public static final int EID_PLATE = 100;
 
     protected VirtualController virtualController;

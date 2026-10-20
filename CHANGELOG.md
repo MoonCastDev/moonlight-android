@@ -1,5 +1,13 @@
 # Changelog
 
+## 12.2-test224 (2026-10-20)
+- On-screen controller, Xbox skin (mockup vx2 in docs/mockups/onscreen-pad). Settings, Controls, "On-screen controller" now goes Off, PlayStation, Xbox, Classic.
+  - The real Xbox arrangement: left stick up on the left, the d-pad lower beside it, A B X Y on the right with the right stick below.
+  - Same sizes, spacing and transparency as the PlayStation skin: LT over LB, RT over RB, the Xbox (guide) button between the sticks, View, Share and Menu along the bottom middle, MoonCast's menu key at the top middle.
+  - A B X Y in their Xbox colours; a one-piece d-pad on a round base; the triggers shaped like triggers.
+  - The PC is told it's an Xbox pad (when no real controller is attached), so Share works.
+- The PC needs Sunshine's gamepad setting on "auto" (its default) for either skin to show up as that pad; a forced type (like "xone") wins.
+
 ## 12.2-test223 (2026-10-20)
 - On-screen controller, PlayStation skin, after the first try (mockups v9 to v14 in docs/mockups/onscreen-pad):
   - The d-pad and the shape buttons sit higher (60% down the screen instead of 73%); the sticks moved in closer under them.
