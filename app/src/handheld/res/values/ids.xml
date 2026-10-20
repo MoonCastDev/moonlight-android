@@ -3,4 +3,6 @@
     <!-- handheld home: a tile's name and wash colour, kept on the view -->
     <item name="hh_title" type="id" />
     <item name="hh_tint" type="id" />
+    <!-- a rounded dialog button: the focus ring goes round it -->
+    <item name="hh_pill" type="id" />
 </resources>

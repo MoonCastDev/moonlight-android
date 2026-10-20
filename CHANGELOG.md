@@ -1,5 +1,21 @@
 # Changelog
 
+## 12.2-test200 (2026-10-20)
+- Fix (test199): on the Fold's cover screen Home's bottom row of round buttons ran under the bottom bar. Home measured its height including the status bar and navigation, so it thought two rows of tiles fit. It now lays out inside them (also Samsung's taskbar on an open Fold).
+- Handheld on a big screen on its side (an open Fold): the 1920 x 1080 canvas made everything 1.3 times a phone's size, so only one row of tiles fit and the grid never showed. On its side it now keeps a phone's real size too: a centred grid of tiles (five across, two rows on the Fold) with every round button labelled.
+
+## 12.2-test199 (2026-10-20)
+- Handheld UI polish, no new features (mockups in docs/mockups/small-touches on design/handheld-compact):
+  - Spacing: the two rows of round buttons sit 48 apart (were 24); the spare height on a tall screen goes a third above Home and the rest below, so there's no big gap over the tiles; the name line sits closer to its tiles.
+  - Header: the avatar and the "This device" pill are the same height, on one line.
+  - Tiles: rounder corners, a soft shadow, equal gaps; the focus ring follows the rounder corners.
+  - Round-button labels a step bigger and brighter.
+  - The bottom bar lines up with the content edge (it sat further in).
+  - Dialogs: symbols fill their icon squares (the + and dot were tiny), rounder cards and rows, and the buttons are real rounded buttons side by side instead of text under a line.
+  - The Network test shows its result in the app's own dialog instead of the old grey Moonlight one (same text, with Help and OK).
+  - Tiles, round buttons and dialog buttons press in a little under a finger.
+- Handheld on big screens (an open foldable, a tablet: 600 dp and more): upright keeps a phone's real size and fits more (three tiles across on an open Fold, as many rows as fit); on its side a screen with room for two rows gets a centred grid instead of one row in the corner, with every round button labelled.
+
 ## 12.2-test198 (2026-10-20)
 - Back to test193, without the two-player work: player 2 on a TV (test194) and player 2 on its own screen (test196/197, #58) are parked for later on their branches feat/player-two and fix/joiner-resolution. The TV link is back to version 6.
 - Kept from that work, because it isn't two-player: the fix for a keyboard or TV-remote Back that closed the in-game Quick menu and then opened it again (#57). PC, PS5 and Xbox streams.

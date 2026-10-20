@@ -268,6 +268,14 @@ class HandheldHomeActivity : Activity() {
         render(force = true)
     }
 
+    /** The status bar, navigation (or Samsung's taskbar) and cutout the menus sit inside, in px. */
+    private fun systemBarSizes(): android.graphics.Rect {
+        if (Build.VERSION.SDK_INT < 30) return android.graphics.Rect()
+        val i = windowManager.currentWindowMetrics.windowInsets.getInsetsIgnoringVisibility(
+                android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.displayCutout())
+        return android.graphics.Rect(i.left, i.top, i.right, i.bottom)
+    }
+
     private fun isPortrait() = resources.displayMetrics.let { it.heightPixels > it.widthPixels }
 
     private fun applyRotation() {
@@ -454,6 +462,7 @@ class HandheldHomeActivity : Activity() {
     private fun buildShell() {
         portrait = isPortrait()
         sw = Sw(this, prefs.getString("hh_theme", "dark") == "light", portrait, Sw.pick(this, portrait, prefs.getString("hh_screen_size", "auto")))
+        sw.bars = systemBarSizes()
         root = FrameLayout(this).apply { setBackgroundColor(sw.bg) }
         wash = Wash(this)
         root.addView(wash, FrameLayout.LayoutParams(-1, -1))
@@ -469,8 +478,7 @@ class HandheldHomeActivity : Activity() {
         foot = sw.row()
         // the same hint bar upright and on its side (portrait used to have a dock of its own)
         foot.background = sw.topLine()
-        foot.setPadding(sw.px(48), 0, sw.px(48), 0)
-        main.addView(foot, sw.lp(-1, if (sw.compact) 100 else 120).apply { leftMargin = sw.px(if (sw.compact) 20 else 48); rightMargin = sw.px(if (sw.compact) 20 else 48) })
+        main.addView(foot, sw.lp(-1, if (sw.compact) 100 else 120).apply { leftMargin = sw.px(side); rightMargin = sw.px(side) })
 
         root.addView(main, FrameLayout.LayoutParams(-1, -1))
         overlay = FrameLayout(this).apply { visibility = View.GONE; isClickable = true }
@@ -498,7 +506,12 @@ class HandheldHomeActivity : Activity() {
             duration = 200
             radiusFor = { v ->
                 val t = v.tag as? String
-                if (t != null && (t.startsWith("rb:") || t.startsWith("pill:") || t.startsWith("tab:") || t.startsWith("dock:"))) 9999f else null
+                when {
+                    v.getTag(R.id.hh_pill) == true -> 9999f
+                    t != null && (t.startsWith("rb:") || t.startsWith("pill:") || t.startsWith("tab:") || t.startsWith("dock:")) -> 9999f
+                    t != null && t.startsWith("g:") -> sw.pxf(13 + sw.tileCorner)
+                    else -> null
+                }
             }
             accept = { v -> v !is EditText }
             breathe = true
@@ -592,19 +605,19 @@ class HandheldHomeActivity : Activity() {
         if (page == Page.HOME) {
             topBar.addView(avatar(), sw.lp(84, 84).apply { rightMargin = sw.px(20) })
             topBar.addView(sw.row().apply {
-                background = sw.round(sw.panel, 32)
-                setPadding(sw.px(18), 0, sw.px(26), 0)
-                addView(View(this@HandheldHomeActivity).apply { background = sw.round(0, 5, sw.ink, 3) }, sw.lp(30, 20).apply { rightMargin = sw.px(12) })
+                background = sw.round(sw.panel, 42)
+                setPadding(sw.px(28), 0, sw.px(34), 0)
+                addView(View(this@HandheldHomeActivity).apply { background = sw.round(0, 5, sw.ink, 3) }, sw.lp(32, 22).apply { rightMargin = sw.px(14) })
                 val tv = TvFinder.target(this@HandheldHomeActivity)
                 addView(sw.text(when {
                     tv != null -> "Playing on ${tv.name}" + if (TvFinder.isHere(tv)) "" else " (not found)"
                     portrait -> "This ${deviceShort()}"
                     else -> "Playing on this ${deviceShort()}"
-                }, 24, sw.ink, 700))
+                }, 26, sw.ink, 700))
                 setOnClickListener { playWhere(null) }
                 isFocusable = false   // a tap target only; the pad starts on the games
                 isSoundEffectsEnabled = !FeelSounds.enabled(this@HandheldHomeActivity)
-            }, sw.lp(-2, 64))
+            }, sw.lp(-2, 84))
         } else {
             // a back button you can tap: a touch screen has no B (the same as B / the system back)
             topBar.addView(roundButton("top:back", "back", sw.ink, 84, sw.panel) { onBackPressed() }.apply { isFocusable = false },
@@ -663,37 +676,53 @@ class HandheldHomeActivity : Activity() {
         box.addView(gname, FrameLayout.LayoutParams(-2, -2))
         gnameBox = box
         val e = sw.edge
-        val gap = 24
-        val headTop = if (sw.compact) 36 else 96
-        // Upright the height decides: the free height after the top bar, the bottom bar, the name line and the
-        // round buttons (two rows). A tall phone wraps the tiles into rows of two across the full width, as many rows
-        // as fit; a near-square screen (Retroid upright) keeps one row, about a third of the height.
-        val freeH = sw.designHeight - (24 + 96) - 100 - (headTop + 48 + 16) - (56 + 110 * 2 + 24) - 40
-        val wide = ((sw.designWidth - 2 * e - gap) / 2f).toInt()
-        val gridRows = if (portrait) ((freeH + gap) / (wide + gap)).toInt() else 0
-        val ts = when {
-            portrait && gridRows >= 2 -> wide
-            portrait -> minOf(wide, (sw.designHeight * 0.34f).toInt(), freeH.toInt()).coerceAtLeast(240)
-            sw.compact -> 350   // about three and a half tiles across
-            else -> 380
+        val gap = 32
+        val headTop = if (sw.compact) 28 else 80
+        // the round buttons: two rows of three upright, one row on its side
+        val rbGap = 48
+        val roundsTop = if (portrait) 64 else if (sw.compact) 72 else 80
+        val roundsH = if (portrait) 110 * 2 + rbGap else 180
+        // the height left for tiles after the top bar, the bottom bar, the name line and the round buttons
+        val freeH = sw.designHeight - ((if (sw.compact) 24 else 44) + 96) - (if (sw.compact) 100 else 120) -
+                (headTop + 48 + 20) - (roundsTop + roundsH) - 40
+        val usableW = sw.designWidth - 2 * e
+        // Upright the tiles fill the width, as many columns as fit about 480 wide (two on a phone, three on an open
+        // foldable) and as many rows as the height allows. On its side they keep their size, and a screen tall enough
+        // for two rows (an open foldable, a tablet) gets a grid instead of the scrolling row.
+        var cols: Int; var rows: Int; var ts: Int
+        if (portrait) {
+            cols = ((usableW + gap) / (480 + gap)).toInt().coerceAtLeast(2)
+            ts = ((usableW - gap * (cols - 1)) / cols).toInt()
+            rows = ((freeH + gap) / (ts + gap)).toInt()
+            if (rows < 2) ts = minOf(ts, (sw.designHeight * 0.34f).toInt(), freeH.toInt()).coerceAtLeast(240)
+        } else {
+            ts = if (sw.compact) 350 else 380
+            rows = ((freeH + gap) / (ts + gap)).toInt()
+            cols = ((usableW + gap) / (ts + gap)).toInt()
+            if (rows >= 2) ts = minOf(((usableW - gap * (cols - 1)) / cols).toInt(), ((freeH - gap * (rows - 1)) / rows).toInt())
         }
-        col.addView(part(box), sw.lp(-1, 48).apply { topMargin = sw.px(headTop); leftMargin = sw.px(e) })
+        val grid = rows >= 2 && cols >= 2
+        // labels under every round button whenever there's room for them (compact, upright, a big screen)
+        labelsShown = sw.compact || grid
+        val gridW = cols * ts + (cols - 1) * gap
+        val left = if (grid) ((sw.designWidth - gridW) / 2f).toInt() else e
+        col.addView(part(box), sw.lp(-1, 48).apply { topMargin = sw.px(headTop); leftMargin = sw.px(left) })
 
         val tiles = ArrayList<View>()
-        val shown = if (gridRows >= 2) games.take(gridRows * 2 - 1) else games   // the last cell is All games
+        val shown = if (grid) games.take(cols * rows - 1) else games   // the last cell is All games
         if (games.isEmpty()) tiles += tileView(null, ts, 36, "g:add", "Add a console") { go(Page.CONSOLES) }
         shown.forEach { g -> tiles += tileView(g, ts, 36, "g:${g.key}", g.title) { play(g) } }
         tiles += tileView(null, ts, 36, "g:all", "All games") { gamesTab = "all"; go(Page.GAMES) }
-        if (gridRows >= 2) {
-            val grid = GridLayout(this).apply { columnCount = 2; clipChildren = false }
+        if (grid) {
+            val gl = GridLayout(this).apply { columnCount = cols; clipChildren = false }
             tiles.forEachIndexed { i, t ->
-                grid.addView(t, GridLayout.LayoutParams().apply {
+                gl.addView(t, GridLayout.LayoutParams().apply {
                     width = sw.px(ts); height = sw.px(ts)
-                    if (i % 2 == 1) leftMargin = sw.px(gap)
-                    if (i >= 2) topMargin = sw.px(gap)
+                    if (i % cols > 0) leftMargin = sw.px(gap)
+                    if (i >= cols) topMargin = sw.px(gap)
                 })
             }
-            col.addView(part(grid), sw.lp(-2, -2).apply { topMargin = sw.px(16); leftMargin = sw.px(e) })
+            col.addView(part(gl), sw.lp(-2, -2).apply { topMargin = sw.px(20); leftMargin = sw.px(left) })
         } else {
             val row = sw.row().apply { clipChildren = false; setPadding(sw.px(e), 0, sw.px(e), 0) }
             tiles.forEachIndexed { i, t -> row.addView(t, sw.lp(ts, ts).apply { if (i > 0) leftMargin = sw.px(gap) }) }
@@ -702,7 +731,9 @@ class HandheldHomeActivity : Activity() {
                 overScrollMode = View.OVER_SCROLL_NEVER
                 addView(row)
             }
-            col.addView(part(scroll), sw.lp(-1, ts).apply { topMargin = sw.px(16) })
+            // room under the row for the tiles' shadow
+            col.addView(part(scroll), sw.lp(-1, ts + 24).apply { topMargin = sw.px(20) })
+            scroll.setPadding(0, 0, 0, sw.px(24))
         }
         // the tile you were on (or the first) is where focus starts
         primaryView = tiles.firstOrNull { it.tag == "g:$selKey" } ?: tiles.first()
@@ -710,33 +741,36 @@ class HandheldHomeActivity : Activity() {
         // upright: two rows of three, each label beside its button (six in a row came out cramped)
         val rounds: ViewGroup = if (portrait) GridLayout(this).apply { columnCount = 3; clipChildren = false }
                 else sw.row(Gravity.TOP).apply { gravity = Gravity.CENTER_HORIZONTAL; clipChildren = false }
-        val cell = ((sw.designWidth - 2 * sw.edge) / 3f).toInt()
-        // compact shows every label at once, so they're shorter there to sit side by side
-        listOf(Triple("Consoles", "consoles", Sw.C_CYAN), Triple(if (sw.compact) "Play on TV" else "Play on a TV", "tv", Sw.C_AMBER), Triple("Controllers", "pad", Sw.C_BLUE),
-                Triple(if (sw.compact) "Network" else "Network test", "net", Sw.C_GREEN), Triple("Settings", "gear", sw.sub), Triple("Exit", "power", Sw.C_RED)).forEachIndexed { i, (label, icon, color) ->
+        val cell = (usableW / 3f).toInt()
+        // where every label shows at once they're the short ones, to sit side by side
+        listOf(Triple("Consoles", "consoles", Sw.C_CYAN), Triple(if (labelsShown) "Play on TV" else "Play on a TV", "tv", Sw.C_AMBER), Triple("Controllers", "pad", Sw.C_BLUE),
+                Triple(if (labelsShown) "Network" else "Network test", "net", Sw.C_GREEN), Triple("Settings", "gear", sw.sub), Triple("Exit", "power", Sw.C_RED)).forEachIndexed { i, (label, icon, color) ->
             val btn = roundButton("rb:$icon", icon, color, 112, sw.panel) { roundAction(icon) }
-            // compact: labels always show (the screen has room below, and small icons alone are hard to tell apart)
-            val lab = sw.text(label, if (sw.compact) 24 else 26, if (sw.compact) sw.sub else sw.ring, 700).apply { gravity = Gravity.CENTER_HORIZONTAL; visibility = if (sw.compact) View.VISIBLE else View.INVISIBLE }
+            val lab = sw.text(label, 27, if (labelsShown) sw.label else sw.ring, 700).apply { gravity = Gravity.CENTER_HORIZONTAL; visibility = if (labelsShown) View.VISIBLE else View.INVISIBLE }
             rbLabels += btn to lab
             if (portrait) {
                 lab.gravity = Gravity.CENTER_VERTICAL
                 rounds.addView(sw.row().apply {
                     clipChildren = false
                     addView(btn, sw.lp(110, 110))
-                    addView(lab, sw.lp(-2, -2).apply { leftMargin = sw.px(20) })
-                }, GridLayout.LayoutParams().apply { width = sw.px(cell); height = sw.px(110); if (i >= 3) topMargin = sw.px(24) })
+                    addView(lab, sw.lp(-2, -2).apply { leftMargin = sw.px(22) })
+                }, GridLayout.LayoutParams().apply { width = sw.px(cell); height = sw.px(110); if (i >= 3) topMargin = sw.px(rbGap) })
             } else rounds.addView(FrameLayout(this).apply {
                 clipChildren = false
                 addView(btn, sw.flp(112, 112))
                 addView(lab, FrameLayout.LayoutParams(sw.px(420), -2, Gravity.CENTER_HORIZONTAL).apply { topMargin = sw.px(132) })
-            }, sw.lp(112, 180).apply { if (i > 0) leftMargin = sw.px(if (sw.compact) 64 else 40) })
+            }, sw.lp(112, 180).apply { if (i > 0) leftMargin = sw.px(if (grid) 120 else if (sw.compact) 72 else 40) })
         }
-        if (portrait) col.addView(part(rounds), sw.lp(-2, -2).apply { topMargin = sw.px(56); leftMargin = sw.px(sw.edge) })
-        else col.addView(part(rounds), sw.lp(-1, 180).apply { topMargin = sw.px(if (sw.compact) 72 else 80) })
-        // upright with height to spare (a tall phone, few games): centre it rather than leave one gap at the bottom
-        if (portrait) return FrameLayout(this).apply { clipChildren = false; addView(col, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER_VERTICAL)) }
+        if (portrait) col.addView(part(rounds), sw.lp(-2, -2).apply { topMargin = sw.px(roundsTop); leftMargin = sw.px(if (grid) left else e) })
+        else col.addView(part(rounds), sw.lp(-1, 180).apply { topMargin = sw.px(roundsTop) })
+        // with height to spare (a tall phone, few games): the spare room goes a third above and the rest below,
+        // instead of one big gap over the tiles
+        if (portrait || grid) return BiasFrame(this, 0.3f).apply { clipChildren = false; addView(col, FrameLayout.LayoutParams(-1, -2)) }
         return col
     }
+
+    /** Home shows every round button's label (compact, upright or a big screen), not only the focused one's. */
+    private var labelsShown = false
 
     /** Where focus lands when a page opens (each page sets it while it builds). */
     private var primaryView: View? = null
@@ -746,7 +780,7 @@ class HandheldHomeActivity : Activity() {
             "consoles" -> go(Page.CONSOLES)
             "tv" -> playWhere(null)
             "pad" -> controllers()
-            "net" -> ServerHelper.doNetworkTest(this)
+            "net" -> networkTest()
             "gear" -> go(Page.SETTINGS)
             "power" -> { FeelSounds.play(this, FeelSounds.Cue.BACK); PadLink.stop(); finishAndRemoveTask() }
         }
@@ -757,6 +791,7 @@ class HandheldHomeActivity : Activity() {
         background = sw.round(fill, size / 2)
         addView(Icon(this@HandheldHomeActivity, icon, color), sw.flp(size * 54 / 112, size * 54 / 112, Gravity.CENTER))
         sw.focusable(this)
+        sw.pressable(this)
         setOnClickListener { onClick() }
     }
 
@@ -765,6 +800,7 @@ class HandheldHomeActivity : Activity() {
         gravity = Gravity.CENTER
         background = sw.round(if (main) sw.ink else sw.panel, 56)
         sw.focusable(this)
+        sw.pressable(this)
         setOnClickListener { onClick() }
     }
 
@@ -775,7 +811,9 @@ class HandheldHomeActivity : Activity() {
         f.setTag(R.id.hh_title, label)
         f.setTag(R.id.hh_tint, if (g != null) sw.tint(g.seed) else 0)
         f.clipToOutline = true
-        f.outlineProvider = rounded(6)
+        f.outlineProvider = rounded(sw.tileCorner)
+        f.elevation = sw.pxf(8)   // a soft shadow lifts the tiles off the background
+        sw.pressable(f)
         if (g == null) {
             f.background = if (tag == "g:all") sw.allArt() else sw.art("add")
             if (tag != "g:all") f.addView(sw.text("+", size * 0.3f, 0xFFFFFFFF.toInt(), 600).apply { gravity = Gravity.CENTER }, FrameLayout.LayoutParams(-1, -1))
@@ -832,7 +870,7 @@ class HandheldHomeActivity : Activity() {
 
     private fun syncLabels(v: View?) {
         rbLabels.forEach { (b, l) ->
-            if (sw.compact) l.setTextColor(if (b === v && !b.isInTouchMode) sw.ring else sw.sub)   // compact: always shown, the focused one lit
+            if (labelsShown) l.setTextColor(if (b === v && !b.isInTouchMode) sw.ring else sw.label)   // always shown, the focused one lit
             else l.visibility = if (b === v && !b.isInTouchMode) View.VISIBLE else View.INVISIBLE
         }
         if (gname != null && gnameTarget == null) {
@@ -999,7 +1037,7 @@ class HandheldHomeActivity : Activity() {
                     opts += Opt("✕", Sw.DANGER, "Quit ${run.appName}", "Closes it on the PC") { quit(d, run) }
                 }
                 opts += Opt("PC", Sw.PC, "Show its games") { gamesTab = "pc"; go(Page.GAMES) }
-                opts += Opt("↯", Sw.C_GREEN, "Test the network") { ServerHelper.doNetworkTest(this) }
+                opts += Opt("↯", Sw.C_GREEN, "Test the network") { networkTest() }
                 opts += Opt("PC", Sw.PC, "Unpair", "You'll pair it again with a PIN to play") { confirmUnpair(d) }
             }
         }
@@ -1697,6 +1735,19 @@ class HandheldHomeActivity : Activity() {
         }.start()
     }
 
+    /** Moonlight's network test, in this app's own dialog (the old grey system one looked like another app). */
+    private fun networkTest() {
+        dialog("Testing the network", "Checking that nothing blocks streaming. This takes a few seconds.", emptyList(), listOf("Close" to {}))
+        Thread {
+            val r = ServerHelper.networkTestSummary(this)
+            runOnUiThread {
+                if (overlayKind != "dialog") return@runOnUiThread   // closed while it ran
+                hideOverlay(false)
+                dialog("Network test done", r, emptyList(), listOf("Help" to { com.limelight.utils.HelpLauncher.launchTroubleshooting(this) }, "OK" to {}))
+            }
+        }.start()
+    }
+
     private fun pairController() {
         for (a in listOf(Settings.ACTION_BLUETOOTH_SETTINGS, Settings.ACTION_SETTINGS)) {
             try { startActivity(Intent(a)); return } catch (e: Exception) { }
@@ -1707,61 +1758,58 @@ class HandheldHomeActivity : Activity() {
     // ---------------------------------------------------------------- dialogs (Switch style)
 
     private fun card(): LinearLayout = sw.col().apply {
-        background = sw.round(sw.panel, 18)
-        clipToOutline = true; outlineProvider = rounded(18)
+        background = sw.round(sw.panel, 28)
+        clipToOutline = true; outlineProvider = rounded(28)
     }
 
     private fun optRow(o: Opt, tag: String): View = sw.row().apply {
         this.tag = tag
-        background = sw.round(sw.bg, 10)
-        setPadding(sw.px(28), sw.px(16), sw.px(28), sw.px(16))
-        minimumHeight = sw.px(108)
+        background = sw.round(sw.bg, 18)
+        setPadding(sw.px(26), sw.px(20), sw.px(28), sw.px(20))
+        minimumHeight = sw.px(116)
         if (!o.enabled) alpha = 0.45f
-        if (o.icon != null) addView(sw.text(o.icon, 22, 0xFFFFFFFF.toInt(), 800).apply { gravity = Gravity.CENTER; background = sw.round(o.iconColor, 14) },
-                sw.lp(64, 64).apply { rightMargin = sw.px(26) })
+        // a symbol fills its square; a short word (PC, PS, TV) stays the size of a badge
+        if (o.icon != null) addView(sw.text(o.icon, if (o.icon.length == 1) 38 else 24, 0xFFFFFFFF.toInt(), 800).apply { gravity = Gravity.CENTER; background = sw.round(o.iconColor, 18) },
+                sw.lp(76, 76).apply { rightMargin = sw.px(26) })
         addView(sw.col().apply {
             addView(sw.text(o.title, 30, sw.ink, 800))
-            if (o.sub != null) addView(sw.text(o.sub, 22, sw.sub, 600, 2), sw.lp(-2, -2).apply { topMargin = sw.px(4) })
+            if (o.sub != null) addView(sw.text(o.sub, 23, sw.sub, 600, 2), sw.lp(-2, -2).apply { topMargin = sw.px(6) })
         }, LinearLayout.LayoutParams(0, -2, 1f))
         if (o.right != null) addView(sw.text(o.right, 22, sw.sub, 700), sw.lp(-2, -2).apply { leftMargin = sw.px(20) })
         if (o.enabled) {
             sw.focusable(this)
             setOnClickListener { val n = FeelSounds.serial; hideOverlay(false); o.onClick(); if (n == FeelSounds.serial) FeelSounds.play(this@HandheldHomeActivity, FeelSounds.Cue.SELECT) }
         }
-        layoutParams = sw.lp(-1, -2).apply { leftMargin = sw.px(40); rightMargin = sw.px(40); bottomMargin = sw.px(14) }
+        layoutParams = sw.lp(-1, -2).apply { leftMargin = sw.px(40); rightMargin = sw.px(40); bottomMargin = sw.px(16) }
     }
 
-    /** The Switch's buttons along the bottom of a dialog, split by a line; the last is where focus starts. */
+    /** A dialog's buttons along its bottom: rounded buttons side by side; the last is where focus starts. */
     private fun buttons(card: LinearLayout, list: List<Pair<String, () -> Unit>>, primary: Boolean = true, keepOpenLast: Boolean = false) {
-        val row = sw.row().apply { background = sw.topLine() }
+        val row = sw.row()
         list.forEachIndexed { i, (label, fn) ->
             val keep = keepOpenLast && i == list.size - 1
             row.addView(sw.text(label, 30, sw.ring, 800).apply {
                 gravity = Gravity.CENTER
                 tag = if (primary && i == list.size - 1) "primary" else "btn:$i"
-                if (i > 0) background = object : android.graphics.drawable.Drawable() {
-                    private val p = android.graphics.Paint().apply { color = sw.line }
-                    override fun draw(c: android.graphics.Canvas) { c.drawRect(bounds.left.toFloat(), bounds.top.toFloat(), bounds.left + sw.pxf(2).coerceAtLeast(1f), bounds.bottom.toFloat(), p) }
-                    override fun setAlpha(a: Int) {}
-                    override fun setColorFilter(f: android.graphics.ColorFilter?) {}
-                    @Deprecated("Deprecated in Java") override fun getOpacity() = android.graphics.PixelFormat.TRANSLUCENT
-                }
+                setTag(R.id.hh_pill, true)
+                background = sw.round(sw.bg, 48)
                 sw.focusable(this)
+                sw.pressable(this)
                 setOnClickListener {
                     if (keep) { fn(); return@setOnClickListener }
                     val n = FeelSounds.serial
                     hideOverlay(false); fn()
                     if (n == FeelSounds.serial) FeelSounds.play(this@HandheldHomeActivity, FeelSounds.Cue.CLOSE)
                 }
-            }, LinearLayout.LayoutParams(0, sw.px(112), 1f))
+            }, LinearLayout.LayoutParams(0, sw.px(96), 1f).apply { if (i > 0) leftMargin = sw.px(20) })
         }
-        card.addView(row, sw.lp(-1, 112).apply { topMargin = sw.px(26) })
+        card.addView(row, sw.lp(-1, 96).apply { leftMargin = sw.px(40); rightMargin = sw.px(40); topMargin = sw.px(28); bottomMargin = sw.px(40) })
     }
 
     private fun dialog(title: String, body: String?, opts: List<Opt>, btns: List<Pair<String, () -> Unit>>) {
         val card = card()
         card.addView(sw.text(title, 40, sw.ink, 800, 2), sw.lp(-1, -2).apply { leftMargin = sw.px(56); rightMargin = sw.px(56); topMargin = sw.px(48); bottomMargin = sw.px(10) })
-        if (body != null) card.addView(sw.text(body, 26, sw.sub, 600, 4), sw.lp(-1, -2).apply { leftMargin = sw.px(56); rightMargin = sw.px(56); bottomMargin = sw.px(26) })
+        if (body != null) card.addView(sw.text(body, 26, sw.sub, 600, 8), sw.lp(-1, -2).apply { leftMargin = sw.px(56); rightMargin = sw.px(56); bottomMargin = sw.px(26) })
         val firstOn = opts.indexOfFirst { it.enabled }
         val list = sw.col()
         opts.forEachIndexed { i, o -> list.addView(optRow(o, if (i == firstOn) "primary" else "opt:$i")) }
