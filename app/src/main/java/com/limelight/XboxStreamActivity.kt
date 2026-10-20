@@ -199,8 +199,20 @@ class XboxStreamActivity : Activity(), com.limelight.home.MoveToTv.LocalSession 
      * Settings, Video, Picture shape and Zoom (shared with the PC player): Fit keeps the shape with bars, Fill crops to
      * cover the screen, Stretch fills it ignoring the shape; Zoom enlarges for TVs that cut off the edges.
      */
+    private var shapeW = 0
+    private var shapeWatched = false
+    private var shapeH = 0
+
     private fun applyShape(videoW: Int, videoH: Int) {
         val r = renderer ?: return
+        if (videoW > 0 && videoH > 0) { shapeW = videoW; shapeH = videoH }
+        // Stretch is worked out from the screen's size: work it out again when that changes (a fold or unfold)
+        if (!shapeWatched) {
+            shapeWatched = true
+            (r.parent as? View)?.addOnLayoutChangeListener { _, l, t, rr, b, ol, ot, or, ob ->
+                if (rr - l != or - ol || b - t != ob - ot) applyShape(shapeW, shapeH)
+            }
+        }
         val shape = prefs.getString("list_video_scale_mode", if (prefs.getBoolean("checkbox_stretch_video", false)) "stretch" else "fit")
         val zoom = prefs.getInt("seekbar_video_zoom", 100) / 100f
         r.setScalingType(if (shape == "fill") RendererCommon.ScalingType.SCALE_ASPECT_FILL else RendererCommon.ScalingType.SCALE_ASPECT_FIT)
