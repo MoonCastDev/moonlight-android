@@ -1186,6 +1186,12 @@ class HandheldHomeActivity : Activity() {
                         if (presets.any { it.second == native }) presets else presets + ("Native" to native), native) { v ->
                     stream.edit().putBoolean(PreferenceConfiguration.NATIVE_RES_PREF_STRING, v == native).apply()
                 }
+                // Native's shape: 16:9 suits 16:9 games; Whole screen fills a near-square screen (an open Fold) with
+                // no bars, the PC drawing its desktop and menus in the screen's shape
+                if (stream.getBoolean(PreferenceConfiguration.NATIVE_RES_PREF_STRING, false))
+                    choice(list, stream, PreferenceConfiguration.NATIVE_SHAPE_PREF_STRING, "Native shape",
+                            "16:9 suits most games. Whole screen streams in this screen's own shape: no bars, the PC draws its menus to fit",
+                            listOf("16:9" to "169", "Whole screen" to "screen"), "169") { syncNativeRes(true); render(force = true) }
                 choice(list, stream, "list_fps", "Frame rate", "60 is the smoothest. 30 uses less data and battery", listOf("30" to "30", "60" to "60", "90" to "90", "120" to "120"), "60")
                 // #42: any PC frame rate, saved straight into list_fps as a number
                 val fps = stream.getString("list_fps", "60") ?: "60"
@@ -1998,12 +2004,12 @@ class HandheldHomeActivity : Activity() {
     }
 
     /** With Native on, the saved size is this screen's, so the settings and Moonlight's own pages show it. */
-    private fun syncNativeRes() {
+    private fun syncNativeRes(commit: Boolean = false) {
         if (stream.getBoolean(PreferenceConfiguration.NATIVE_RES_PREF_STRING, false) && stream.getString("list_resolution", null) != nativeResolution())
-            stream.edit().putString("list_resolution", nativeResolution()).apply()
+            stream.edit().putString("list_resolution", nativeResolution()).let { if (commit) it.commit() else it.apply() }
     }
 
-    private fun nativeResolution(): String = PreferenceConfiguration.nativeResolution169(this)
+    private fun nativeResolution(): String = PreferenceConfiguration.nativeResolution(this)
 
     private fun chipName(): String = com.limelight.home.Chip.name()
 

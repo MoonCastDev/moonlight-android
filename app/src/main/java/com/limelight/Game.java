@@ -224,7 +224,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         // Enter landscape unless we're on a square screen
         setPreferredOrientationForCurrentDisplay();
 
-        if (prefConfig.stretchVideo || shouldIgnoreInsetsForResolution(prefConfig.width, prefConfig.height)) {
+        // MoonCast "Whole screen": the stream is the screen's own shape, so it goes under the camera cutout too
+        if (prefConfig.stretchVideo || shouldIgnoreInsetsForResolution(prefConfig.width, prefConfig.height)
+                || PreferenceConfiguration.nativeWholeScreen(this)) {
             // Allow the activity to layout under notches if the fill-screen option
             // was turned on by the user or it's a full-screen native resolution
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -1547,7 +1549,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                     getIntent().getIntExtra(EXTRA_APP_ID, 0), null, null, null, true, null));
             if (move != null) items.add(move);
             // a foldable folded or unfolded mid-game: the stream keeps the size it started at until it reconnects
-            String screen = PreferenceConfiguration.nativeResolution169(Game.this);
+            String screen = PreferenceConfiguration.nativeResolution(Game.this);
             if (connected && prefConfig != null && android.preference.PreferenceManager.getDefaultSharedPreferences(Game.this).getBoolean(PreferenceConfiguration.NATIVE_RES_PREF_STRING, false)
                     && !screen.equals(prefConfig.width + "x" + prefConfig.height)) {
                 items.add(new com.limelight.home.QuickMenu.Item("⤢", "Fit this screen",

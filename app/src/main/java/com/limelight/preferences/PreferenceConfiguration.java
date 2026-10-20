@@ -450,8 +450,29 @@ public class PreferenceConfiguration {
                 Build.FINGERPRINT.contains("PPR1.180610.011/4079208_2235.1395");
     }
 
-    /** MoonCast: when true, the stream resolution is [nativeResolution169] of the screen it starts on. */
+    /** MoonCast: when true, the stream resolution is [nativeResolution] of the screen it starts on. */
     public static final String NATIVE_RES_PREF_STRING = "mc_native_res";
+    /** MoonCast: Native's shape, "169" (the largest 16:9 that fits) or "screen" (the screen's own shape). */
+    public static final String NATIVE_SHAPE_PREF_STRING = "mc_native_shape";
+
+    /** True when Native fills the screen with its own shape (a near-square foldable: no bars). */
+    public static boolean nativeWholeScreen(Context context) {
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+        return prefs.getBoolean(NATIVE_RES_PREF_STRING, false) && "screen".equals(prefs.getString(NATIVE_SHAPE_PREF_STRING, "169"));
+    }
+
+    /**
+     * Native for the screen [context] is on, in the chosen shape: [nativeResolution169], or with "Whole screen" the
+     * screen's own size, rounded down to multiples of 8 for the PC's display modes (the Fold: 2448x1848 open,
+     * 1968x1248 folded).
+     */
+    public static String nativeResolution(Context context) {
+        if (!"screen".equals(PreferenceManager.getDefaultSharedPreferences(context).getString(NATIVE_SHAPE_PREF_STRING, "169"))) {
+            return nativeResolution169(context);
+        }
+        int[] wh = screenSize(context);
+        return (wh[0] & ~7) + "x" + (wh[1] & ~7);
+    }
 
     /**
      * The largest 16:9 size that fits the screen [context] is on (even numbers, for the encoder), as "WxH". Most
@@ -459,6 +480,15 @@ public class PreferenceConfiguration {
      * screen is used where Android knows it (a foldable has two).
      */
     public static String nativeResolution169(Context context) {
+        int[] wh = screenSize(context);
+        int w = wh[0], h = wh[1];
+        int h169 = (w * 9 / 16) & ~1;
+        if (h169 <= h) return (w & ~1) + "x" + h169;
+        return ((h * 16 / 9) & ~1) + "x" + (h & ~1);
+    }
+
+    /** The physical size of the screen [context] is on, the long side first. */
+    private static int[] screenSize(Context context) {
         Display d = null;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             try { d = context.getDisplay(); } catch (UnsupportedOperationException ignored) { }
@@ -468,9 +498,7 @@ public class PreferenceConfiguration {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) { w = d.getMode().getPhysicalWidth(); h = d.getMode().getPhysicalHeight(); }
         else { android.graphics.Point p = new android.graphics.Point(); d.getRealSize(p); w = p.x; h = p.y; }
         if (h > w) { int t = w; w = h; h = t; }
-        int h169 = (w * 9 / 16) & ~1;
-        if (h169 <= h) return (w & ~1) + "x" + h169;
-        return ((h * 16 / 9) & ~1) + "x" + (h & ~1);
+        return new int[] { w, h };
     }
 
     public static PreferenceConfiguration readPreferences(Context context) {
@@ -560,7 +588,7 @@ public class PreferenceConfiguration {
         // MoonCast: "Native" follows the screen the stream starts on (a foldable's cover or its inner screen),
         // instead of the size of whichever screen it was first set on.
         if (prefs.getBoolean(NATIVE_RES_PREF_STRING, false)) {
-            String n = nativeResolution169(context);
+            String n = nativeResolution(context);
             config.width = getWidthFromResolutionString(n);
             config.height = getHeightFromResolutionString(n);
         }

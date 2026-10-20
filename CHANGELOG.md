@@ -1,5 +1,8 @@
 # Changelog
 
+## 12.2-test204 (2026-10-20)
+- Handheld: "Native shape" under Resolution (with Native on): 16:9 (as before, the largest 16:9 that fits) or Whole screen, which streams in the screen's own shape, rounded to multiples of 8 for the PC's display modes: an open Fold 2448 × 1848 (about 4:3), folded 1968 × 1248. The picture then fills the screen with no bars and goes under the camera cutout too; the PC draws its desktop and menus (ES-DE) in that shape, and a 16:9 game shows its bars on the PC side instead. "Fit this screen" in the Quick menu uses the chosen shape.
+
 ## 12.2-test203 (2026-10-20)
 - Handheld: Resolution "Native" now means the screen you play on, each time a PC stream starts: on a foldable, the cover screen's size when folded and the inner screen's when open (2448 × 1376 instead of the cover's 1972 × 1108 on the Fold). It used to be saved once, as the size of whichever screen the app first opened on. A size you pick (720p to 4K) stays fixed. An earlier saved screen size counts as Native.
 - In-game Quick menu (PC streams): after folding or unfolding mid-game, "Fit this screen" reconnects at the new screen's size; the game keeps running on the PC. It shows only with Native on and when the size really differs. (With a PC that sets its own resolution when a game launches, the PC side stays at the size it launched at until the game is started again.)
