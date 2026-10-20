@@ -219,6 +219,14 @@ public class AnalogStick extends VirtualControllerElement {
 
     @Override
     protected void onElementDraw(Canvas canvas) {
+        if (skin() != null) {
+            boolean moved = stick_state != STICK_STATE.NO_MOVEMENT;
+            skin().stick(canvas, getWidth(), getHeight(),
+                    moved ? position_stick_x : getWidth() / 2f, moved ? position_stick_y : getHeight() / 2f,
+                    radius_complete - radius_analog_stick, isPressed());
+            return;
+        }
+
         // set transparent background
         canvas.drawColor(Color.TRANSPARENT);
 
@@ -321,6 +329,7 @@ public class AnalogStick extends VirtualControllerElement {
                 timeLastClick = event.getEventTime();
                 // set item pressed and update
                 setPressed(true);
+                if (skin() != null) skin().tick();
                 break;
             }
             // up event (revoke touch)

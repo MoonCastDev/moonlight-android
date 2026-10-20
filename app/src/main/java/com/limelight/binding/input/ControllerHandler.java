@@ -2785,10 +2785,28 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
         return true;
     }
 
+    // MoonCast: the PlayStation skin tells the PC it's a PlayStation pad, so games show its symbols
+    // and the touchpad click works. Only while no real controller is attached (they own their type).
+    private boolean oscPlayStation, oscArrived;
+
+    public void setOscPlayStation(boolean playStation) {
+        oscPlayStation = playStation;
+    }
+
     public void reportOscState(int buttonFlags,
                                short leftStickX, short leftStickY,
                                short rightStickX, short rightStickY,
                                byte leftTrigger, byte rightTrigger) {
+        if (oscPlayStation && !oscArrived && currentControllers == 0 && initialControllers == 0) {
+            oscArrived = true;
+            conn.sendControllerArrivalEvent((byte) 0, getActiveControllerMask(), MoonBridge.LI_CTYPE_PS,
+                    ControllerPacket.A_FLAG | ControllerPacket.B_FLAG | ControllerPacket.X_FLAG | ControllerPacket.Y_FLAG |
+                    ControllerPacket.UP_FLAG | ControllerPacket.DOWN_FLAG | ControllerPacket.LEFT_FLAG | ControllerPacket.RIGHT_FLAG |
+                    ControllerPacket.LB_FLAG | ControllerPacket.RB_FLAG | ControllerPacket.PLAY_FLAG | ControllerPacket.BACK_FLAG |
+                    ControllerPacket.LS_CLK_FLAG | ControllerPacket.RS_CLK_FLAG | ControllerPacket.SPECIAL_BUTTON_FLAG |
+                    ControllerPacket.TOUCHPAD_FLAG,
+                    MoonBridge.LI_CCAP_RUMBLE);
+        }
         defaultContext.leftStickX = leftStickX;
         defaultContext.leftStickY = leftStickY;
 

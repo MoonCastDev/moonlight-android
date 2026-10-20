@@ -36,6 +36,11 @@ public class DigitalPad extends VirtualControllerElement {
 
     @Override
     protected void onElementDraw(Canvas canvas) {
+        if (skin() != null) {
+            skin().dpad(canvas, getWidth(), getHeight(), direction);
+            return;
+        }
+
         // set transparent background
         canvas.drawColor(Color.TRANSPARENT);
 
@@ -163,6 +168,7 @@ public class DigitalPad extends VirtualControllerElement {
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
             case MotionEvent.ACTION_MOVE: {
+                int before = direction;
                 direction = 0;
 
                 if (event.getX() < getPercent(getWidth(), 33)) {
@@ -177,6 +183,8 @@ public class DigitalPad extends VirtualControllerElement {
                 if (event.getY() < getPercent(getHeight(), 33)) {
                     direction |= DIGITAL_PAD_DIRECTION_UP;
                 }
+                // a tick for each new direction the thumb rolls onto
+                if (skin() != null && (direction & ~before) != 0) skin().tick();
                 newDirectionCallback(direction);
                 invalidate();
 

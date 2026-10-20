@@ -22,7 +22,7 @@ import java.util.List;
 
 public class VirtualController {
     public static class ControllerInputContext {
-        public short inputMap = 0x0000;
+        public int inputMap = 0x0000;
         public byte leftTrigger = 0x00;
         public byte rightTrigger = 0x00;
         public short rightStickX = 0x0000;
@@ -59,11 +59,20 @@ public class VirtualController {
 
     private List<VirtualControllerElement> elements = new ArrayList<>();
 
+    // MoonCast's drawn skin (null = Moonlight's outline look)
+    PadSkin skin;
+
     public VirtualController(final ControllerHandler controllerHandler, FrameLayout layout, final Context context) {
         this.controllerHandler = controllerHandler;
         this.frame_layout = layout;
         this.context = context;
         this.handler = new Handler(Looper.getMainLooper());
+
+        String style = android.preference.PreferenceManager.getDefaultSharedPreferences(context).getString(PadSkin.PREF, PadSkin.NONE);
+        if (PadSkin.PS.equals(style)) {
+            skin = new PadSkin(context);
+            if (controllerHandler != null) controllerHandler.setOscPlayStation(true);
+        }
 
         buttonConfigure = new Button(context);
         buttonConfigure.setAlpha(0.25f);
@@ -115,7 +124,7 @@ public class VirtualController {
             element.setVisibility(View.VISIBLE);
         }
 
-        buttonConfigure.setVisibility(View.VISIBLE);
+        buttonConfigure.setVisibility(skin != null ? View.GONE : View.VISIBLE);
     }
 
     public void removeElements() {
@@ -162,6 +171,13 @@ public class VirtualController {
         params.leftMargin = 15;
         params.topMargin = 15;
         frame_layout.addView(buttonConfigure, params);
+
+        if (skin != null) {
+            // the skin has its own layout; the gear would sit on L1, so the Quick menu key replaces it
+            buttonConfigure.setVisibility(View.GONE);
+            VirtualControllerConfigurationLoader.createPlayStationLayout(this, context);
+            return;
+        }
 
         // Start with the default layout
         VirtualControllerConfigurationLoader.createDefaultLayout(this, context);
