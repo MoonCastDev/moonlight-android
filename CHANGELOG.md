@@ -1,5 +1,8 @@
 # Changelog
 
+## 12.2-test212 (2026-10-20)
+- Fix, found with the test211 trace on the Fold ("Native false"): picking Resolution in Settings could leave it showing Native with the screen's size saved but Native's switch off, so the stream kept that size after a fold. The page redrew before the pick's switch was saved, and the redraw put the screen size back. The pick is now saved first. A saved size that is the current screen's own now counts as Native, which repairs phones already in that state (open MoonCast or Settings on that screen once). The test trace stays for one more try.
+
 ## 12.2-test211 (2026-10-20)
 - TEST ONLY: a small yellow text box at the top left of a PC stream traces what the phone reports, with the time: FOLDED or UNFOLDED and the stream's size at start, each screen-size change, the video surface lost or replaced, the stream screen hidden or shown again, and the check 1.5 seconds after a change (screen size, stream size, connected, Native, and whether it reconnects). To find why unfolding doesn't reconnect; it comes out again once that's fixed.
 

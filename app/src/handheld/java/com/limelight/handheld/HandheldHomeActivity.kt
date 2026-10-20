@@ -155,6 +155,7 @@ class HandheldHomeActivity : Activity() {
         if (!stream.contains(PreferenceConfiguration.NATIVE_RES_PREF_STRING))
             stream.edit().putBoolean(PreferenceConfiguration.NATIVE_RES_PREF_STRING,
                     stream.getString("list_resolution", null).let { it == null || it !in RES_STEPS.map { s -> s.second } || it == nativeResolution() }).apply()
+
         syncNativeRes()
         MoveToTv.handler = TvSender   // the players' Quick menu offers "Move to <TV>" through this
         // Rebuilt for a theme change (recreate): come back to the same page, not Home (#44)
@@ -1356,8 +1357,9 @@ class HandheldHomeActivity : Activity() {
             val i = options.indexOfFirst { it.second == cur }
             val next = options[(i + 1) % options.size].second
             store.edit().putString(key, next).apply()
-            render(force = true)
+            // what goes with the pick is saved before the page redraws (the redraw reads it: Resolution's Native)
             onPick?.invoke(next)
+            render(force = true)
         }
     }
 
@@ -1999,6 +2001,10 @@ class HandheldHomeActivity : Activity() {
 
     /** With Native on, the saved size is this screen's, so the settings and Moonlight's own pages show it. */
     private fun syncNativeRes(commit: Boolean = false) {
+        // A saved size that is this screen's own is Native (Settings shows it as Native): test203-211 could save it
+        // with Native's switch off, when the page redrew before the pick was saved
+        if (!stream.getBoolean(PreferenceConfiguration.NATIVE_RES_PREF_STRING, false) && stream.getString("list_resolution", null) == nativeResolution())
+            stream.edit().putBoolean(PreferenceConfiguration.NATIVE_RES_PREF_STRING, true).apply()
         if (stream.getBoolean(PreferenceConfiguration.NATIVE_RES_PREF_STRING, false) && stream.getString("list_resolution", null) != nativeResolution())
             stream.edit().putString("list_resolution", nativeResolution()).let { if (commit) it.commit() else it.apply() }
     }
