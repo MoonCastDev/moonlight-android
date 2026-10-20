@@ -470,6 +470,11 @@ public class PreferenceConfiguration {
         if (!"screen".equals(PreferenceManager.getDefaultSharedPreferences(context).getString(NATIVE_SHAPE_PREF_STRING, "169"))) {
             return nativeResolution169(context);
         }
+        return nativeWholeResolution(context);
+    }
+
+    /** The screen's own size, rounded down to multiples of 8 for the PC's display modes (Native, whole screen). */
+    public static String nativeWholeResolution(Context context) {
         int[] wh = screenSize(context);
         return (wh[0] & ~7) + "x" + (wh[1] & ~7);
     }
