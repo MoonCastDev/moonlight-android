@@ -1,5 +1,8 @@
 # Changelog
 
+## 12.2-test209 (2026-10-20)
+- Fix (test208): unfolding mid-game still left a stopped stream. On the Fold the screen switch replaces the video surface without hiding the app, and losing the surface ends the stream (Moonlight's own behaviour); the new surface only ever started the first connection. Now a new surface after one lost mid-stream reconnects, at the new screen's size with Native ("Fitting the stream to this screen…"). The other two ways in (shown again within 2 seconds, or a size change) stay, and only one reconnect happens. Log lines starting "MoonCast:" trace it.
+
 ## 12.2-test208 (2026-10-20)
 - Fix (test207): unfolding the Fold mid-game ended the PC stream instead of reconnecting. Switching screens hides the app for a moment, and the stream screen closed as soon as it was hidden (Moonlight's own behaviour), so the reconnect never ran. Now, when hidden, it ends the stream as before but waits 2 seconds before closing; if it comes back in that time (a fold or unfold), it reconnects at the new screen's size ("Fitting the stream to this screen…"). Leaving the app or turning the screen off closes it 2 seconds later, as before. PS5 and Xbox streams still end on a fold (issue filed).
 
