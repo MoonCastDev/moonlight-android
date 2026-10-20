@@ -1179,11 +1179,11 @@ class HandheldHomeActivity : Activity() {
                 choice(list, stream, Profile.PREF, "Streaming profile", "Home: best quality on your network. Away: lighter settings for PlayStation Network and slower links",
                         listOf("Home" to "home", "Away" to "away"), "home")
                 syncNativeRes()
+                // Native is this screen's own size and shape (no bars), whichever screen a stream starts on
+                // (a foldable's cover or inner screen)
                 val native = nativeResolution()
-                val presets = RES_STEPS
-                // Native is kept as "this screen", whichever screen a stream starts on
-                choice(list, stream, "list_resolution", "Resolution", "Native is the screen you play on, now ${native.replace("x", " × ")}",
-                        if (presets.any { it.second == native }) presets else presets + ("Native" to native), native) { v ->
+                choice(list, stream, "list_resolution", "Resolution", "Native fills the screen you play on, now ${native.replace("x", " × ")}",
+                        RES_STEPS.filter { it.second != native } + ("Native" to native), native) { v ->
                     stream.edit().putBoolean(PreferenceConfiguration.NATIVE_RES_PREF_STRING, v == native).apply()
                 }
                 choice(list, stream, "list_fps", "Frame rate", "60 is the smoothest. 30 uses less data and battery", listOf("30" to "30", "60" to "60", "90" to "90", "120" to "120"), "60")
@@ -1998,12 +1998,12 @@ class HandheldHomeActivity : Activity() {
     }
 
     /** With Native on, the saved size is this screen's, so the settings and Moonlight's own pages show it. */
-    private fun syncNativeRes() {
+    private fun syncNativeRes(commit: Boolean = false) {
         if (stream.getBoolean(PreferenceConfiguration.NATIVE_RES_PREF_STRING, false) && stream.getString("list_resolution", null) != nativeResolution())
-            stream.edit().putString("list_resolution", nativeResolution()).apply()
+            stream.edit().putString("list_resolution", nativeResolution()).let { if (commit) it.commit() else it.apply() }
     }
 
-    private fun nativeResolution(): String = PreferenceConfiguration.nativeResolution169(this)
+    private fun nativeResolution(): String = PreferenceConfiguration.nativeResolution(this)
 
     private fun chipName(): String = com.limelight.home.Chip.name()
 
