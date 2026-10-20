@@ -145,16 +145,13 @@ class HandheldHomeActivity : Activity() {
         applyRotation()
         // a handheld streams at its own screen size unless you chose one (Moonlight's default is 720p);
         // a resolution saved earlier, in either of Moonlight's keys, is left alone
-        val firstRun = !stream.contains("list_resolution") && !stream.contains("list_resolution_fps")
-        if (firstRun) stream.edit().putString("list_resolution", nativeResolution()).apply()
+        if (!stream.contains("list_resolution") && !stream.contains("list_resolution_fps"))
+            stream.edit().putString("list_resolution", nativeResolution()).apply()
         // Native used to be the raw panel size, which no longer matches the list: move that saved value to the new Native.
         if (stream.getString("list_resolution", null) == rawNativeSize())
             stream.edit().putString("list_resolution", nativeResolution()).apply()
         // Native follows the screen a stream starts on (a foldable's cover or inner screen). It used to be saved as one
         // size, of the screen the app first opened on: any saved size that isn't one of the fixed steps was that.
-        // Native's shape: a new install fills the screen (Native); an earlier Native stays 16:9 until changed
-        if (!stream.contains(PreferenceConfiguration.NATIVE_SHAPE_PREF_STRING))
-            stream.edit().putString(PreferenceConfiguration.NATIVE_SHAPE_PREF_STRING, if (firstRun) "screen" else "169").apply()
         if (!stream.contains(PreferenceConfiguration.NATIVE_RES_PREF_STRING))
             stream.edit().putBoolean(PreferenceConfiguration.NATIVE_RES_PREF_STRING,
                     stream.getString("list_resolution", null).let { it == null || it !in RES_STEPS.map { s -> s.second } || it == nativeResolution() }).apply()
@@ -1182,17 +1179,12 @@ class HandheldHomeActivity : Activity() {
                 choice(list, stream, Profile.PREF, "Streaming profile", "Home: best quality on your network. Away: lighter settings for PlayStation Network and slower links",
                         listOf("Home" to "home", "Away" to "away"), "home")
                 syncNativeRes()
-                // Native is this screen's own shape (no bars); 16:9 the widest 16:9 that fits. Both follow the screen a
-                // stream starts on (a foldable's cover or inner screen). On a 16:9 screen they're the same: Native only.
-                val whole = PreferenceConfiguration.nativeWholeResolution(this)
-                val wide = PreferenceConfiguration.nativeResolution169(this)
-                val sizes = RES_STEPS.filter { it.second != whole && it.second != wide } +
-                        (if (wide != whole) listOf("16:9" to wide) else emptyList()) + ("Native" to whole)
-                choice(list, stream, "list_resolution", "Resolution",
-                        "Native fills this screen: ${whole.replace("x", " × ")}" + if (wide != whole) ". 16:9 is ${wide.replace("x", " × ")}" else "",
-                        sizes, whole) { v ->
-                    stream.edit().putBoolean(PreferenceConfiguration.NATIVE_RES_PREF_STRING, v == whole || v == wide)
-                            .putString(PreferenceConfiguration.NATIVE_SHAPE_PREF_STRING, if (v == wide && v != whole) "169" else "screen").apply()
+                // Native is this screen's own size and shape (no bars), whichever screen a stream starts on
+                // (a foldable's cover or inner screen)
+                val native = nativeResolution()
+                choice(list, stream, "list_resolution", "Resolution", "Native fills the screen you play on, now ${native.replace("x", " × ")}",
+                        RES_STEPS.filter { it.second != native } + ("Native" to native), native) { v ->
+                    stream.edit().putBoolean(PreferenceConfiguration.NATIVE_RES_PREF_STRING, v == native).apply()
                 }
                 choice(list, stream, "list_fps", "Frame rate", "60 is the smoothest. 30 uses less data and battery", listOf("30" to "30", "60" to "60", "90" to "90", "120" to "120"), "60")
                 // #42: any PC frame rate, saved straight into list_fps as a number

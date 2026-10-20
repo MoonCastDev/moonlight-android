@@ -452,44 +452,18 @@ public class PreferenceConfiguration {
 
     /** MoonCast: when true, the stream resolution is [nativeResolution] of the screen it starts on. */
     public static final String NATIVE_RES_PREF_STRING = "mc_native_res";
-    /** MoonCast: Native's shape, "169" (the largest 16:9 that fits) or "screen" (the screen's own shape). */
-    public static final String NATIVE_SHAPE_PREF_STRING = "mc_native_shape";
-
-    /** True when Native fills the screen with its own shape (a near-square foldable: no bars). */
+    /** True when the stream is Native: the whole screen in its own shape, so no bars (a near-square foldable too). */
     public static boolean nativeWholeScreen(Context context) {
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
-        return prefs.getBoolean(NATIVE_RES_PREF_STRING, false) && "screen".equals(prefs.getString(NATIVE_SHAPE_PREF_STRING, "169"));
+        return PreferenceManager.getDefaultSharedPreferences(context).getBoolean(NATIVE_RES_PREF_STRING, false);
     }
 
     /**
-     * Native for the screen [context] is on, in the chosen shape: [nativeResolution169], or with "Whole screen" the
-     * screen's own size, rounded down to multiples of 8 for the PC's display modes (the Fold: 2448x1848 open,
-     * 1968x1248 folded).
+     * Native for the screen [context] is on: the screen's own size, rounded down to multiples of 8 for the PC's
+     * display modes (the Fold: 2448x1848 open, 1968x1248 folded). The PC draws its desktop and menus in that shape.
      */
     public static String nativeResolution(Context context) {
-        if (!"screen".equals(PreferenceManager.getDefaultSharedPreferences(context).getString(NATIVE_SHAPE_PREF_STRING, "169"))) {
-            return nativeResolution169(context);
-        }
-        return nativeWholeResolution(context);
-    }
-
-    /** The screen's own size, rounded down to multiples of 8 for the PC's display modes (Native, whole screen). */
-    public static String nativeWholeResolution(Context context) {
         int[] wh = screenSize(context);
         return (wh[0] & ~7) + "x" + (wh[1] & ~7);
-    }
-
-    /**
-     * The largest 16:9 size that fits the screen [context] is on (even numbers, for the encoder), as "WxH". Most
-     * games are 16:9, so this fills the screen rather than leaving bars on a near-square panel. An activity's own
-     * screen is used where Android knows it (a foldable has two).
-     */
-    public static String nativeResolution169(Context context) {
-        int[] wh = screenSize(context);
-        int w = wh[0], h = wh[1];
-        int h169 = (w * 9 / 16) & ~1;
-        if (h169 <= h) return (w & ~1) + "x" + h169;
-        return ((h * 16 / 9) & ~1) + "x" + (h & ~1);
     }
 
     /** The physical size of the screen [context] is on, the long side first. */

@@ -1,5 +1,8 @@
 # Changelog
 
+## 12.2-test206 (2026-10-20)
+- Handheld: no 16:9 choice any more. Resolution is 720p, 1080p, 1440p, 4K or Native, and Native is always the whole screen in its own shape (an open Fold 2448 × 1848, folded 1968 × 1248; on other handhelds their full screen, rounded to multiples of 8), following the screen a stream starts on. An earlier Native (16:9) becomes this one.
+
 ## 12.2-test205 (2026-10-20)
 - Handheld, from trying test204 on the Fold: "Native" showed twice (in Resolution and in its own Native shape row). There's now one list: 720p, 1080p, 1440p, 4K, 16:9 and Native. Native is the whole screen in its own shape (an open Fold 2448 × 1848, folded 1968 × 1248); 16:9 is the widest 16:9 that fits (2448 × 1376 / 1972 × 1108). Both follow the screen a stream starts on. On a 16:9 screen they're the same, so only Native shows. The Native shape row is gone. A new install starts on Native; an earlier Native stays 16:9 until changed.
 
