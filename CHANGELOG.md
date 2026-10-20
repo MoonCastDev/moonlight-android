@@ -1,5 +1,9 @@
 # Changelog
 
+## 12.2-test203 (2026-10-20)
+- Handheld: Resolution "Native" now means the screen you play on, each time a PC stream starts: on a foldable, the cover screen's size when folded and the inner screen's when open (2448 × 1376 instead of the cover's 1972 × 1108 on the Fold). It used to be saved once, as the size of whichever screen the app first opened on. A size you pick (720p to 4K) stays fixed. An earlier saved screen size counts as Native.
+- In-game Quick menu (PC streams): after folding or unfolding mid-game, "Fit this screen" reconnects at the new screen's size; the game keeps running on the PC. It shows only with Native on and when the size really differs. (With a PC that sets its own resolution when a game launches, the PC side stays at the size it launched at until the game is started again.)
+
 ## 12.2-test202 (2026-10-20)
 - Handheld polish: a dialog with many options (a PC's menu) showed four and cut the fifth near its top edge. It now shows as many as the screen has room for, and when it has to scroll it cuts a row through the middle so it's plain there's more. The symbols in the Consoles list (+) fill their squares like the dialogs'.
 

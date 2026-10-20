@@ -6,6 +6,7 @@ import android.content.pm.PackageManager;
 import android.os.Build;
 import android.preference.PreferenceManager;
 import android.view.Display;
+import android.view.WindowManager;
 
 import com.limelight.nvstream.jni.MoonBridge;
 
@@ -449,6 +450,29 @@ public class PreferenceConfiguration {
                 Build.FINGERPRINT.contains("PPR1.180610.011/4079208_2235.1395");
     }
 
+    /** MoonCast: when true, the stream resolution is [nativeResolution169] of the screen it starts on. */
+    public static final String NATIVE_RES_PREF_STRING = "mc_native_res";
+
+    /**
+     * The largest 16:9 size that fits the screen [context] is on (even numbers, for the encoder), as "WxH". Most
+     * games are 16:9, so this fills the screen rather than leaving bars on a near-square panel. An activity's own
+     * screen is used where Android knows it (a foldable has two).
+     */
+    public static String nativeResolution169(Context context) {
+        Display d = null;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            try { d = context.getDisplay(); } catch (UnsupportedOperationException ignored) { }
+        }
+        if (d == null) d = ((WindowManager) context.getSystemService(Context.WINDOW_SERVICE)).getDefaultDisplay();
+        int w, h;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) { w = d.getMode().getPhysicalWidth(); h = d.getMode().getPhysicalHeight(); }
+        else { android.graphics.Point p = new android.graphics.Point(); d.getRealSize(p); w = p.x; h = p.y; }
+        if (h > w) { int t = w; w = h; h = t; }
+        int h169 = (w * 9 / 16) & ~1;
+        if (h169 <= h) return (w & ~1) + "x" + h169;
+        return ((h * 16 / 9) & ~1) + "x" + (h & ~1);
+    }
+
     public static PreferenceConfiguration readPreferences(Context context) {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
         PreferenceConfiguration config = new PreferenceConfiguration();
@@ -531,6 +555,14 @@ public class PreferenceConfiguration {
             config.width = PreferenceConfiguration.getWidthFromResolutionString(resStr);
             config.height = PreferenceConfiguration.getHeightFromResolutionString(resStr);
             config.fps = Integer.parseInt(prefs.getString(FPS_PREF_STRING, PreferenceConfiguration.DEFAULT_FPS));
+        }
+
+        // MoonCast: "Native" follows the screen the stream starts on (a foldable's cover or its inner screen),
+        // instead of the size of whichever screen it was first set on.
+        if (prefs.getBoolean(NATIVE_RES_PREF_STRING, false)) {
+            String n = nativeResolution169(context);
+            config.width = getWidthFromResolutionString(n);
+            config.height = getHeightFromResolutionString(n);
         }
 
         if (!prefs.contains(SMALL_ICONS_PREF_STRING)) {
