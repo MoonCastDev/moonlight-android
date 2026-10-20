@@ -493,11 +493,15 @@ class HandheldHomeActivity : Activity() {
         root.addView(overlay, FrameLayout.LayoutParams(-1, -1))
         setContentView(root)
         // drawn edge to edge (target SDK 36): keep everything clear of the status bar, the navigation and any cutout
-        root.setOnApplyWindowInsetsListener { v, ins ->
-            if (android.os.Build.VERSION.SDK_INT >= 30) {
+        // the background and the colour wash go edge to edge, behind the bars and the cutout; the content and the
+        // dialogs stay inside them (on its side the cutout and the navigation are at the sides)
+        root.setOnApplyWindowInsetsListener { _, ins ->
+            val pad = if (android.os.Build.VERSION.SDK_INT >= 30) {
                 val b = ins.getInsets(android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.displayCutout())
-                v.setPadding(b.left, b.top, b.right, b.bottom)
-            } else @Suppress("DEPRECATION") v.setPadding(ins.systemWindowInsetLeft, ins.systemWindowInsetTop, ins.systemWindowInsetRight, ins.systemWindowInsetBottom)
+                intArrayOf(b.left, b.top, b.right, b.bottom)
+            } else @Suppress("DEPRECATION") intArrayOf(ins.systemWindowInsetLeft, ins.systemWindowInsetTop, ins.systemWindowInsetRight, ins.systemWindowInsetBottom)
+            main.setPadding(pad[0], pad[1], pad[2], pad[3])
+            overlay.setPadding(pad[0], pad[1], pad[2], pad[3])
             ins
         }
         systemBars()
@@ -711,7 +715,7 @@ class HandheldHomeActivity : Activity() {
         }
         val grid = rows >= 2 && cols >= 2
         // labels under every round button whenever there's room for them (compact, upright, a big screen)
-        labelsShown = sw.compact || grid
+        labelsShown = sw.compact || grid || !hasController()
         val gridW = cols * ts + (cols - 1) * gap
         val left = if (grid) ((sw.designWidth - gridW) / 2f).toInt() else e
         col.addView(part(box), sw.lp(-1, 48).apply { topMargin = sw.px(headTop); leftMargin = sw.px(left) })
@@ -736,6 +740,7 @@ class HandheldHomeActivity : Activity() {
             tiles.forEachIndexed { i, t -> row.addView(t, sw.lp(ts, ts).apply { if (i > 0) leftMargin = sw.px(gap) }) }
             val scroll = RowScroll(this, sw.px(e)).apply {
                 isHorizontalScrollBarEnabled = false; isFocusable = false; clipChildren = false; clipToPadding = false
+                isHorizontalFadingEdgeEnabled = true; setFadingEdgeLength(sw.px(90))
                 overScrollMode = View.OVER_SCROLL_NEVER
                 addView(row)
             }
@@ -767,14 +772,13 @@ class HandheldHomeActivity : Activity() {
                 clipChildren = false
                 addView(btn, sw.flp(112, 112))
                 addView(lab, FrameLayout.LayoutParams(sw.px(420), -2, Gravity.CENTER_HORIZONTAL).apply { topMargin = sw.px(132) })
-            }, sw.lp(112, 180).apply { if (i > 0) leftMargin = sw.px(if (grid) 120 else if (sw.compact) 72 else 40) })
+            }, sw.lp(112, 180).apply { if (i > 0) leftMargin = sw.px(if (grid) 120 else if (labelsShown) 76 else 40) })
         }
         if (portrait) col.addView(part(rounds), sw.lp(-2, -2).apply { topMargin = sw.px(roundsTop); leftMargin = sw.px(if (grid) left else e) })
         else col.addView(part(rounds), sw.lp(-1, 180).apply { topMargin = sw.px(roundsTop) })
         // with height to spare (a tall phone, few games): the spare room goes a third above and the rest below,
         // instead of one big gap over the tiles
-        if (portrait || grid) return BiasFrame(this, 0.3f).apply { clipChildren = false; addView(col, FrameLayout.LayoutParams(-1, -2)) }
-        return col
+        return BiasFrame(this, 0.3f).apply { clipChildren = false; addView(col, FrameLayout.LayoutParams(-1, -2)) }
     }
 
     /** Home shows every round button's label (compact, upright or a big screen), not only the focused one's. */
