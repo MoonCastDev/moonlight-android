@@ -1,5 +1,8 @@
 # Changelog
 
+## 12.2-test210 (2026-10-20)
+- Fix (test207-209): unfolding mid-game kept the stream going at the cover's size and never reconnected. The size check ran only at the moment the screen changed, when the new screen's size may not be known yet, and it measured the display's mode, which can still report the other panel for a moment. It now checks again once the screen settles, after every change, and measures the app's own full-screen window. The "MoonCast:" log lines show the sizes it saw.
+
 ## 12.2-test209 (2026-10-20)
 - Fix (test208): unfolding mid-game still left a stopped stream. On the Fold the screen switch replaces the video surface without hiding the app, and losing the surface ends the stream (Moonlight's own behaviour); the new surface only ever started the first connection. Now a new surface after one lost mid-stream reconnects, at the new screen's size with Native ("Fitting the stream to this screen…"). The other two ways in (shown again within 2 seconds, or a size change) stay, and only one reconnect happens. Log lines starting "MoonCast:" trace it.
 

@@ -593,9 +593,12 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
         // Folded or unfolded mid-game: once the screen settles (a fold sends a few changes), reconnect at its size
         // so Native fills it; the game keeps running on the PC
+        // (always check after it settles: right at the change the screen's new size may not be known yet)
         if (streamView != null) {
+            LimeLog.info("MoonCast: configuration changed, screen now " + newConfig.screenWidthDp + "x" + newConfig.screenHeightDp
+                    + " dp, Native " + PreferenceConfiguration.nativeResolution(this) + ", stream " + (prefConfig != null ? prefConfig.width + "x" + prefConfig.height : "?"));
             streamView.removeCallbacks(fitScreen);
-            if (needsRefit()) streamView.postDelayed(fitScreen, 1500);
+            streamView.postDelayed(fitScreen, 1500);
         }
 
         if (virtualController != null) {
@@ -2416,6 +2419,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     }
 
     private final Runnable fitScreen = () -> {
+        LimeLog.info("MoonCast: settled, Native " + PreferenceConfiguration.nativeResolution(Game.this) + ", stream "
+                + (prefConfig != null ? prefConfig.width + "x" + prefConfig.height : "?") + ", connected " + connected
+                + ", native on " + PreferenceConfiguration.nativeWholeScreen(Game.this));
         if (needsRefit()) {
             LimeLog.info("MoonCast: screen size changed mid-stream, reconnecting");
             Toast.makeText(Game.this, "Fitting the stream to this screen…", Toast.LENGTH_SHORT).show();
