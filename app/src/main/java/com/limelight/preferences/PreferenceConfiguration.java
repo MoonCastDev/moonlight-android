@@ -462,8 +462,55 @@ public class PreferenceConfiguration {
      * display modes (the Fold: 2448x1848 open, 1968x1248 folded). The PC draws its desktop and menus in that shape.
      */
     public static String nativeResolution(Context context) {
+        rememberScreen(context);
+        String shared = foldableResolution(context);
+        if (shared != null) return shared;
         int[] wh = screenSize(context);
         return (wh[0] & ~7) + "x" + (wh[1] & ~7);
+    }
+
+    /** MoonCast: the screen sizes this device has run on ("2448x1848;1968x1248"): a foldable has two shapes. */
+    public static final String SCREENS_PREF_STRING = "mc_screens";
+
+    /** Note the screen [context] is on, so a foldable's two screens are known (a few at most). */
+    public static void rememberScreen(Context context) {
+        int[] wh = screenSize(context);
+        if (wh[0] < 640 || wh[1] < 360) return;
+        String me = wh[0] + "x" + wh[1];
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+        String all = prefs.getString(SCREENS_PREF_STRING, "");
+        java.util.List<String> list = new java.util.ArrayList<>();
+        for (String x : all.split(";")) if (!x.isEmpty()) list.add(x);
+        if (list.contains(me)) return;
+        list.add(0, me);
+        while (list.size() > 4) list.remove(list.size() - 1);
+        prefs.edit().putString(SCREENS_PREF_STRING, android.text.TextUtils.join(";", list)).apply();
+    }
+
+    /**
+     * A foldable (two screens of clearly different shapes, both seen here): one stream shape between the two, so a
+     * fold or unfold only re-fits the picture (Picture shape: Fill trims a little, Stretch bends a little, Fit leaves
+     * thin bars) instead of reconnecting or restarting the game. Its width is the biggest screen's long side, its
+     * shape the geometric mean of the widest and the squarest (the Fold: 1.58 and 1.32 make 1.45, 2448x1696).
+     * Null on a device with one screen shape.
+     */
+    public static String foldableResolution(Context context) {
+        String all = PreferenceManager.getDefaultSharedPreferences(context).getString(SCREENS_PREF_STRING, "");
+        double lo = 0, hi = 0; int wmax = 0;
+        for (String x : all.split(";")) {
+            int w, h;
+            try { w = getWidthFromResolutionString(x); h = getHeightFromResolutionString(x); } catch (RuntimeException e) { continue; }
+            if (w <= 0 || h <= 0) continue;
+            double r = (double) w / h;
+            if (lo == 0 || r < lo) lo = r;
+            if (r > hi) hi = r;
+            wmax = Math.max(wmax, w);
+        }
+        if (lo == 0 || hi / lo < 1.08) return null;
+        double shape = Math.sqrt(lo * hi);
+        int w = wmax & ~7;
+        int h = (int) Math.round(w / shape / 8.0) * 8;
+        return w + "x" + h;
     }
 
     /** The physical size of the screen [context] is on, the long side first. */

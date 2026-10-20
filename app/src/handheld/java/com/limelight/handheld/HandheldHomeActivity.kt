@@ -1183,7 +1183,10 @@ class HandheldHomeActivity : Activity() {
                 // Native is this screen's own size and shape (no bars), whichever screen a stream starts on
                 // (a foldable's cover or inner screen)
                 val native = nativeResolution()
-                choice(list, stream, "list_resolution", "Resolution", "Native fills the screen you play on, now ${native.replace("x", " × ")}",
+                val fold = PreferenceConfiguration.foldableResolution(this) != null
+                choice(list, stream, "list_resolution", "Resolution",
+                        if (fold) "Native suits both your screens: ${native.replace("x", " × ")}. Picture shape sets how it fills each one"
+                        else "Native fills the screen you play on, now ${native.replace("x", " × ")}",
                         RES_STEPS.filter { it.second != native } + ("Native" to native), native) { v ->
                     stream.edit().putBoolean(PreferenceConfiguration.NATIVE_RES_PREF_STRING, v == native).apply()
                 }
@@ -2001,6 +2004,10 @@ class HandheldHomeActivity : Activity() {
 
     /** With Native on, the saved size is this screen's, so the settings and Moonlight's own pages show it. */
     private fun syncNativeRes(commit: Boolean = false) {
+        // a foldable (both its screens seen): fill each screen from the one shared shape, unless Picture shape was set
+        if (PreferenceConfiguration.foldableResolution(this) == null) PreferenceConfiguration.rememberScreen(this)
+        if (PreferenceConfiguration.foldableResolution(this) != null && !stream.contains("list_video_scale_mode"))
+            stream.edit().putString("list_video_scale_mode", "fill").apply()
         // A saved size that is this screen's own is Native (Settings shows it as Native): test203-211 could save it
         // with Native's switch off, when the page redrew before the pick was saved
         if (!stream.getBoolean(PreferenceConfiguration.NATIVE_RES_PREF_STRING, false) && stream.getString("list_resolution", null) == nativeResolution())

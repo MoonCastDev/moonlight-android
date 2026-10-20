@@ -2429,9 +2429,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
     /** A foldable folded or unfolded mid-game with Native on: the stream is still the size of the other screen. */
     private boolean needsRefit() {
-        if (!connected || isFinishing() || prefConfig == null || !PreferenceConfiguration.nativeWholeScreen(this)) return false;
+        if (!connected || isFinishing()) return false;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && isInPictureInPictureMode()) return false;
-        return !PreferenceConfiguration.nativeResolution(this).equals(prefConfig.width + "x" + prefConfig.height);
+        return sizeChanged();
     }
 
     // "Move to TV" (handheld): end this stream (disconnect, the game keeps running) before the TV joins it.
@@ -2830,17 +2830,26 @@ public class Game extends Activity implements SurfaceHolder.Callback,
      * screen's size inside the new frame. Unsaved progress in the game is lost.
      */
     private void reconnectHere(String why) {
-        if (reconnecting) return;   // a fold can bring a new surface, onStart and a size change: restart once
+        if (reconnecting) return;   // a fold can bring a new surface, onStart and a size change: act once
         reconnecting = true;
         surfaceLostMidStream = false;
         stoppedAwhile = false;
-        trace("restarting the game for this screen (" + why + ")");
-        Toast.makeText(this, "Restarting the game for this screen…", Toast.LENGTH_SHORT).show();
         endedByUser = true;
+        // Only a new size needs the game restarted. A foldable whose two screens are known streams one shape for both
+        // (the picture just re-fits), so a stream that ended there only reconnects; the game keeps running.
+        final boolean restart = sizeChanged();
+        trace((restart ? "restarting the game for this screen (" : "reconnecting (") + why + ")");
+        Toast.makeText(this, restart ? "Restarting the game for this screen…" : "Reconnecting…", Toast.LENGTH_SHORT).show();
         stopConnection(() -> new Thread(() -> {
-            quitAppOnHost();
+            if (restart) quitAppOnHost();
             runOnUiThread(() -> { if (!isFinishing()) recreate(); });
         }, "mc-refit").start());
+    }
+
+    /** With Native on, the size this screen streams at now differs from this stream's. */
+    private boolean sizeChanged() {
+        return prefConfig != null && PreferenceConfiguration.nativeWholeScreen(this)
+                && !PreferenceConfiguration.nativeResolution(this).equals(prefConfig.width + "x" + prefConfig.height);
     }
 
     @Override
