@@ -72,7 +72,7 @@ class DirectPad(ctx: Context, private val pcUuid: String, private val appId: Int
 
     fun start() {
         bound = app.bindService(Intent(app, ComputerManagerService::class.java), sc, Context.BIND_AUTO_CREATE)
-        if (!bound) set(State.FAILED, "Moonlight's PC manager didn't start")
+        if (!bound) set(State.FAILED, "The PC manager didn't start")
     }
 
     fun stop() {

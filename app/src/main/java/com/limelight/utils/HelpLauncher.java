@@ -36,16 +36,4 @@ public class HelpLauncher {
         i.setData(Uri.parse(url));
         context.startActivity(i);
     }
-
-    public static void launchSetupGuide(Context context) {
-        launchUrl(context, "https://github.com/moonlight-stream/moonlight-docs/wiki/Setup-Guide");
-    }
-
-    public static void launchTroubleshooting(Context context) {
-        launchUrl(context, "https://github.com/moonlight-stream/moonlight-docs/wiki/Troubleshooting");
-    }
-
-    public static void launchGameStreamEolFaq(Context context) {
-        launchUrl(context, "https://github.com/moonlight-stream/moonlight-docs/wiki/NVIDIA-GameStream-End-Of-Service-Announcement-FAQ");
-    }
 }
