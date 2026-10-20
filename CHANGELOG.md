@@ -1,5 +1,8 @@
 # Changelog
 
+## 12.2-test207 (2026-10-20)
+- PC streams with Resolution on Native: folding or unfolding a foldable mid-game now reconnects by itself at the new screen's size, about 1.5 seconds after the screen settles ("Fitting the stream to this screen…"; a short blackout, the game keeps running on the PC). The Quick menu's "Fit this screen" is gone. Not in picture-in-picture. (With a PC that sets its own resolution only when a game launches, the PC keeps its desktop size until the game is started again.)
+
 ## 12.2-test206 (2026-10-20)
 - Handheld: no 16:9 choice any more. Resolution is 720p, 1080p, 1440p, 4K or Native, and Native is always the whole screen in its own shape (an open Fold 2448 × 1848, folded 1968 × 1248; on other handhelds their full screen, rounded to multiples of 8), following the screen a stream starts on. An earlier Native (16:9) becomes this one.
 

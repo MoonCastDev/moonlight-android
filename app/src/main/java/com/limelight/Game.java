@@ -591,6 +591,13 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         // Set requested orientation for possible new screen size
         setPreferredOrientationForCurrentDisplay();
 
+        // Folded or unfolded mid-game: once the screen settles (a fold sends a few changes), reconnect at its size
+        // so Native fills it; the game keeps running on the PC
+        if (streamView != null) {
+            streamView.removeCallbacks(fitScreen);
+            if (needsRefit()) streamView.postDelayed(fitScreen, 1500);
+        }
+
         if (virtualController != null) {
             // Refresh layout of OSC for possible new screen size
             virtualController.refreshLayout();
@@ -1548,13 +1555,6 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                     "pc", appName != null ? appName : "Your game", getIntent().getStringExtra(EXTRA_PC_UUID), pcName,
                     getIntent().getIntExtra(EXTRA_APP_ID, 0), null, null, null, true, null));
             if (move != null) items.add(move);
-            // a foldable folded or unfolded mid-game: the stream keeps the size it started at until it reconnects
-            String screen = PreferenceConfiguration.nativeResolution(Game.this);
-            if (connected && prefConfig != null && android.preference.PreferenceManager.getDefaultSharedPreferences(Game.this).getBoolean(PreferenceConfiguration.NATIVE_RES_PREF_STRING, false)
-                    && !screen.equals(prefConfig.width + "x" + prefConfig.height)) {
-                items.add(new com.limelight.home.QuickMenu.Item("⤢", "Fit this screen",
-                        "Reconnects at " + screen.replace("x", " × ") + ". The game keeps running", false, this::restartForScreen));
-            }
             items.add(new com.limelight.home.QuickMenu.Item("←", "Disconnect", "The game keeps running", false, this::finish));
             items.add(new com.limelight.home.QuickMenu.Item("✕", "Quit game", null, true, this::quitOnHostAndFinish));
             quickMenu.show(appName != null ? appName : "Your game",
@@ -2390,6 +2390,20 @@ public class Game extends Activity implements SurfaceHolder.Callback,
      */
     private void restartForScreen() {
         stopConnection(() -> { if (!isFinishing()) recreate(); });
+    }
+
+    private final Runnable fitScreen = () -> {
+        if (needsRefit()) {
+            Toast.makeText(Game.this, "Fitting the stream to this screen…", Toast.LENGTH_SHORT).show();
+            restartForScreen();
+        }
+    };
+
+    /** A foldable folded or unfolded mid-game with Native on: the stream is still the size of the other screen. */
+    private boolean needsRefit() {
+        if (!connected || isFinishing() || prefConfig == null || !PreferenceConfiguration.nativeWholeScreen(this)) return false;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && isInPictureInPictureMode()) return false;
+        return !PreferenceConfiguration.nativeResolution(this).equals(prefConfig.width + "x" + prefConfig.height);
     }
 
     // "Move to TV" (handheld): end this stream (disconnect, the game keeps running) before the TV joins it.
