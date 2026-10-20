@@ -1041,8 +1041,46 @@ class HandheldHomeActivity : Activity() {
                 opts += Opt("PC", Sw.PC, "Unpair", "You'll pair it again with a PIN to play") { confirmUnpair(d) }
             }
         }
+        val away = d.manualAddress?.let { hostPort(it) }
+        opts += Opt("⌂", Sw.PC, if (away == null) "Add an address for away" else "Address for away", away ?: "A name or address that reaches this PC from the internet") { awayAddress(d) }
         opts += Opt("✕", Sw.DANGER, "Remove", "It disappears from this device") { confirmRemovePc(d) }
-        dialog(d.name, (d.activeAddress?.address ?: d.localAddress?.address)?.let { "At $it" }, opts, listOf("Close" to {}))
+        dialog(d.name, pcAddresses(d), opts, listOf("Close" to {}))
+    }
+
+    private fun hostPort(a: ComputerDetails.AddressTuple) = if (a.port == NvHTTP.DEFAULT_HTTP_PORT) a.address else "${a.address}:${a.port}"
+
+    /** Where this device looks for the PC: its home address and the one for away, and which it reached. */
+    private fun pcAddresses(d: ComputerDetails): String? {
+        val lines = ArrayList<String>()
+        val used = d.activeAddress
+        fun line(label: String, a: ComputerDetails.AddressTuple?) {
+            if (a == null || lines.any { it.contains(hostPort(a)) }) return
+            lines += "$label: ${hostPort(a)}" + if (used != null && used.address == a.address && used.port == a.port) " (in use)" else ""
+        }
+        line("At home", d.localAddress)
+        line("Away", d.manualAddress)
+        line("Internet", d.remoteAddress)
+        return lines.takeIf { it.isNotEmpty() }?.joinToString("\n")
+    }
+
+    /**
+     * The address that reaches this PC from outside its network (a name like home.example.com, or a public IP),
+     * kept next to its home address: this device tries both and uses whichever answers. Saved without trying it,
+     * since at home an internet address usually can't be reached.
+     */
+    private fun awayAddress(d: ComputerDetails) {
+        entry("Address for away", "A name or IP that reaches ${d.name} from the internet. Its home address stays too, and this device uses whichever answers. Sunshine's ports must be open to the internet, or connect a VPN to home. Leave it empty to remove it.",
+                "For example home.example.com", d.manualAddress?.let { hostPort(it) } ?: "", "address") { raw ->
+            val b = binder ?: return@entry "Still starting, try again in a moment."
+            val tuple = if (raw.isEmpty()) null else try {
+                val uri = try { java.net.URI("moonlight://$raw") } catch (e: Exception) { java.net.URI("moonlight://[$raw]") }
+                ComputerDetails.AddressTuple(uri.host ?: return@entry "That isn't an address.", if (uri.port == -1) NvHTTP.DEFAULT_HTTP_PORT else uri.port)
+            } catch (e: Exception) { return@entry "That isn't an address." }
+            if (!b.setManualAddress(d.uuid, tuple)) return@entry "This PC isn't in the list any more."
+            toast(if (tuple == null) "Removed the address for away." else "Saved. Away from home, ${d.name} is tried at $raw.")
+            render(force = true)
+            null
+        }
     }
 
     private fun psMenu(c: Ps5Store.Console) {
@@ -1627,6 +1665,9 @@ class HandheldHomeActivity : Activity() {
                 } catch (e: Exception) { false }
                 runOnUiThread {
                     if (ok) { toast("Added. Pair it from Consoles."); go(Page.CONSOLES) }
+                    // an internet name usually doesn't answer from inside the home it points at
+                    else if (pcs.isNotEmpty() && raw.any { it.isLetter() } && !raw.endsWith(".local"))
+                        toast("No PC answered at $raw. To use it away from home for a PC you already have, open the PC in Consoles and choose Address for away.")
                     else toast("No PC answered at $raw. Check it's on, Sunshine is running, and the address is right.")
                 }
             }.start()

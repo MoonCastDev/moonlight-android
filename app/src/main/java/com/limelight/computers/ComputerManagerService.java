@@ -290,6 +290,35 @@ public class ComputerManagerService extends Service {
             return null;
         }
 
+        /**
+         * Sets (or clears, with null) the address a PC is reached at from outside its network, without needing it to
+         * answer there now: at home the internet address usually can't be tried. Saved with the PC's other addresses.
+         */
+        public boolean setManualAddress(String uuid, ComputerDetails.AddressTuple address) {
+            synchronized (pollingTuples) {
+                for (PollingTuple tuple : pollingTuples) {
+                    if (uuid.equals(tuple.computer.uuid)) {
+                        synchronized (tuple.networkLock) {
+                            tuple.computer.manualAddress = address;
+                            if (getLocalDatabaseReference()) {
+                                try {
+                                    ComputerDetails saved = dbManager.getComputerByUUID(uuid);
+                                    if (saved != null) {
+                                        saved.manualAddress = address;
+                                        dbManager.updateComputer(saved);
+                                    }
+                                } finally {
+                                    releaseLocalDatabaseReference();
+                                }
+                            }
+                        }
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
         public void invalidateStateForComputer(String uuid) {
             synchronized (pollingTuples) {
                 for (PollingTuple tuple : pollingTuples) {
