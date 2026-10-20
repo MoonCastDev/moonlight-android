@@ -1,0 +1,102 @@
+<html><head><style>
+@font-face{font-family:Figtree;src:url(Figtree.ttf);font-weight:100 900}
+body{margin:0;background:#15171a;color:#fff;font-family:Figtree;width:2400px}
+.wrap{padding:44px 54px}
+h1{font-size:52px;margin:0 0 6px}.lead{font-size:27px;color:#B5BAC3;margin:0 0 30px}
+.panel{background:#1f2226;border:2px solid #2e3238;border-radius:22px;padding:26px 30px 30px;margin-bottom:34px}
+.panel h2{font-size:36px;margin:0 0 4px}.panel .sub{font-size:24px;color:#B5BAC3;margin-bottom:10px}
+svg text{font-family:Figtree}
+.legend{display:flex;gap:46px;font-size:24px;color:#ccc;margin:6px 0 26px}
+.legend span{display:inline-flex;align-items:center;gap:12px}
+.key{width:60px;height:0;border-top:6px solid}
+.note{font-size:23px;color:#B5BAC3;line-height:1.45;margin-top:8px}
+</style></head><body><div class=wrap>
+<h1>MoonCast: how screens and controllers reach the PC game</h1>
+<p class=lead>Every arrow to the PC is a <b>Sunshine session</b>: one device connected to the game. Sunshine gives each session its own virtual gamepad, so each session that sends a controller is a separate player.</p>
+<div class=legend>
+ <span><i class=key style="border-color:#2FD3E6"></i>Picture (video + sound) to a screen</span>
+ <span><i class=key style="border-color:#F2B55C"></i>Controller to the PC</span>
+ <span><i class=key style="border-color:#F2B55C;border-top-style:dashed"></i>Controller relayed through the TV (fallback)</span>
+ <span><i class=key style="border-color:#5C6170"></i>Picture sent but thrown away (controller-only session)</span>
+</div>
+<svg width="0" height="0"><defs>
+ <marker id="c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#2FD3E6"/></marker>
+ <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#F2B55C"/></marker>
+ <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#5C6170"/></marker>
+</defs></svg>
+
+<!-- A -->
+<div class=panel><h2>A · Two players, each on their own screen</h2><div class=sub>Tested today: Retroid + Odin on the same Desktop game</div>
+<svg width="2280" height="430">
+ <rect x="890" y="120" width="500" height="190" rx="20" fill="#2a2e34" stroke="#5B6170" stroke-width="3"/>
+ <text x="1140" y="175" font-size="34" font-weight="800" fill="#fff" text-anchor="middle">xserv Gaming PC</text>
+ <text x="1140" y="215" font-size="24" fill="#B5BAC3" text-anchor="middle">Sunshine · 2 sessions</text>
+ <rect x="930" y="238" width="200" height="50" rx="10" fill="#3E4249"/><text x="1030" y="271" font-size="22" fill="#fff" text-anchor="middle">Gamepad 0</text>
+ <rect x="1150" y="238" width="200" height="50" rx="10" fill="#3E4249"/><text x="1250" y="271" font-size="22" fill="#fff" text-anchor="middle">Gamepad 1</text>
+ <rect x="80" y="110" width="420" height="210" rx="20" fill="#26313a" stroke="#2FD3E6" stroke-width="3"/>
+ <text x="290" y="170" font-size="32" font-weight="800" fill="#fff" text-anchor="middle">Retroid · Player 1</text>
+ <text x="290" y="210" font-size="23" fill="#B5BAC3" text-anchor="middle">started the game</text>
+ <text x="290" y="250" font-size="23" fill="#B5BAC3" text-anchor="middle">1240×696 · 9 Mbps</text>
+ <rect x="1780" y="110" width="420" height="210" rx="20" fill="#26313a" stroke="#2FD3E6" stroke-width="3"/>
+ <text x="1990" y="170" font-size="32" font-weight="800" fill="#fff" text-anchor="middle">Odin · Player 2</text>
+ <text x="1990" y="210" font-size="23" fill="#B5BAC3" text-anchor="middle">"Running, join as player 2"</text>
+ <text x="1990" y="250" font-size="23" fill="#B5BAC3" text-anchor="middle">joins at 1920×1080 · 20 Mbps</text>
+ <path d="M880 160 L510 160" stroke="#2FD3E6" stroke-width="6" marker-end="url(#c)"/>
+ <path d="M510 265 L880 265" stroke="#F2B55C" stroke-width="6" marker-end="url(#a)"/>
+ <path d="M1400 160 L1770 160" stroke="#2FD3E6" stroke-width="6" marker-end="url(#c)"/>
+ <path d="M1770 265 L1400 265" stroke="#F2B55C" stroke-width="6" marker-end="url(#a)"/>
+ <text x="695" y="140" font-size="22" fill="#2FD3E6" text-anchor="middle">picture</text><text x="695" y="300" font-size="22" fill="#F2B55C" text-anchor="middle">controller → Gamepad 0</text>
+ <text x="1585" y="140" font-size="22" fill="#2FD3E6" text-anchor="middle">picture</text><text x="1585" y="300" font-size="22" fill="#F2B55C" text-anchor="middle">controller → Gamepad 1</text>
+ <text x="1140" y="380" font-size="23" fill="#B5BAC3" text-anchor="middle">Both screens show the same PC picture. The PC stays at the size of whoever started (here the Retroid's 1240×696).</text>
+</svg></div>
+
+<!-- B -->
+<div class=panel><h2>B · The game on the TV, handhelds as controllers</h2><div class=sub>Player 1 sends the game to the TV; player 2 taps "Join MiTV-AESP0 as player 2" (built, not yet tested on the TV)</div>
+<svg width="2280" height="560">
+ <rect x="890" y="60" width="500" height="200" rx="20" fill="#2a2e34" stroke="#5B6170" stroke-width="3"/>
+ <text x="1140" y="115" font-size="34" font-weight="800" fill="#fff" text-anchor="middle">xserv Gaming PC</text>
+ <text x="1140" y="155" font-size="24" fill="#B5BAC3" text-anchor="middle">Sunshine · 3 sessions</text>
+ <rect x="930" y="185" width="200" height="50" rx="10" fill="#3E4249"/><text x="1030" y="218" font-size="22" fill="#fff" text-anchor="middle">Gamepad 0</text>
+ <rect x="1150" y="185" width="200" height="50" rx="10" fill="#3E4249"/><text x="1250" y="218" font-size="22" fill="#fff" text-anchor="middle">Gamepad 1</text>
+ <rect x="890" y="370" width="500" height="160" rx="20" fill="#26313a" stroke="#2FD3E6" stroke-width="3"/>
+ <text x="1140" y="425" font-size="32" font-weight="800" fill="#fff" text-anchor="middle">TV (Mi stick)</text>
+ <text x="1140" y="465" font-size="23" fill="#B5BAC3" text-anchor="middle">shows the game · no controller of its own</text>
+ <path d="M1140 270 L1140 360" stroke="#2FD3E6" stroke-width="6" marker-end="url(#c)"/>
+ <text x="1160" y="320" font-size="22" fill="#2FD3E6">full picture</text>
+ <rect x="80" y="60" width="440" height="230" rx="20" fill="#26313a" stroke="#F2B55C" stroke-width="3"/>
+ <text x="300" y="118" font-size="32" font-weight="800" fill="#fff" text-anchor="middle">Retroid · Player 1</text>
+ <text x="300" y="158" font-size="23" fill="#B5BAC3" text-anchor="middle">sent the game · screen dimmed</text>
+ <text x="300" y="196" font-size="23" fill="#B5BAC3" text-anchor="middle">controller-only session:</text>
+ <text x="300" y="232" font-size="23" fill="#B5BAC3" text-anchor="middle">640×360 · 15 fps · 0.5 Mbps</text>
+ <rect x="1760" y="60" width="440" height="230" rx="20" fill="#26313a" stroke="#F2B55C" stroke-width="3"/>
+ <text x="1980" y="118" font-size="32" font-weight="800" fill="#fff" text-anchor="middle">Odin · Player 2</text>
+ <text x="1980" y="158" font-size="23" fill="#B5BAC3" text-anchor="middle">joined · Leave never stops</text>
+ <text x="1980" y="196" font-size="23" fill="#B5BAC3" text-anchor="middle">player 1's game</text>
+ <text x="1980" y="232" font-size="23" fill="#B5BAC3" text-anchor="middle">same controller-only session</text>
+ <path d="M530 130 L880 130" stroke="#F2B55C" stroke-width="6" marker-end="url(#a)"/><text x="705" y="115" font-size="22" fill="#F2B55C" text-anchor="middle">controller → Gamepad 0</text>
+ <path d="M880 205 L530 205" stroke="#5C6170" stroke-width="5" marker-end="url(#g)"/><text x="705" y="240" font-size="21" fill="#8a8f98" text-anchor="middle">tiny picture, thrown away</text>
+ <path d="M1750 130 L1400 130" stroke="#F2B55C" stroke-width="6" marker-end="url(#a)"/><text x="1575" y="115" font-size="22" fill="#F2B55C" text-anchor="middle">controller → Gamepad 1</text>
+ <path d="M1400 205 L1750 205" stroke="#5C6170" stroke-width="5" marker-end="url(#g)"/><text x="1575" y="240" font-size="21" fill="#8a8f98" text-anchor="middle">tiny picture, thrown away</text>
+ <path d="M300 300 L300 450 L880 450" stroke="#F2B55C" stroke-width="5" stroke-dasharray="16 12" fill="none" marker-end="url(#a)"/>
+ <text x="330" y="400" font-size="22" fill="#F2B55C">fallback: if the direct session fails,</text><text x="330" y="430" font-size="22" fill="#F2B55C">player 1's controller goes through the TV</text>
+</svg>
+<div class=note>Why a "controller-only session": Sunshine only takes controllers from a device that's connected to the game. So each handheld connects with the smallest stream it can (640×360, 15 fps, 0.5 Mbps), never decodes the picture, and sends only its buttons. That's straight to the PC, skipping the TV's Wi-Fi hop. Player 2 must be paired with the PC; player 1's TV relay is player 1's only.</div></div>
+
+<!-- C -->
+<div class=panel><h2>C · PS5 or Xbox on the TV: one controller</h2><div class=sub>Remote Play gives one controller per console, so there's no player 2</div>
+<svg width="2280" height="300">
+ <rect x="1640" y="60" width="520" height="170" rx="20" fill="#24305a" stroke="#5C8DF6" stroke-width="3"/>
+ <text x="1900" y="125" font-size="34" font-weight="800" fill="#fff" text-anchor="middle">PS5 / Xbox</text>
+ <text x="1900" y="168" font-size="24" fill="#B5BAC3" text-anchor="middle">one Remote Play session</text>
+ <rect x="890" y="60" width="500" height="170" rx="20" fill="#26313a" stroke="#2FD3E6" stroke-width="3"/>
+ <text x="1140" y="125" font-size="32" font-weight="800" fill="#fff" text-anchor="middle">TV (Mi stick)</text>
+ <text x="1140" y="168" font-size="23" fill="#B5BAC3" text-anchor="middle">plays it · relays the pad</text>
+ <rect x="120" y="60" width="440" height="170" rx="20" fill="#26313a" stroke="#F2B55C" stroke-width="3"/>
+ <text x="340" y="125" font-size="32" font-weight="800" fill="#fff" text-anchor="middle">Handheld</text>
+ <text x="340" y="168" font-size="23" fill="#B5BAC3" text-anchor="middle">the only controller</text>
+ <path d="M570 145 L880 145" stroke="#F2B55C" stroke-width="5" stroke-dasharray="16 12" marker-end="url(#a)"/><text x="725" y="125" font-size="22" fill="#F2B55C" text-anchor="middle">controller to the TV</text>
+ <path d="M1400 120 L1630 120" stroke="#F2B55C" stroke-width="6" marker-end="url(#a)"/>
+ <path d="M1630 175 L1400 175" stroke="#2FD3E6" stroke-width="6" marker-end="url(#c)"/>
+ <text x="1515" y="100" font-size="22" fill="#F2B55C" text-anchor="middle">controller</text><text x="1515" y="215" font-size="22" fill="#2FD3E6" text-anchor="middle">picture</text>
+</svg></div>
+</div></body></html>
