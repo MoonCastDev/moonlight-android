@@ -3,6 +3,10 @@
 ## 12.2-test202 (2026-10-20)
 - Handheld polish: a dialog with many options (a PC's menu) showed four and cut the fifth near its top edge. It now shows as many as the screen has room for, and when it has to scroll it cuts a row through the middle so it's plain there's more. The symbols in the Consoles list (+) fill their squares like the dialogs'.
 
+## 12.2-test201 (2026-10-20)
+- Handheld: a PC keeps a home address and an address for away (a name like home.example.com, or a public IP), and this device tries both and uses whichever answers. The PC's menu in Consoles now lists them ("At home", "Away", which one is in use) and has "Address for away" to add, change or remove it. It's saved without trying it, because at home an internet address usually can't be reached. Adding a PC by its address did keep a typed internet name already, but nothing showed it.
+- Adding a PC by an internet name from home, when nothing answers, now says to use Address for away on the PC instead.
+
 ## 12.2-test200 (2026-10-20)
 - Fix (test199): on the Fold's cover screen Home's bottom row of round buttons ran under the bottom bar. Home measured its height including the status bar and navigation, so it thought two rows of tiles fit. It now lays out inside them (also Samsung's taskbar on an open Fold).
 - Handheld on a big screen on its side (an open Fold): the 1920 x 1080 canvas made everything 1.3 times a phone's size, so only one row of tiles fit and the grid never showed. On its side it now keeps a phone's real size too: a centred grid of tiles (five across, two rows on the Fold) with every round button labelled.
