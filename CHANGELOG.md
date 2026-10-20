@@ -1,5 +1,13 @@
 # Changelog
 
+## 12.2-test221 (2026-10-20)
+- MoonCast's own logo (R2, the synthwave moon: a sunset-striped moon on a night sky, mockups in docs/mockups/logo on design/handheld-compact) replaces Moonlight's wheel everywhere it showed:
+  - the app icon on every device (all sizes; Android's adaptive icon with a night-sky background, and a one-colour version for themed icons);
+  - the Android TV banner, which still said "Moonlight Game Streaming": now the logo with "MoonCast, Play your PC, PS5 and Xbox";
+  - the TV app's channel icon on the Android TV home screen;
+  - the handheld's Home: the logo instead of the orange circle with an initial.
+- Moonlight's unused images (its app icon and the OUYA banner) are gone.
+
 ## 12.2-test220 (2026-10-20)
 - Handheld on its side: everything sat far in from the left. Android reserves the whole edge for the small camera hole (104 px on the Fold's cover), and MoonCast's own margin came on top of it. Now the content keeps all of a system bar but only as much of the cutout as its margin doesn't already cover, so it moves about 90 px left and still clears the camera.
 

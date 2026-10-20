@@ -653,12 +653,11 @@ class HandheldHomeActivity : Activity() {
         part(topBar)
     }
 
-    private fun avatar(): View {
-        val name = Psn.onlineId(this)?.takeIf { it.isNotBlank() } ?: Xbox.gamertag(this)?.takeIf { it.isNotBlank() } ?: deviceName()
-        return sw.text(name.trim().take(1).uppercase(), 38, 0xFFFFFFFF.toInt(), 800).apply {
-            gravity = Gravity.CENTER
-            background = sw.round(0xFFF08A3C.toInt(), 42, sw.panel, 4)
-        }
+    /** MoonCast's logo at the start of Home's top bar (it was a circle with the player's initial). */
+    private fun avatar(): View = ImageView(this).apply {
+        setImageResource(R.drawable.mc_logo)
+        scaleType = ImageView.ScaleType.FIT_CENTER
+        contentDescription = "MoonCast"
     }
 
     private fun buildFoot() {
