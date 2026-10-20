@@ -40,11 +40,13 @@ class Sw(ctx: Context, val light: Boolean, val portrait: Boolean, val size: Size
     val edge get() = if (portrait) 40 else if (compact) 44 else 96
 
     // Upright: the width sets the scale (1080 wide, or 940 for Large), so text stays the size it is in landscape
-    // compact and the height is whatever the screen has (see [designHeight]).
+    // compact and the height is whatever the screen has (see [designHeight]). A wide upright screen (a foldable open,
+    // a tablet: 600 dp and up) gets a wider canvas, so things keep a phone's real size and more of them fit.
+    private val upright = portraitCanvas(ctx)
     val tv = when (size) {
-        Size.NORMAL -> if (portrait) Tv(ctx, false, 1080, 0) else Tv(ctx, false, 1920, 1080)
-        Size.COMPACT -> if (portrait) Tv(ctx, false, 1080, 0) else Tv(ctx, false, 1240, 1080)
-        Size.LARGE -> if (portrait) Tv(ctx, false, 940, 0) else Tv(ctx, false, 1080, 940)
+        Size.NORMAL -> if (portrait) Tv(ctx, false, upright, 0) else Tv(ctx, false, 1920, 1080)
+        Size.COMPACT -> if (portrait) Tv(ctx, false, upright, 0) else Tv(ctx, false, 1240, 1080)
+        Size.LARGE -> if (portrait) Tv(ctx, false, upright * 940 / 1080, 0) else Tv(ctx, false, 1080, 940)
     }
     /** The design canvas height this screen really has. */
     val designHeight: Float get() = c.resources.displayMetrics.heightPixels / tv.pxf(1)
@@ -59,8 +61,19 @@ class Sw(ctx: Context, val light: Boolean, val portrait: Boolean, val size: Size
     val ink = if (light) 0xFF2D2D2D.toInt() else 0xFFFFFFFF.toInt()
     val sub = if (light) 0xFF6E727A.toInt() else 0xFFB5BAC3.toInt()
     val ring = if (light) 0xFF00A9C2.toInt() else 0xFF2FD3E6.toInt()
+    /** Button labels: between [ink] and [sub], so they read at arm's length without shouting. */
+    val label = if (light) 0xFF3A3D42.toInt() else 0xFFD9DCE1.toInt()
+
+    /** Corner radius of game tiles, in design px. */
+    val tileCorner = 16
 
     companion object {
+        /** The upright design width: 1080, or wider on a screen 600 dp and more across (same real size as a phone). */
+        fun portraitCanvas(ctx: Context): Int {
+            val wdp = ctx.resources.configuration.screenWidthDp
+            return if (wdp >= 600) maxOf(1080, Math.round(wdp / 0.38f)) else 1080
+        }
+
         /**
          * The size for this screen. [choice] is the "Screen size" setting: auto, compact, normal or large. Auto goes
          * compact when the normal 1920-wide layout would be drawn below 80% of its size (a small or near-square
@@ -132,6 +145,18 @@ class Sw(ctx: Context, val light: Boolean, val portrait: Boolean, val size: Size
         if (android.os.Build.VERSION.SDK_INT >= 26) v.defaultFocusHighlightEnabled = false   // the cyan ring is the highlight
     }
 
+    /** A touch presses the view in a little (tiles, round buttons, pills), and lets go when the finger lifts. */
+    @android.annotation.SuppressLint("ClickableViewAccessibility")
+    fun pressable(v: View) {
+        v.setOnTouchListener { view, e ->
+            when (e.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> view.animate().scaleX(0.96f).scaleY(0.96f).setDuration(90).start()
+                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> view.animate().scaleX(1f).scaleY(1f).setDuration(160).start()
+            }
+            false   // the click itself still happens as usual
+        }
+    }
+
     /** A 2 px divider along the bottom edge of a settings row. */
     fun bottomLine(): Drawable = object : Drawable() {
         private val p = Paint().apply { color = line }
@@ -182,7 +207,7 @@ class Sw(ctx: Context, val light: Boolean, val portrait: Boolean, val size: Size
     }
 
     /** Cover art for things without box art: the mockup's radial gradients. */
-    fun art(seed: String, radius: Number = 6): Drawable = Art(ART[artIndex(seed)], pxf(radius))
+    fun art(seed: String, radius: Number = tileCorner): Drawable = Art(ART[artIndex(seed)], pxf(radius))
 
     /** The tint colour a cover sets for the background wash. */
     fun tint(seed: String): Int = ART[artIndex(seed)][1]
@@ -205,7 +230,7 @@ class Sw(ctx: Context, val light: Boolean, val portrait: Boolean, val size: Size
         private val p = Paint(Paint.ANTI_ALIAS_FLAG)
         override fun draw(cv: Canvas) {
             val w = bounds.width().toFloat(); val h = bounds.height().toFloat()
-            p.color = tile; cv.drawRoundRect(RectF(0f, 0f, w, h), pxf(6), pxf(6), p)
+            p.color = tile; cv.drawRoundRect(RectF(0f, 0f, w, h), pxf(tileCorner), pxf(tileCorner), p)
             p.color = sub
             val s = w * 36f / 380f; val g = w * 12f / 380f
             val x0 = (w - 3 * s - 2 * g) / 2; val y0 = (h - 3 * s - 2 * g) / 2
@@ -312,6 +337,19 @@ class RowScroll(ctx: Context, private val margin: Int) : HorizontalScrollView(ct
 class ColScroll(ctx: Context, private val margin: Int) : ScrollView(ctx) {
     override fun computeScrollDeltaToGetChildRectOnScreen(rect: Rect): Int =
         super.computeScrollDeltaToGetChildRectOnScreen(Rect(rect.left, rect.top - margin, rect.right, rect.bottom + margin))
+}
+
+/**
+ * Holds one child a little above the middle: the space it doesn't need goes [bias] above it and the rest below, so
+ * a tall screen doesn't open one big gap over the content (centred looked like it had slid down).
+ */
+class BiasFrame(ctx: Context, private val bias: Float) : FrameLayout(ctx) {
+    override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
+        val c = getChildAt(0) ?: return
+        val free = (b - t - paddingTop - paddingBottom - c.measuredHeight).coerceAtLeast(0)
+        val top = paddingTop + (free * bias).toInt()
+        c.layout(paddingLeft, top, paddingLeft + c.measuredWidth, top + c.measuredHeight)
+    }
 }
 
 /** A radial wash of the selected game's colour behind everything, as in the feel mockup. */
