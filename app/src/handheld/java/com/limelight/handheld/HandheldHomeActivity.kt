@@ -279,9 +279,21 @@ class HandheldHomeActivity : Activity() {
     /** The status bar, navigation (or Samsung's taskbar) and cutout the menus sit inside, in px. */
     private fun systemBarSizes(): android.graphics.Rect {
         if (Build.VERSION.SDK_INT < 30) return android.graphics.Rect()
-        val i = windowManager.currentWindowMetrics.windowInsets.getInsetsIgnoringVisibility(
-                android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.displayCutout())
-        return android.graphics.Rect(i.left, i.top, i.right, i.bottom)
+        val w = windowManager.currentWindowMetrics.windowInsets
+        return contentInsets(w.getInsetsIgnoringVisibility(android.view.WindowInsets.Type.systemBars()),
+                w.getInsetsIgnoringVisibility(android.view.WindowInsets.Type.displayCutout()))
+    }
+
+    /**
+     * How far the content keeps from each edge: all of a system bar, but only as much of the camera cutout as its own
+     * margin doesn't already cover. On its side Android reserves the whole edge for a small camera hole (104 px on
+     * the Fold's cover); adding the margin on top of that pushed everything far in from the left.
+     */
+    @android.annotation.TargetApi(30)
+    private fun contentInsets(bars: android.graphics.Insets, cut: android.graphics.Insets): android.graphics.Rect {
+        val m = if (::sw.isInitialized) sw.px(sw.edge) - sw.px(8) else 0
+        fun side(b: Int, c: Int) = maxOf(b, c - m, 0)
+        return android.graphics.Rect(side(bars.left, cut.left), side(bars.top, cut.top), side(bars.right, cut.right), side(bars.bottom, cut.bottom))
     }
 
     private fun isPortrait() = resources.displayMetrics.let { it.heightPixels > it.widthPixels }
@@ -497,8 +509,8 @@ class HandheldHomeActivity : Activity() {
         // dialogs stay inside them (on its side the cutout and the navigation are at the sides)
         root.setOnApplyWindowInsetsListener { _, ins ->
             val pad = if (android.os.Build.VERSION.SDK_INT >= 30) {
-                val b = ins.getInsets(android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.displayCutout())
-                intArrayOf(b.left, b.top, b.right, b.bottom)
+                val r = contentInsets(ins.getInsets(android.view.WindowInsets.Type.systemBars()), ins.getInsets(android.view.WindowInsets.Type.displayCutout()))
+                intArrayOf(r.left, r.top, r.right, r.bottom)
             } else @Suppress("DEPRECATION") intArrayOf(ins.systemWindowInsetLeft, ins.systemWindowInsetTop, ins.systemWindowInsetRight, ins.systemWindowInsetBottom)
             main.setPadding(pad[0], pad[1], pad[2], pad[3])
             overlay.setPadding(pad[0], pad[1], pad[2], pad[3])
