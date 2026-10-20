@@ -1,5 +1,9 @@
 # Changelog
 
+## 12.2-test198 (2026-10-20)
+- Back to test193, without the two-player work: player 2 on a TV (test194) and player 2 on its own screen (test196/197, #58) are parked for later on their branches feat/player-two and fix/joiner-resolution. The TV link is back to version 6.
+- Kept from that work, because it isn't two-player: the fix for a keyboard or TV-remote Back that closed the in-game Quick menu and then opened it again (#57). PC, PS5 and Xbox streams.
+
 ## 12.2-test193 (2026-10-19)
 - Fix: clicking a DualSense's (or DualShock 4's) touchpad did nothing in PS5 Remote Play on newer devices (Pixel, Retroid, Odin). There Android shows the touchpad as a separate small mouse, so its click came as a mouse button, not a controller button. The PS5 screen now sends it as the touchpad button. Only a Sony touchpad counts.
 
