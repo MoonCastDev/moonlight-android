@@ -1133,7 +1133,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                 info(list, "MoonCast TV", ver ?: "")
                 info(list, "Phones send games here", "Port ${PhoneLink.PORT}")
                 action(list, "set:add", "Add a PC by its address", "For a PC this TV doesn't find on its own", null) { addPcByAddress() }
-                action(list, "set:all", "All Moonlight settings", "Every option, including the rare ones", null) {
+                action(list, "set:all", "All settings", "Every option, including the rare ones", null) {
                     startActivity(Intent(this, StreamSettings::class.java)) }
             }
         }

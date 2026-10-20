@@ -298,12 +298,12 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         // Make sure Wi-Fi is fully powered up
         WifiManager wifiMgr = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
         try {
-            highPerfWifiLock = wifiMgr.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "Moonlight High Perf Lock");
+            highPerfWifiLock = wifiMgr.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "MoonCast High Perf Lock");
             highPerfWifiLock.setReferenceCounted(false);
             highPerfWifiLock.acquire();
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                lowLatencyWifiLock = wifiMgr.createWifiLock(WifiManager.WIFI_MODE_FULL_LOW_LATENCY, "Moonlight Low Latency Lock");
+                lowLatencyWifiLock = wifiMgr.createWifiLock(WifiManager.WIFI_MODE_FULL_LOW_LATENCY, "MoonCast Low Latency Lock");
                 lowLatencyWifiLock.setReferenceCounted(false);
                 lowLatencyWifiLock.acquire();
             }
@@ -2788,31 +2788,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         }
     }
 
-    // ---- TEST ONLY (fold trace): a small text box on the stream showing what the phone reports ----
-    private static final boolean FOLD_TRACE = true;
-    private android.widget.TextView foldTrace;
-    private final java.util.ArrayDeque<String> foldLines = new java.util.ArrayDeque<>();
-
+    /** A line in the log about folding and refitting (what the stream saw, and what it did). */
     private void trace(String line) {
-        LimeLog.info("MoonCast trace: " + line);
-        if (!FOLD_TRACE) return;
-        runOnUiThread(() -> {
-            if (foldTrace == null) {
-                android.view.ViewGroup root = findViewById(android.R.id.content);
-                if (root == null) return;
-                foldTrace = new android.widget.TextView(this);
-                foldTrace.setTextColor(0xFFFFFF66);
-                foldTrace.setBackgroundColor(0xB0000000);
-                foldTrace.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 11);
-                foldTrace.setPadding(16, 10, 16, 10);
-                root.addView(foldTrace, new android.widget.FrameLayout.LayoutParams(-2, -2, android.view.Gravity.TOP | android.view.Gravity.START));
-            }
-            String t = new java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(new java.util.Date());
-            foldLines.addLast(t + "  " + line);
-            while (foldLines.size() > 9) foldLines.removeFirst();
-            foldTrace.setText(android.text.TextUtils.join("\n", foldLines));
-            foldTrace.bringToFront();
-        });
+        LimeLog.info("MoonCast fold: " + line);
     }
 
     /** Folded or open, from the screen this is on: an open foldable is a big screen (600 dp and more across). */

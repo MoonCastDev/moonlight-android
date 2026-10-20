@@ -1,5 +1,12 @@
 # Changelog
 
+## 12.2-test217 (2026-10-20)
+- Clean-up: the test-only fold trace (the yellow box on PC streams, test211) is gone; the fold steps are still written to the log ("MoonCast fold:").
+- No "Moonlight" anywhere you can see it, in both apps:
+  - Handheld: "Manage PCs" now says "The full PC list" (its badge is PC, not ML); hiding a game says to show it again from the PC's full game list; "All Moonlight settings" is "All settings" (also on the TV); a pad-link error says "The PC manager didn't start".
+  - Text from Moonlight (network test, decoder crash, a few setting descriptions, the language setting, the local-network permission) now says MoonCast, in every language. The network test no longer tells you to install Moonlight's Internet Hosting Tool: to play away from home it says to connect a VPN to home or open Sunshine's ports.
+  - No more Help buttons that opened Moonlight's website: the old error dialogs, the PC list's help button and its GameStream FAQ, and the network test's Help.
+
 ## 12.2-test216 (2026-10-20)
 - Foldables: one stream shape for both screens, so folding or unfolding mid-game just re-fits the picture, instantly, with no reconnect and no game restart. MoonCast remembers the screens it runs on; once it has seen two clearly different shapes (the Fold's cover, 1.58 : 1, and its inner screen, 1.32 : 1), Native is a shape between them (1.45 : 1, 2448 × 1696 on the Fold). Picture shape decides how it fills each screen: Fill (the default on a foldable) trims about 8% (4% per edge), Stretch keeps everything and bends it about 8%, Fit leaves thin bars. Settings shows "Native suits both your screens". Until both screens have been seen, the first fold still restarts the game once (test215); after that a stream that ends on a fold only reconnects. Phones and handhelds with one screen keep the screen's own Native.
 

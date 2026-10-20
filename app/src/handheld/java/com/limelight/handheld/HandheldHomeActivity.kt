@@ -1000,7 +1000,7 @@ class HandheldHomeActivity : Activity() {
         listRow(list, "add:ps", "PS", Sw.PS, "Register a PS5", if (Psn.signedIn(this)) "Link it with the code from its Remote Play settings" else "Sign in to PlayStation Network, then link it", null) { registerPs() }
         if (Xbox.signedIn(this)) listRow(list, "add:xb", "XB", Sw.XB, "Find my Xbox", "Signed in" + (Xbox.gamertag(this)?.let { " as $it" } ?: ""), null) { refreshXboxes(true) }
         else listRow(list, "add:xb", "XB", Sw.XB, "Sign in to Xbox", "Play your Xbox here, at home or away", null) { xboxSignIn() }
-        listRow(list, "add:moonlight", "ML", sw.tile, "Manage PCs", "Moonlight's PC list: pair, wake, rename, remove", null) {
+        listRow(list, "add:moonlight", "PC", sw.tile, "Manage PCs", "The full PC list: pair, wake, rename, remove", null) {
             startActivity(Intent(this, PcView::class.java)) }
         primaryView = null
         return scrollPane(list)
@@ -1120,7 +1120,7 @@ class HandheldHomeActivity : Activity() {
                 Opt("▶", Sw.LIVE, if (running) "Resume here" else "Play here") { playHere(g) },
                 Opt("TV", sw.ring, "Play on a TV") { playWhere(g) },
                 if (running) Opt("✕", Sw.DANGER, "Quit game", "Closes it on the PC") { quit(pc, app) } else null,
-                Opt("–", Sw.PC, "Hide from All games", "Show it again from Moonlight's app list") {
+                Opt("–", Sw.PC, "Hide from All games", "Show it again from the PC's full game list (Manage PCs)") {
                     val p = getSharedPreferences(AppView.HIDDEN_APPS_PREF_FILENAME, MODE_PRIVATE)
                     val set = HashSet(p.getStringSet(pc.uuid, emptySet())!!); set.add(app.appId.toString())
                     p.edit().putStringSet(pc.uuid, set).apply(); render(force = true); toast("${app.appName} hidden")
@@ -1303,8 +1303,8 @@ class HandheldHomeActivity : Activity() {
                 val ver = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (e: Exception) { "" }
                 info(list, "MoonCast", ver ?: "")
                 action(list, "about:add", "Add a PC by its address", "For a PC this device doesn't find on its own", null) { addPcByAddress() }
-                action(list, "about:pcs", "Manage PCs", "Moonlight's PC list", null) { startActivity(Intent(this, PcView::class.java)) }
-                action(list, "about:all", "All Moonlight settings", "Every option, including the rare ones", null) {
+                action(list, "about:pcs", "Manage PCs", "The full PC list", null) { startActivity(Intent(this, PcView::class.java)) }
+                action(list, "about:all", "All settings", "Every option, including the rare ones", null) {
                     startActivity(Intent(this, StreamSettings::class.java)) }
             }
         }
@@ -1802,7 +1802,7 @@ class HandheldHomeActivity : Activity() {
             runOnUiThread {
                 if (overlayKind != "dialog") return@runOnUiThread   // closed while it ran
                 hideOverlay(false)
-                dialog("Network test done", r, emptyList(), listOf("Help" to { com.limelight.utils.HelpLauncher.launchTroubleshooting(this) }, "OK" to {}))
+                dialog("Network test done", r, emptyList(), listOf("OK" to {}))
             }
         }.start()
     }
