@@ -79,6 +79,9 @@ fun psnCancel() = ChiakiNative.psnCancel()
 /** MoonCast: set the PS5 decoder's latency mode before a session (see ChiakiNative.decoderLatencyMode). */
 fun decoderLatencyMode(mode: Int) = ChiakiNative.decoderLatencyMode(mode)
 
+/** MoonCast: set the PS5 player's frame pacing before a session (see ChiakiNative.decoderPacing). */
+fun decoderPacing(mode: Int, fps: Int) = ChiakiNative.decoderPacing(mode, fps)
+
 private class ChiakiNative
 {
 	data class CreateResult(var errorCode: Int, var ptr: Long)
@@ -105,6 +108,8 @@ private class ChiakiNative
 		@JvmStatic external fun psnCancel()
 		/** MoonCast: the PS5 decoder's latency mode for the next session: 0 standard, 1 low latency, 2 ultra low latency. */
 		@JvmStatic external fun decoderLatencyMode(mode: Int)
+		/** MoonCast: frame pacing for the next session: 0 lowest delay, 1 balanced, 2 smoothest, at [fps]. */
+		@JvmStatic external fun decoderPacing(mode: Int, fps: Int)
 		@JvmStatic external fun sessionStats(ptr: Long): DoubleArray?
 		@JvmStatic external fun discoveryServiceCreate(result: CreateResult, options: DiscoveryServiceOptions, javaService: DiscoveryService)
 		@JvmStatic external fun discoveryServiceFree(ptr: Long)

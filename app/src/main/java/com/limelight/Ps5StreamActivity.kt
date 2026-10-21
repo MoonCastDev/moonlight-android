@@ -58,6 +58,9 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
         /** Settings, PlayStation, Decoder: standard, low (default) or ultra. */
         const val DECODER_PREF = "ps5_decoder_latency"
 
+        /** Settings, PlayStation, Frame pacing: latency (default), balanced or smoothness, like the PC's. */
+        const val PACING_PREF = "ps5_frame_pacing"
+
         /** Stop a PSN connect in flight; older libraries without psnCancel just let it time out. */
         private fun cancelPsn() {
             try { com.metallic.chiaki.lib.psnCancel() } catch (e: UnsatisfiedLinkError) { }
@@ -152,6 +155,10 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
         val fps30 = if (fpsSel == "custom")
             (prefs.getString(if (away) "away_fps_custom" else "ps5_fps_home_custom", "60")?.toIntOrNull() ?: 60) < 45
         else fpsSel == "30"
+        // Settings, PlayStation, Frame pacing: frames spaced at this stream's rate (lowest delay, balanced, smoothest)
+        val pacing = when (prefs.getString(PACING_PREF, "latency")) { "balanced" -> 1; "smoothness" -> 2; else -> 0 }
+        try { com.metallic.chiaki.lib.decoderPacing(pacing, if (fps30) 30 else 60) } catch (e: UnsatisfiedLinkError) { }
+        Log.i(TAG, "frame pacing $pacing at ${if (fps30) 30 else 60} fps")
         val preset = ConnectVideoProfile.preset(
             resPreset, if (fps30) VideoFPSPreset.FPS_30 else VideoFPSPreset.FPS_60,
             if (h264) Codec.CODEC_H264 else Codec.CODEC_H265
