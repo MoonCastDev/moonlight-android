@@ -348,17 +348,27 @@ class FsrRenderer(private val videoWidth: Int, private val videoHeight: Int, sha
         display = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
         val ver = IntArray(2)
         check(EGL14.eglInitialize(display, ver, 0, ver, 1)) { "eglInitialize" }
-        val attrs = intArrayOf(EGL14.EGL_RED_SIZE, 8, EGL14.EGL_GREEN_SIZE, 8, EGL14.EGL_BLUE_SIZE, 8,
-            EGL14.EGL_RENDERABLE_TYPE, EGLExt.EGL_OPENGL_ES3_BIT_KHR, EGL14.EGL_SURFACE_TYPE, EGL14.EGL_WINDOW_BIT or EGL14.EGL_PBUFFER_BIT,
-            EGL14.EGL_NONE)
+        // GPUs differ in what they offer (the JAL TV's Mali had no ES 3 config that does both window and pbuffer):
+        // ask for the most useful first, then less. Without a pbuffer, a surfaceless context stands in for it.
+        val es3 = EGLExt.EGL_OPENGL_ES3_BIT_KHR
+        val es2 = EGL14.EGL_OPENGL_ES2_BIT
+        val both = EGL14.EGL_WINDOW_BIT or EGL14.EGL_PBUFFER_BIT
+        val tries = listOf(es3 to both, es3 to EGL14.EGL_WINDOW_BIT, es2 to both, es2 to EGL14.EGL_WINDOW_BIT)
         val configs = arrayOfNulls<EGLConfig>(1)
         val n = IntArray(1)
-        check(EGL14.eglChooseConfig(display, attrs, 0, configs, 0, 1, n, 0) && n[0] > 0) { "eglChooseConfig" }
-        config = configs[0]
+        var surfaces = 0
+        for ((renderable, surfaceType) in tries) {
+            val attrs = intArrayOf(EGL14.EGL_RED_SIZE, 8, EGL14.EGL_GREEN_SIZE, 8, EGL14.EGL_BLUE_SIZE, 8,
+                EGL14.EGL_RENDERABLE_TYPE, renderable, EGL14.EGL_SURFACE_TYPE, surfaceType, EGL14.EGL_NONE)
+            if (EGL14.eglChooseConfig(display, attrs, 0, configs, 0, 1, n, 0) && n[0] > 0) { config = configs[0]; surfaces = surfaceType; break }
+        }
+        check(config != null) { "eglChooseConfig: no RGB888 window config (${EGL14.eglGetError()})" }
         context = EGL14.eglCreateContext(display, config, EGL14.EGL_NO_CONTEXT, intArrayOf(EGL14.EGL_CONTEXT_CLIENT_VERSION, 3, EGL14.EGL_NONE), 0)
-        check(context != EGL14.EGL_NO_CONTEXT) { "eglCreateContext" }
-        pbuffer = EGL14.eglCreatePbufferSurface(display, config, intArrayOf(EGL14.EGL_WIDTH, 1, EGL14.EGL_HEIGHT, 1, EGL14.EGL_NONE), 0)
-        check(EGL14.eglMakeCurrent(display, pbuffer, pbuffer, context)) { "eglMakeCurrent" }
+        check(context != EGL14.EGL_NO_CONTEXT) { "eglCreateContext ES 3 (${EGL14.eglGetError()})" }
+        if (surfaces and EGL14.EGL_PBUFFER_BIT != 0)
+            pbuffer = EGL14.eglCreatePbufferSurface(display, config, intArrayOf(EGL14.EGL_WIDTH, 1, EGL14.EGL_HEIGHT, 1, EGL14.EGL_NONE), 0)
+        check(EGL14.eglMakeCurrent(display, pbuffer, pbuffer, context)) { "eglMakeCurrent ${if (pbuffer == EGL14.EGL_NO_SURFACE) "surfaceless" else "pbuffer"} (${EGL14.eglGetError()})" }
+        Log.i(TAG, "EGL: ${if (surfaces and EGL14.EGL_PBUFFER_BIT != 0) "pbuffer" else "surfaceless"}, GL ${GLES30.glGetString(GLES30.GL_VERSION)}")
         val t = IntArray(1)
         GLES30.glGenTextures(1, t, 0); oesTex = t[0]
         GLES30.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, oesTex)

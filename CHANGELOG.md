@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0-test236 (2026-10-21)
+- Found on the JAL TV (AQUOS, Android 11, MediaTek with a Mali GPU), PS5 over PlayStation Network at 720p:
+  - Super resolution didn't start there ("eglChooseConfig"): the GPU has no OpenGL ES 3 setup for both a window and an off-screen surface. FSR now tries several setups, and without an off-screen surface it works surfaceless. Before, it fell back to the plain picture, as designed.
+  - PS5 decoder: the TV's decoder (OMX.MS.HEVC.Decoder) refused the low-latency settings, and MoonCast dropped all of them. Now it drops them one step at a time (vendor settings, then MediaTek's low-latency decode, then Android's standard low-latency mode, then real-time priority), so a decoder keeps as many as it takes. The log says which level was used.
+- The same JAL TV test passed: PS5 over PSN on OpenSSL 3 (connected in 84 s including waking the console), 60 fps, 25 ms network delay, no lost packets, Decode time 20.5 ms, and Put PS5 to rest from the Quick menu.
+
 ## 1.0-test235 (2026-10-21)
 - Super resolution now works on PC and Xbox streams too, not only PS5. The FSR passes are shared (`FsrPasses`), used by:
   - PC: Moonlight's decoder renders into FSR's surface. FSR stays off with HDR, since its passes are 8-bit. The screen surface keeps the screen's size instead of the stream's, so FSR has room to upscale into; with Stretch, the picture is stretched by FSR.
