@@ -1222,21 +1222,42 @@ class HandheldHomeActivity : Activity() {
                         RES_STEPS.filter { it.second != native } + ("Native" to native), native) { v ->
                     stream.edit().putBoolean(PreferenceConfiguration.NATIVE_RES_PREF_STRING, v == native).apply()
                 }
-                choice(list, stream, "list_fps", "Frame rate", "60 is the smoothest. 30 uses less data and battery", listOf("30" to "30", "60" to "60", "90" to "90", "120" to "120"), "60")
+                // Unlock all frame rates (Moonlight's checkbox_unlock_fps): 144 and 240 too, and Custom up to 240
+                val unlock = stream.getBoolean("checkbox_unlock_fps", false)
+                val fpsSteps = listOf("30", "60", "90", "120") + (if (unlock) listOf("144", "240") else emptyList())
+                val fpsMax = if (unlock) 240 else 120
+                choice(list, stream, "list_fps", "Frame rate", "60 is the smoothest. 30 uses less data and battery", fpsSteps.map { it to it }, "60")
                 // #42: any PC frame rate, saved straight into list_fps as a number
                 val fps = stream.getString("list_fps", "60") ?: "60"
-                val customFps = fps !in listOf("30", "60", "90", "120")
-                action(list, "list_fps-custom", "Custom frame rate", "Any rate between the steps above, 15 to 120 fps", if (customFps) "$fps fps" else "Off") {
-                    entry("Custom frame rate", "In fps, from 15 to 120. The PC streams at the rate you pick.", "For example 45", if (customFps) fps else "", true) { raw ->
+                val customFps = fps !in fpsSteps
+                action(list, "list_fps-custom", "Custom frame rate", "Any rate between the steps above, 15 to $fpsMax fps", if (customFps) "$fps fps" else "Off") {
+                    entry("Custom frame rate", "In fps, from 15 to $fpsMax. The PC streams at the rate you pick.", "For example 45", if (customFps) fps else "", true) { raw ->
                         val v = raw.trim().toIntOrNull()
-                        if (v == null || v !in 15..120) "A number from 15 to 120."
+                        if (v == null || v !in 15..fpsMax) "A number from 15 to $fpsMax."
                         else { stream.edit().putString("list_fps", v.toString()).apply(); render(force = true); null }
                     }
                 }
+                flip(list, stream, "checkbox_unlock_fps", "Unlock all frame rates", "Adds 144 and 240, and Custom up to 240, for PCs and screens that can do it", false) {
+                    // locked again: a rate above 120 comes back down to 120
+                    if (!stream.getBoolean("checkbox_unlock_fps", false) && ((stream.getString("list_fps", "60") ?: "60").toIntOrNull() ?: 60) > 120)
+                        stream.edit().putString("list_fps", "120").apply()
+                }
                 bitrate(list)
+                // any bitrate, like Moonlight's slider: 0.5 to 150 Mbps in 0.5 steps
+                val kbps = stream.getInt("seekbar_bitrate_kbps", 0)
+                val customRate = kbps != 0 && (kbps / 1000 !in BITRATE_STEPS || kbps % 1000 != 0)
+                action(list, "seekbar_bitrate_kbps-custom", "Custom bitrate", "Any bitrate from 0.5 to 150 Mbps", if (customRate) mbps(kbps) else "Off") {
+                    entry("Custom bitrate", "In Mbps, from 0.5 to 150. Higher looks better and needs a faster network.", "For example 25",
+                            if (customRate) mbps(kbps).removeSuffix(" Mbps") else "", "decimal") { raw ->
+                        val v = raw.trim().replace(',', '.').toDoubleOrNull()
+                        if (v == null || v < 0.5 || v > 150) "A number from 0.5 to 150."
+                        else { stream.edit().putInt("seekbar_bitrate_kbps", (Math.round(v * 2) * 500).toInt()).apply(); render(force = true); null }
+                    }
+                }
                 choice(list, stream, "video_format", "Video codec", "H.265 and AV1 look better at the same bitrate",
                         listOf("Auto" to "auto", "H.264" to "neverh265", "H.265" to "forceh265", "AV1" to "forceav1"), "auto")
                 toggle(list, "checkbox_enable_hdr", "HDR", "Only when the PC, the game and this screen support it", false)
+                toggle(list, "checkbox_full_range", "Full range colour", "Experimental: deeper blacks and brighter whites. On screens that don't handle it, dark and light detail is lost", false)
                 choice(list, stream, "list_video_scale_mode", "Picture shape", "Fit with bars, fill and crop, or stretch",
                         listOf("Fit" to "fit", "Fill" to "fill", "Stretch" to "stretch"), if (stream.getBoolean("checkbox_stretch_video", false)) "stretch" else "fit")
                 choice(list, stream, "frame_pacing", "Frame pacing", "Trade a little delay for smoother motion",
@@ -1441,10 +1462,15 @@ class HandheldHomeActivity : Activity() {
         }
     }
 
+    /** 25000 -> "25 Mbps", 7500 -> "7.5 Mbps" */
+    private fun mbps(kbps: Int) = (if (kbps % 1000 == 0) "${kbps / 1000}" else "%.1f".format(java.util.Locale.ROOT, kbps / 1000.0)) + " Mbps"
+
     private fun bitrate(list: LinearLayout) {
-        val steps = listOf(0, 10, 20, 30, 50, 80)
-        val cur = stream.getInt("seekbar_bitrate_kbps", 0) / 1000
-        srow(list, "seekbar_bitrate_kbps", "Bitrate", "Auto picks one for the resolution", value(if (cur == 0) "Auto" else "$cur Mbps")) {
+        val steps = listOf(0) + BITRATE_STEPS
+        val kbps = stream.getInt("seekbar_bitrate_kbps", 0)
+        val cur = kbps / 1000
+        val custom = kbps != 0 && (cur !in BITRATE_STEPS || kbps % 1000 != 0)
+        srow(list, "seekbar_bitrate_kbps", "Bitrate", "Auto picks one for the resolution", value(if (kbps == 0) "Auto" else if (custom) "Custom" else "$cur Mbps")) {
             val next = steps[(steps.indexOf(steps.firstOrNull { it >= cur } ?: 0) + 1) % steps.size]
             if (next == 0) stream.edit().remove("seekbar_bitrate_kbps").apply() else stream.edit().putInt("seekbar_bitrate_kbps", next * 1000).apply()
             render(force = true)
@@ -1967,6 +1993,7 @@ class HandheldHomeActivity : Activity() {
             setSingleLine(true)
             inputType = when (kind) {
                 "number" -> android.text.InputType.TYPE_CLASS_NUMBER
+                "decimal" -> android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
                 "address" -> android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
                 else -> android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
             }
@@ -2198,6 +2225,8 @@ class HandheldHomeActivity : Activity() {
 
     companion object {
         /** The fixed resolution steps; anything else saved was a screen's own size (Native). */
+        /** Bitrate's steps in Mbps (Auto is 0); anything else saved is a Custom bitrate. */
+        val BITRATE_STEPS = listOf(10, 20, 30, 50, 80)
         val RES_STEPS = listOf("720p" to "1280x720", "1080p" to "1920x1080", "1440p" to "2560x1440", "4K" to "3840x2160")
 
         private const val STATE_PAGE = "hh_page"
