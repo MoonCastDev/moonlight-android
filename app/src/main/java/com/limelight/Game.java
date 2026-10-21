@@ -1602,7 +1602,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             if (quickMenu == null) quickMenu = new com.limelight.home.QuickMenu(Game.this);
             java.util.List<com.limelight.home.QuickMenu.Item> items = new java.util.ArrayList<>();
             items.add(new com.limelight.home.QuickMenu.Item("⌨", "Keyboard", "On-screen", false, this::toggleKeyboard).asToggle());
+            items.add(new com.limelight.home.QuickMenu.Item("ⓘ", "Streaming status", prefConfig.enablePerfOverlay ? "On" : "Off", false, this::toggleStatus).asToggle());
             items.add(new com.limelight.home.QuickMenu.Item("✚", "Controllers", com.limelight.home.QuickMenu.pads().size() + " connected", false, this::showControllers));
+            items.add(new com.limelight.home.QuickMenu.Item("▤", "Task Manager", "Windows: Ctrl + Shift + Esc", false, this::openTaskManager));
             // handheld only: send the game to the last MoonCast TV (it ends this stream, the game keeps running)
             com.limelight.home.QuickMenu.Item move = com.limelight.home.MoveToTv.item(Game.this, new com.limelight.home.MoveToTv.Target(
                     "pc", appName != null ? appName : "Your game", getIntent().getStringExtra(EXTRA_PC_UUID), pcName,
@@ -1610,6 +1612,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             if (move != null) items.add(move);
             items.add(new com.limelight.home.QuickMenu.Item("←", "Disconnect", "The game keeps running", false, this::finish));
             items.add(new com.limelight.home.QuickMenu.Item("✕", "Quit game", null, true, this::quitOnHostAndFinish));
+            items.add(new com.limelight.home.QuickMenu.Item("Zz", "Hibernate PC", "Windows: its power menu's Hibernate", true, this::confirmHibernate));
             quickMenu.show(appName != null ? appName : "Your game",
                     (pcName != null ? "On " + pcName + ". " : "") + com.limelight.home.QuickMenu.COMBO_LABEL + " opens this menu",
                     () -> java.util.Arrays.asList(
@@ -1620,6 +1623,75 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                             com.limelight.home.QuickMenu.stat(String.format(java.util.Locale.US, "%.1f ms", com.limelight.home.StreamStats.INSTANCE.getDecodeMs()), "Decode delay")),
                     items);
         });
+    }
+
+    // Quick menu, Streaming status: Moonlight's stats corner on or off right away, saved like Settings' "Stats while playing"
+    private void toggleStatus() {
+        prefConfig.enablePerfOverlay = !prefConfig.enablePerfOverlay;
+        android.preference.PreferenceManager.getDefaultSharedPreferences(this).edit()
+                .putBoolean("checkbox_enable_perf_overlay", prefConfig.enablePerfOverlay).apply();
+        performanceOverlayView.setVisibility(prefConfig.enablePerfOverlay && !isHidingOverlays ? View.VISIBLE : View.GONE);
+    }
+
+    // Quick menu, Task Manager: the keys Windows opens it with (stock Sunshine has no other way in)
+    private void openTaskManager() {
+        sendKeys(new short[] {VK_LCONTROL, VK_LSHIFT, VK_ESCAPE});
+    }
+
+    // Quick menu, Hibernate PC: asks first, with Cancel picked, since the game and the stream both stop
+    private void confirmHibernate() {
+        String pc = pcName != null ? pcName : "the PC";
+        java.util.List<com.limelight.home.QuickMenu.Item> items = new java.util.ArrayList<>();
+        items.add(new com.limelight.home.QuickMenu.Item("↩", "Cancel", "Keep playing", false, () -> { }));
+        items.add(new com.limelight.home.QuickMenu.Item("Zz", "Hibernate", "Unsaved progress may be lost", true, this::hibernate));
+        quickMenu.show("Hibernate " + pc + "?",
+                "MoonCast opens the Windows power menu (Win + X, U) and picks Hibernate (H). Windows only shows it when it's " +
+                        "turned on in Power Options. Wake the PC again from MoonCast's home.",
+                java.util.Collections::emptyList, items);
+    }
+
+    /** When Hibernate PC was sent: the PC going away soon after is the end the user asked for, not an error. */
+    private volatile long hibernateAt;
+
+    private void hibernate() {
+        hibernateAt = android.os.SystemClock.uptimeMillis();
+        LimeLog.info("Quick menu: Hibernate PC");
+        sendKeys(new short[] {VK_LWIN, VK_X});
+        Handler h = new Handler(getMainLooper());
+        h.postDelayed(() -> sendKeys(new short[] {VK_U}), 900);
+        h.postDelayed(() -> sendKeys(new short[] {VK_H}), 1800);
+    }
+
+    // Windows virtual-key codes, with Moonlight's 0x80 prefix (KeyboardTranslator)
+    private static final short VK_LCONTROL = (short) 0x80A2, VK_LSHIFT = (short) 0x80A0, VK_LWIN = (short) 0x805B,
+            VK_ESCAPE = (short) 0x801B, VK_X = (short) 0x8058, VK_U = (short) 0x8055, VK_H = (short) 0x8048;
+
+    /** Press [keys] in order, holding each, then let them go in reverse, like a person pressing a shortcut. */
+    private void sendKeys(short[] keys) {
+        if (conn == null) return;
+        byte mod = 0;
+        for (short k : keys) {
+            conn.sendKeyboardInput(k, KeyboardPacket.KEY_DOWN, mod, (byte) 0);
+            mod |= keyModifier(k);
+        }
+        final byte held = mod;
+        new Handler(getMainLooper()).postDelayed(() -> {
+            if (conn == null) return;
+            byte m = held;
+            for (int i = keys.length - 1; i >= 0; i--) {
+                m &= (byte) ~keyModifier(keys[i]);
+                conn.sendKeyboardInput(keys[i], KeyboardPacket.KEY_UP, m, (byte) 0);
+            }
+        }, 100);
+    }
+
+    private static byte keyModifier(short k) {
+        switch (k) {
+            case VK_LCONTROL: return KeyboardPacket.MODIFIER_CTRL;
+            case VK_LSHIFT: return KeyboardPacket.MODIFIER_SHIFT;
+            case VK_LWIN: return KeyboardPacket.MODIFIER_META;
+            default: return 0;
+        }
     }
 
     // Quick menu, Controllers: on a PC every pad is its own player (in the order they were first used).
@@ -2512,6 +2584,19 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     @Override
     public void connectionTerminated(final int errorCode) {
         PhoneGamepad.stopFor(conn);   // the stream is over: stop pulling the sender's controller
+        if (hibernateAt != 0 && android.os.SystemClock.uptimeMillis() - hibernateAt < 60_000) {
+            // the PC went down after Hibernate PC: that's what the user asked for, so no error
+            LimeLog.info("Stream ended after Hibernate PC");
+            endedByUser = true;
+            runOnUiThread(() -> {
+                if (displayedFailureDialog) return;
+                displayedFailureDialog = true;
+                stopConnection();
+                android.widget.Toast.makeText(Game.this, (pcName != null ? pcName : "The PC") + " is hibernating", android.widget.Toast.LENGTH_LONG).show();
+                finish();
+            });
+            return;
+        }
         // A stream the user ended (Quit game makes the PC close it, error -1) isn't a failure (#41)
         if (errorCode != MoonBridge.ML_ERROR_GRACEFUL_TERMINATION && !endedByUser && !isFinishing())
             com.limelight.home.StreamReport.failed("The stream from the PC stopped (error " + errorCode + ").");

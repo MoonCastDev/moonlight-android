@@ -104,7 +104,11 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
             addView(steps, android.widget.FrameLayout.LayoutParams(dp(1100), -2, android.view.Gravity.CENTER_HORIZONTAL or android.view.Gravity.BOTTOM).apply { bottomMargin = dp(220) })
         })
         sv.holder.addCallback(this)
+        corner.apply()
     }
+
+    // Streaming status: the stats line in the corner while playing (Settings' "Stats while playing", or the Quick menu)
+    private val corner by lazy { com.limelight.home.StatusCorner(this) { liveStats() } }
 
     private var status: android.widget.TextView? = null
     private fun showStatus(t: String?) = runOnUiThread {
@@ -831,6 +835,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
             listOfNotNull(
                 com.limelight.home.QuickMenu.Item("PS", "PS button", "L2 + Start", false) { tap(ControllerState.BUTTON_PS) },
                 com.limelight.home.QuickMenu.Item("▢", "Touchpad", "Select + Start", false) { tap(ControllerState.BUTTON_TOUCHPAD) },
+                com.limelight.home.QuickMenu.Item("ⓘ", "Streaming status", if (com.limelight.home.StatusCorner.enabled(this)) "On" else "Off", false) { corner.toggle() }.asToggle(),
                 com.limelight.home.QuickMenu.Item("✚", "Controllers", "${com.limelight.home.QuickMenu.pads().size} connected", false) { controllers() },
                 move,
                 com.limelight.home.QuickMenu.Item("←", "Disconnect", disconnectHint(), false) { leave() },
@@ -996,6 +1001,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
     }
 
     override fun onDestroy() {
+        corner.stop()
         if (!closed || session != null) teardown(null)
         super.onDestroy()
     }
