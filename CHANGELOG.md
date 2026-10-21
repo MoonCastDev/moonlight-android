@@ -3,6 +3,13 @@
 ## 1.0-test242 (2026-10-22)
 - Hibernate PC worked on Ahmed's PC (test240/241), but MoonCast stayed on the last picture, frozen: a hibernating PC just stops sending video, and Moonlight only notices after a long timeout. After Hibernate PC, MoonCast now watches the video: after 3 seconds without a new frame it checks whether the PC still answers (its http port), and if not it leaves the stream with "<PC> is hibernating". The game isn't quit; it stays as it was in the hibernated PC.
 
+## 1.0-test241 (2026-10-22)
+- In-game Quick menu, PC: **Touch screen** (Off, Mouse, Touch), for the stream it's in. Every stream starts Off, so a hand on a handheld's screen can't click on the PC.
+  - Mouse: the screen is a trackpad (Moonlight's relative touch: drag moves the pointer, tap clicks, two fingers right-click and scroll).
+  - Touch: the pointer goes where the finger is and a tap clicks there (Moonlight's absolute touch).
+  - A stylus and a real mouse work in every mode. The on-screen controller isn't affected.
+- Moonlight's "Use the touchscreen as a trackpad" (All settings) is gone; the Quick menu's switch replaces it.
+
 ## 1.0-test240 (2026-10-22)
 - Hibernate PC still didn't work on Ahmed's PC: the Run box never opened, so Win + R didn't arrive (games often turn the Windows key off while they play). It now opens Start with Ctrl + Esc, which doesn't use the Windows key, types `shutdown /h` into Start's search and presses Enter 2 seconds later.
 

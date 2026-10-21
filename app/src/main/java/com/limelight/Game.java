@@ -527,17 +527,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         InputManager inputManager = (InputManager) getSystemService(Context.INPUT_SERVICE);
         inputManager.registerInputDeviceListener(keyboardTranslator, null);
 
-        // Initialize touch contexts
-        for (int i = 0; i < touchContextMap.length; i++) {
-            if (!prefConfig.touchscreenTrackpad) {
-                touchContextMap[i] = new AbsoluteTouchContext(conn, i, streamView);
-            }
-            else {
-                touchContextMap[i] = new RelativeTouchContext(conn, i,
-                        REFERENCE_HORIZ_RES, REFERENCE_VERT_RES,
-                        streamView, prefConfig);
-            }
-        }
+        // Touch screen starts Off every stream; the Quick menu switches it to Mouse or Touch for this stream
+        setTouchMode(TOUCH_OFF);
 
         if (prefConfig.onscreenController) {
             // create virtual onscreen controller
@@ -1603,6 +1594,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             java.util.List<com.limelight.home.QuickMenu.Item> items = new java.util.ArrayList<>();
             items.add(new com.limelight.home.QuickMenu.Item("⌨", "Keyboard", "On-screen", false, this::toggleKeyboard).asToggle());
             items.add(new com.limelight.home.QuickMenu.Item("ⓘ", "Streaming status", prefConfig.enablePerfOverlay ? "On" : "Off", false, this::toggleStatus).asToggle());
+            items.add(new com.limelight.home.QuickMenu.Item("☝", "Touch screen", TOUCH_LABELS[touchMode], false,
+                    () -> setTouchMode((touchMode + 1) % TOUCH_LABELS.length)).asToggle());
             items.add(new com.limelight.home.QuickMenu.Item("✚", "Controllers", com.limelight.home.QuickMenu.pads().size() + " connected", false, this::showControllers));
             items.add(new com.limelight.home.QuickMenu.Item("▤", "Task Manager", "Windows: Ctrl + Shift + Esc", false, this::openTaskManager));
             // handheld only: send the game to the last MoonCast TV (it ends this stream, the game keeps running)
@@ -1623,6 +1616,25 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                             com.limelight.home.QuickMenu.stat(String.format(java.util.Locale.US, "%.1f ms", com.limelight.home.StreamStats.INSTANCE.getDecodeMs()), "Decode delay")),
                     items);
         });
+    }
+
+    // Quick menu, Touch screen: what a finger on the picture does, for this stream only (every stream starts Off,
+    // so a hand on a handheld's screen can't click on the PC). Mouse is Moonlight's trackpad, Touch puts the pointer
+    // where the finger is. A stylus and a real mouse work in every mode.
+    private static final int TOUCH_OFF = 0, TOUCH_MOUSE = 1, TOUCH_DIRECT = 2;
+    private static final String[] TOUCH_LABELS = {"Off", "Mouse", "Touch"};
+    private int touchMode = TOUCH_OFF;
+
+    private void setTouchMode(int mode) {
+        for (TouchContext c : touchContextMap) {
+            if (c != null) c.cancelTouch();
+        }
+        touchMode = mode;
+        for (int i = 0; i < touchContextMap.length; i++) {
+            touchContextMap[i] = mode == TOUCH_DIRECT ? new AbsoluteTouchContext(conn, i, streamView)
+                    : new RelativeTouchContext(conn, i, REFERENCE_HORIZ_RES, REFERENCE_VERT_RES, streamView, prefConfig);
+        }
+        LimeLog.info("Touch screen: " + TOUCH_LABELS[mode]);
     }
 
     // Quick menu, Streaming status: Moonlight's stats corner on or off right away, saved like Settings' "Stats while playing"
@@ -2303,10 +2315,15 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                     return true;
                 }
 
+                // Touch screen Off (the Quick menu's default): a finger on the picture does nothing on the PC
+                if (touchMode == TOUCH_OFF) {
+                    return true;
+                }
+
                 // If this is the parent view, we'll offset our coordinates to appear as if they
                 // are relative to the StreamView like our StreamView touch events are.
                 float xOffset, yOffset;
-                if (view != streamView && !prefConfig.touchscreenTrackpad) {
+                if (view != streamView && touchMode == TOUCH_DIRECT) {
                     xOffset = -streamView.getX();
                     yOffset = -streamView.getY();
                 }
@@ -2338,7 +2355,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                 // TODO: Re-enable native touch when have a better solution for handling
                 // cancelled touches from Android gestures and 3 finger taps to activate
                 // the software keyboard.
-                /*if (!prefConfig.touchscreenTrackpad && trySendTouchEvent(view, event)) {
+                /*if (touchMode == TOUCH_DIRECT && trySendTouchEvent(view, event)) {
                     // If this host supports touch events and absolute touch is enabled,
                     // send it directly as a touch event.
                     return true;
