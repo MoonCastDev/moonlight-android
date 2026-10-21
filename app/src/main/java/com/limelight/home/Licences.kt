@@ -26,7 +26,7 @@ object Licences {
         Part("The app", "ENet", "Inside moonlight-common-c: the network link", "MIT", "enet.txt", "https://github.com/lsalzman/enet"),
         Part("The app", "nanors", "Inside moonlight-common-c: repairing lost video", "MIT", "nanors.txt", "https://github.com/sleepybishop/nanors"),
         Part("PS5", "chiaki-ng", "PS5 Remote Play, with MoonCast's changes (MoonCastDev/chiaki-ng-mooncast)", "AGPL-3.0", "agpl-3.0.txt", "https://github.com/streetpea/chiaki-ng"),
-        Part("PS5", "OpenSSL", "Inside chiaki-ng: encryption", "OpenSSL", "openssl.txt", "https://www.openssl.org"),
+        Part("PS5", "OpenSSL", "Inside chiaki-ng: encryption", "Apache-2.0", "apache-2.0.txt", "https://www.openssl.org"),
         Part("PS5", "curl", "Inside chiaki-ng: PSN sign-in and play away from home", "curl", "curl.txt", "https://curl.se"),
         Part("PS5", "json-c", "Inside chiaki-ng: PSN messages", "MIT", "json-c.txt", "https://github.com/json-c/json-c"),
         Part("PS5", "miniupnpc", "Inside chiaki-ng: router port setup (UPnP)", "BSD-3-Clause", "miniupnpc.txt", "https://github.com/miniupnp/miniupnp"),

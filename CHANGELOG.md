@@ -1,5 +1,12 @@
 # Changelog
 
+## 12.2-test228 (2026-10-21)
+- PS5: the encryption library inside chiaki-ng is OpenSSL 3.5.9 (the 3.5 long-term line, security fixes until 2030) instead of 1.1.1w, which has had no security fixes since September 2023. It secures the PSN sign-in, playing away from home and the PS5 connection itself.
+  - chiaki-ng's own unit tests pass on OpenSSL 3.5 (114 of 114: PSN certificate chains, stream encryption, registration). The console's key exchange isn't among them, so a PS5 session is the real test.
+  - The PS5 library is about 3 MB bigger (OpenSSL 3 is larger).
+- About, Open-source licences: OpenSSL 3 is under Apache-2.0 (1.1.1 had its own licence).
+- Build: buildChiaki also runs when chiaki's cmake files change.
+
 ## Unreleased
 - README: rewritten for MoonCast (it was still Moonlight's). It covers what the two apps play and how, the features, install and Sunshine's gamepad setting, building with the chiaki-ng submodule, the licences and the credits.
 

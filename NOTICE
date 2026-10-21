@@ -22,7 +22,7 @@ nanors (MIT): Inside moonlight-common-c: repairing lost video. https://github.co
 PS5
 ---
 chiaki-ng (AGPL-3.0): PS5 Remote Play, with MoonCast's changes (MoonCastDev/chiaki-ng-mooncast). https://github.com/streetpea/chiaki-ng  [licences/agpl-3.0.txt]
-OpenSSL (OpenSSL): Inside chiaki-ng: encryption. https://www.openssl.org  [licences/openssl.txt]
+OpenSSL (Apache-2.0): Inside chiaki-ng: encryption. https://www.openssl.org  [licences/apache-2.0.txt]
 curl (curl): Inside chiaki-ng: PSN sign-in and play away from home. https://curl.se  [licences/curl.txt]
 json-c (MIT): Inside chiaki-ng: PSN messages. https://github.com/json-c/json-c  [licences/json-c.txt]
 miniupnpc (BSD-3-Clause): Inside chiaki-ng: router port setup (UPnP). https://github.com/miniupnp/miniupnp  [licences/miniupnpc.txt]

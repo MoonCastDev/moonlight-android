@@ -193,7 +193,7 @@ def chiakiLibs = ['arm64-v8a', 'armeabi-v7a'].collectMany { abi ->
 tasks.register('buildChiaki', Exec) {
     description = 'Builds the PS5 Remote Play libraries from third-party/chiaki-ng'
     inputs.files(fileTree(chiakiDir) {
-        include 'CMakeLists.txt', 'lib/**', 'android/app/CMakeLists.txt', 'android/app/build.gradle', 'android/app/src/main/cpp/**', 'mooncast/build-jni.sh'
+        include 'CMakeLists.txt', 'cmake/**', 'lib/**', 'android/app/CMakeLists.txt', 'android/app/build.gradle', 'android/app/src/main/cpp/**', 'mooncast/build-jni.sh'
         exclude 'android/app/src/main/cpp/oboe/**'
     })
     outputs.files(chiakiLibs)
