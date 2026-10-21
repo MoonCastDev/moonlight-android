@@ -1,0 +1,55 @@
+# Builds both MoonCast apps from a clean clone, with lint, so a missing file or submodule shows up at once.
+# The APKs are kept as the run's artifacts (debug builds, signed with the runner's debug key).
+name: Build
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      # third-party/chiaki-ng is private until launch: SUBMODULES_TOKEN (read access to it) lets the runner clone it
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.SUBMODULES_TOKEN || github.token }}
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android SDK parts (the app's NDK, and chiaki-ng's NDK and CMake)
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;29.0.14206865" "ndk;28.2.13676358" "cmake;3.22.1" > /dev/null
+
+      - name: protoc (chiaki-ng's nanopb)
+        run: sudo apt-get update -q && sudo apt-get install -y -q protobuf-compiler python3-protobuf
+
+      - name: Build and lint both apps
+        run: |
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          BUILD=ci${{ github.run_number }} ./gradlew --no-daemon \
+            assembleNonRootHandheldDebug assembleNonRootTvDebug \
+            lintNonRootHandheldDebug lintNonRootTvDebug
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mooncast-apks
+          path: app/build/outputs/apk/**/*.apk
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lint-reports
+          path: app/build/reports/lint-results-*.html
