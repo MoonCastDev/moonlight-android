@@ -51,6 +51,14 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
         const val EXTRA_ACCOUNT_ID = "ps5_account_id"      // base64, 8 bytes
         fun hex(s: String): ByteArray =
             s.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+
+        /** The connect thread of the newest PS5 screen. A new screen waits for the last one's to end, so two never overlap. */
+        @Volatile private var connectThread: Thread? = null
+
+        /** Stop a PSN connect in flight; older libraries without psnCancel just let it time out. */
+        private fun cancelPsn() {
+            try { com.metallic.chiaki.lib.ChiakiNative.psnCancel() } catch (e: UnsatisfiedLinkError) { }
+        }
     }
 
     private var session: Session? = null
@@ -255,16 +263,44 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
         if (started) { session?.setSurface(holder.surface); return }
         started = true
         val surface = holder.surface
-        Thread({ connect(surface) }, "ps5-connect").start()
+        val previous = connectThread
+        val t = Thread({ connect(surface, previous) }, "ps5-connect")
+        myConnect = t
+        connectThread = t
+        t.start()
     }
 
+    /** This screen's connect thread (the newest screen's is [connectThread]). */
+    @Volatile private var myConnect: Thread? = null
+
+    /** Set when [homeWatch] hears the console on the home network during a PSN attempt. */
+    @Volatile private var homeNow = false
+
+    /** While a PSN attempt runs, ask the home network every few seconds; when the console answers, cancel the PSN attempt. */
+    private fun homeWatch(host: String, ps5: Boolean): Thread = Thread({
+        try {
+            while (!closed && !Thread.currentThread().isInterrupted) {
+                Thread.sleep(4000)
+                if (!closed && lanConsoleAnswers(host, ps5)) { homeNow = true; cancelPsn(); return@Thread }
+            }
+        } catch (e: InterruptedException) { }
+    }, "ps5-home-watch").apply { isDaemon = true; start() }
+
     // Wake the console from standby (harmless if already on), then connect; retry a few times while it powers up.
-    private fun connect(surface: android.view.Surface) {
+    private fun connect(surface: android.view.Surface, previous: Thread?) {
+        // The last PS5 screen's attempts must be over first: one still in its PSN hole-punch would take the console
+        // (the PS5 then refuses this screen's stream). Its screen closed, so it's cancelled and ends within seconds.
+        if (previous != null && previous.isAlive) {
+            showStatus("Finishing the last attempt…")
+            cancelPsn()
+            try { previous.join(15000) } catch (e: InterruptedException) { }
+            Log.i(TAG, "previous connect " + (if (previous.isAlive) "still running after 15 s" else "ended"))
+        }
         val host = intent.getStringExtra(EXTRA_HOST) ?: ""   // every caller passes the console's host
         val ps5 = intent.getBooleanExtra(EXTRA_PS5, true)
         // LAN if the console answers here; otherwise over the internet via PSN (no VPN / no port-forward) when the
         // phone sent a PSN token. PSN wakes the console itself when the session starts.
-        val remote = !lanConsoleAnswers(host, ps5) && canGoRemote()
+        var remote = !lanConsoleAnswers(host, ps5) && canGoRemote()
         Log.i(TAG, if (remote) "console not on this LAN -> Remote Play via PSN" else "console on LAN ($host)")
         if (remote) { ensureCaBundle(); startProgressWatch() }
         showStatus(if (remote) "Reaching PlayStation Network…" else "Connecting to your PlayStation…")
@@ -273,10 +309,14 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
         var attempt = 0
         // remote: a missed PSN start request is only fixed by a fresh attempt. Home network: a console still waking
         // from rest mode refuses the session at once, so keep trying for about a minute.
-        val maxAttempts = if (remote) 4 else 20
+        var maxAttempts = if (remote) 4 else 20
         while (!closed && attempt < maxAttempts) {
+            // A console PSN woke (or one just switched on) may answer at home while we wait on PSN: switch to the home
+            // network then, seconds instead of a minute-long hole-punch.
+            val watch = if (remote) homeWatch(host, ps5) else null
             try {
-                val s = Session(connectInfo(remote), null, false)
+                val s = try { Session(connectInfo(remote), null, false) } finally { watch?.interrupt() }
+                if (closed) { try { s.dispose() } catch (e: Exception) {}; return }   // the screen closed during the hole-punch
                 s.eventCallback = { ev -> onEvent(ev) }
                 s.setSurface(surface)
                 // Only the first picture counts as success; a quit before that is a failed attempt -> retry.
@@ -336,6 +376,14 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
             } catch (e: Exception) {
                 attemptLatch = null
                 Log.w(TAG, "connect attempt ${attempt + 1}: $e")
+            }
+            if (remote && homeNow && !closed) {
+                Log.i(TAG, "console now answers on the home network -> switching from PSN")
+                remote = false; homeNow = false; maxAttempts = 20; attempt = 0
+                stopProgressWatch()
+                showStatus("Connecting to your PlayStation…")
+                step(2)
+                continue
             }
             attempt++
             if (remote && attempt < maxAttempts && !closed) progressStage = 0
@@ -855,6 +903,9 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
      */
     private fun teardown(done: Runnable?) {
         closed = true
+        // a PSN hole-punch in flight stops now, not after its timeouts; only while this screen's attempt is the newest
+        // (a late teardown must not cancel the next screen's attempt; that screen cancels this one itself)
+        if (myConnect != null && myConnect === connectThread) cancelPsn()
         attemptLatch?.countDown()   // release a remote attempt that's waiting for its first picture
         stopProgressWatch()
         val s = session

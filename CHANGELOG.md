@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0-test230 (2026-10-21)
+- PS5: leaving the PS5 screen while it connects really stops the attempt. Before, an attempt through PlayStation Network carried on in the background for up to a minute and could still connect after you'd left. It then held the console, so the next try got "Connection refused" and the PS5 refused its stream (seen on the Odin).
+  - Leaving cancels the PSN attempt in flight at once (a new `psnCancel` in chiaki-ng-mooncast).
+  - An attempt that finishes after you've left is dropped, never started.
+  - A new PS5 screen waits (at most 15 s, "Finishing the last attempt…") for the last one's attempt to end.
+- PS5: when a console PSN just woke, or one just switched on, answers on the home network, MoonCast switches from PSN to the home connection: seconds instead of a minute-long hole-punch. It asks the home network every 4 s while a PSN attempt runs.
+
 ## 1.0-test229 (2026-10-21)
 - Version: MoonCast's own numbering. The version is 1.0 (code 1000) instead of Moonlight's 12.2 (315); test builds are now 1.0-testN. The code only ever goes up (1.0.1 = 1001, 1.1 = 1100), so each release installs over the one before it.
 - Release signing: release builds are signed with MoonCast's own key, which is never in git. `keystore.properties` sits next to `settings.gradle`, or `MOONCAST_KEYSTORE` names it; without it, release builds come out unsigned, as before. `.gitignore` keeps out `keystore.properties`, `*.jks` and `*.keystore`.

@@ -95,6 +95,8 @@ private class ChiakiNative
 		@JvmStatic external fun sessionSetControllerState(ptr: Long, controllerState: ControllerState)
 		@JvmStatic external fun sessionSetLoginPin(ptr: Long, pin: String)
 		@JvmStatic external fun sessionGotoBed(ptr: Long): Int
+		/** MoonCast: stop the PSN connect in flight (a sessionCreate stuck in its hole-punch). Needs a libchiaki-jni.so with psnCancel. */
+		@JvmStatic external fun psnCancel()
 		@JvmStatic external fun sessionStats(ptr: Long): DoubleArray?
 		@JvmStatic external fun discoveryServiceCreate(result: CreateResult, options: DiscoveryServiceOptions, javaService: DiscoveryService)
 		@JvmStatic external fun discoveryServiceFree(ptr: Long)
