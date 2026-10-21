@@ -412,6 +412,11 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         return false;
     }
 
+    /** The number of the last frame that arrived from the PC (0 before the first): unchanged means no video coming in. */
+    public int getLastFrameNumber() {
+        return lastFrameNumber;
+    }
+
     public int getPreferredColorSpace() {
         // Default to Rec 709 which is probably better supported on modern devices.
         //

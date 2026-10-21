@@ -1664,6 +1664,47 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         Handler h = new Handler(getMainLooper());
         h.postDelayed(() -> { if (conn != null) conn.sendUtf8Text("shutdown /h"); }, 1500);
         h.postDelayed(() -> sendKeys(new short[] {VK_RETURN}), 3500);
+        // A PC going into hibernation just stops sending video: Moonlight would only notice after a long timeout,
+        // with the last picture frozen (test241). Watch for it and end the stream ourselves.
+        h.postDelayed(() -> watchHibernate(60, -1, 0), 4500);
+    }
+
+    /** Once a second for up to [checksLeft] s: after 3 s without a new frame, end the stream if the PC stopped answering. */
+    private void watchHibernate(final int checksLeft, final int lastFrame, final int still) {
+        if (isFinishing() || decoderRenderer == null || displayedFailureDialog) return;
+        final int frame = decoderRenderer.getLastFrameNumber();
+        final int quiet = frame == lastFrame ? still + 1 : 0;
+        if (quiet < 3) {
+            if (checksLeft > 0) new Handler(getMainLooper()).postDelayed(() -> watchHibernate(checksLeft - 1, frame, quiet), 1000);
+            return;
+        }
+        // no video for 3 s: a still screen does that too, so ask whether the PC is still there (its http port, 47989)
+        new Thread(() -> {
+            boolean up;
+            try (java.net.Socket sock = new java.net.Socket()) {
+                sock.connect(new java.net.InetSocketAddress(getIntent().getStringExtra(EXTRA_HOST),
+                        getIntent().getIntExtra(EXTRA_PORT, NvHTTP.DEFAULT_HTTP_PORT)), 1500);
+                up = true;
+            } catch (Exception e) {
+                up = false;
+            }
+            final boolean answers = up;
+            runOnUiThread(() -> {
+                if (!answers) finishHibernated();
+                else if (checksLeft > 0) new Handler(getMainLooper()).postDelayed(() -> watchHibernate(checksLeft - 1, frame, 0), 1000);
+            });
+        }, "mc-hibernate-watch").start();
+    }
+
+    /** The PC went down after Hibernate PC: leave the stream without an error (and without quitting the game). */
+    private void finishHibernated() {
+        if (displayedFailureDialog) return;
+        displayedFailureDialog = true;
+        endedByUser = true;
+        LimeLog.info("Stream ended after Hibernate PC");
+        stopConnection();
+        android.widget.Toast.makeText(this, (pcName != null ? pcName : "The PC") + " is hibernating", android.widget.Toast.LENGTH_LONG).show();
+        finish();
     }
 
     // Windows virtual-key codes, with Moonlight's 0x80 prefix (KeyboardTranslator)
@@ -2589,15 +2630,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         PhoneGamepad.stopFor(conn);   // the stream is over: stop pulling the sender's controller
         if (hibernateAt != 0 && android.os.SystemClock.uptimeMillis() - hibernateAt < 60_000) {
             // the PC went down after Hibernate PC: that's what the user asked for, so no error
-            LimeLog.info("Stream ended after Hibernate PC");
             endedByUser = true;
-            runOnUiThread(() -> {
-                if (displayedFailureDialog) return;
-                displayedFailureDialog = true;
-                stopConnection();
-                android.widget.Toast.makeText(Game.this, (pcName != null ? pcName : "The PC") + " is hibernating", android.widget.Toast.LENGTH_LONG).show();
-                finish();
-            });
+            runOnUiThread(this::finishHibernated);
             return;
         }
         // A stream the user ended (Quit game makes the PC close it, error -1) isn't a failure (#41)
