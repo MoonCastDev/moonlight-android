@@ -1,5 +1,12 @@
 # Changelog
 
+## 12.2-test225 (2026-10-21)
+- Build: PS5 Remote Play's native libraries are now built from source. Before, `libchiaki-jni.so`, `liboboe.so` and `libc++_shared.so` sat only on the build machine (git ignores `jniLibs`), so a fresh clone built an app without PS5, and the chiaki-ng changes behind them were in no repository.
+  - The patched chiaki-ng is a submodule, `third-party/chiaki-ng` (MoonCastDev/chiaki-ng-mooncast: upstream chiaki-ng plus one MoonCast commit, AGPL-3.0).
+  - A `buildChiaki` task runs before every build and calls `third-party/chiaki-ng/mooncast/build-jni.sh`; it does nothing when chiaki's sources haven't changed.
+  - Needs `git submodule update --init --recursive`, CMake 3.22.1 in the Android SDK and protoc on the PATH.
+- No change to the app itself.
+
 ## 12.2-test224 (2026-10-20)
 - On-screen controller, Xbox skin (mockup vx2 in docs/mockups/onscreen-pad). Settings, Controls, "On-screen controller" now goes Off, PlayStation, Xbox, Classic.
   - The real Xbox arrangement: left stick up on the left, the d-pad lower beside it, A B X Y on the right with the right stick below.

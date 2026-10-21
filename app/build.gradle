@@ -181,3 +181,28 @@ androidComponents {
             new com.android.build.api.variant.ResValue(name + (debug ? " (Root Debug)" : " (Root)"), null))
     }
 }
+
+// PS5 Remote Play: libchiaki-jni.so (with liboboe.so and libc++_shared.so) is built from source, from the
+// third-party/chiaki-ng submodule (MoonCastDev/chiaki-ng-mooncast, chiaki-ng with MoonCast's changes, AGPL-3.0).
+// It runs again only when chiaki's sources change. The libraries land in src/main/jniLibs, which git ignores.
+// Needs CMake 3.22.1 in the SDK and protoc on the PATH (see third-party/chiaki-ng/mooncast/README.md).
+def chiakiDir = rootProject.file('third-party/chiaki-ng')
+def chiakiLibs = ['arm64-v8a', 'armeabi-v7a'].collectMany { abi ->
+    ['libchiaki-jni.so', 'liboboe.so', 'libc++_shared.so'].collect { file("src/main/jniLibs/$abi/$it") }
+}
+tasks.register('buildChiaki', Exec) {
+    description = 'Builds the PS5 Remote Play libraries from third-party/chiaki-ng'
+    inputs.files(fileTree(chiakiDir) {
+        include 'CMakeLists.txt', 'lib/**', 'android/app/CMakeLists.txt', 'android/app/build.gradle', 'android/app/src/main/cpp/**', 'mooncast/build-jni.sh'
+        exclude 'android/app/src/main/cpp/oboe/**'
+    })
+    outputs.files(chiakiLibs)
+    environment 'ANDROID_HOME', android.sdkDirectory.path
+    commandLine 'sh', new File(chiakiDir, 'mooncast/build-jni.sh').path, rootProject.projectDir.path
+    doFirst {
+        if (!new File(chiakiDir, 'mooncast/build-jni.sh').exists()) {
+            throw new GradleException("third-party/chiaki-ng is empty: run git submodule update --init --recursive")
+        }
+    }
+}
+tasks.named('preBuild') { dependsOn 'buildChiaki' }
