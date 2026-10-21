@@ -57,7 +57,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
 
         /** Stop a PSN connect in flight; older libraries without psnCancel just let it time out. */
         private fun cancelPsn() {
-            try { com.metallic.chiaki.lib.ChiakiNative.psnCancel() } catch (e: UnsatisfiedLinkError) { }
+            try { com.metallic.chiaki.lib.psnCancel() } catch (e: UnsatisfiedLinkError) { }
         }
     }
 

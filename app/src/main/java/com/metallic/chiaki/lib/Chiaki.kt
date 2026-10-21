@@ -73,6 +73,9 @@ data class ConnectInfo(
 	val psnAccountId: ByteArray? = null
 )
 
+/** MoonCast: stop the PSN connect in flight (see ChiakiNative.psnCancel). */
+fun psnCancel() = ChiakiNative.psnCancel()
+
 private class ChiakiNative
 {
 	data class CreateResult(var errorCode: Int, var ptr: Long)
