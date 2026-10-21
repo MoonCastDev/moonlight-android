@@ -219,6 +219,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
         // Read the stream preferences
         prefConfig = PreferenceConfiguration.readPreferences(this);
+        trace(foldLabel(getResources().getConfiguration()) + ": stream " + prefConfig.width + "x" + prefConfig.height
+                + ", Native " + PreferenceConfiguration.nativeWholeScreen(this));
         tombstonePrefs = Game.this.getSharedPreferences("DecoderTombstone", 0);
 
         // Enter landscape unless we're on a square screen
@@ -590,6 +592,16 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
         // Set requested orientation for possible new screen size
         setPreferredOrientationForCurrentDisplay();
+
+        // Folded or unfolded mid-game: once the screen settles (a fold sends a few changes), reconnect at its size
+        // so Native fills it; the game keeps running on the PC
+        // (always check after it settles: right at the change the screen's new size may not be known yet)
+        if (streamView != null) {
+            trace(foldLabel(newConfig) + ": size changed " + newConfig.screenWidthDp + "x" + newConfig.screenHeightDp + " dp, screen "
+                    + PreferenceConfiguration.nativeResolution(this));
+            streamView.removeCallbacks(fitScreen);
+            streamView.postDelayed(fitScreen, 1500);
+        }
 
         if (virtualController != null) {
             // Refresh layout of OSC for possible new screen size
@@ -1164,7 +1176,31 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             }
         }
 
-        finish();
+        // Being rebuilt (Fit to the screen, recreate): the new one reconnects; finishing here would end it.
+        if (isChangingConfigurations()) return;
+        if (isFinishing() || streamView == null) { finish(); return; }
+        // A foldable switching screens hides this for a moment: stopped, then started again on the other screen.
+        // Close only if it doesn't come back; if it does, reconnect, at the new screen's size with Native.
+        stoppedAwhile = true;
+        trace("hidden: closing in 2 s unless shown again");
+        streamView.removeCallbacks(closeIfGone);
+        streamView.postDelayed(closeIfGone, 2000);
+    }
+
+    /** Stopped, and waiting to see whether it comes back (a fold or unfold) before closing. */
+    private boolean stoppedAwhile;
+    private final Runnable closeIfGone = () -> { if (stoppedAwhile && !isFinishing()) finish(); };
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        if (stoppedAwhile) trace("shown again");
+        if (stoppedAwhile) {
+            // back within a moment (folded or unfolded): the stream ended when it was hidden, so start it again
+            stoppedAwhile = false;
+            streamView.removeCallbacks(closeIfGone);
+            if (!isFinishing()) reconnectHere("shown again");
+        }
     }
 
     private void setInputGrabState(boolean grab) {
@@ -1548,13 +1584,6 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                     "pc", appName != null ? appName : "Your game", getIntent().getStringExtra(EXTRA_PC_UUID), pcName,
                     getIntent().getIntExtra(EXTRA_APP_ID, 0), null, null, null, true, null));
             if (move != null) items.add(move);
-            // a foldable folded or unfolded mid-game: the stream keeps the size it started at until it reconnects
-            String screen = PreferenceConfiguration.nativeResolution(Game.this);
-            if (connected && prefConfig != null && android.preference.PreferenceManager.getDefaultSharedPreferences(Game.this).getBoolean(PreferenceConfiguration.NATIVE_RES_PREF_STRING, false)
-                    && !screen.equals(prefConfig.width + "x" + prefConfig.height)) {
-                items.add(new com.limelight.home.QuickMenu.Item("⤢", "Fit this screen",
-                        "Reconnects at " + screen.replace("x", " × ") + ". The game keeps running", false, this::restartForScreen));
-            }
             items.add(new com.limelight.home.QuickMenu.Item("←", "Disconnect", "The game keeps running", false, this::finish));
             items.add(new com.limelight.home.QuickMenu.Item("✕", "Quit game", null, true, this::quitOnHostAndFinish));
             quickMenu.show(appName != null ? appName : "Your game",
@@ -2392,6 +2421,24 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         stopConnection(() -> { if (!isFinishing()) recreate(); });
     }
 
+    private final Runnable fitScreen = () -> {
+        trace("check: screen " + PreferenceConfiguration.nativeResolution(Game.this) + ", stream "
+                + (prefConfig != null ? prefConfig.width + "x" + prefConfig.height : "?") + ", connected " + connected
+                + ", Native " + PreferenceConfiguration.nativeWholeScreen(Game.this) + " -> " + (needsRefit() ? "RECONNECT" : "no"));
+        if (needsRefit()) {
+            LimeLog.info("MoonCast: screen size changed mid-stream, reconnecting");
+            Toast.makeText(Game.this, "Fitting the stream to this screen…", Toast.LENGTH_SHORT).show();
+            restartForScreen();
+        }
+    };
+
+    /** A foldable folded or unfolded mid-game with Native on: the stream is still the size of the other screen. */
+    private boolean needsRefit() {
+        if (!connected || isFinishing() || prefConfig == null || !PreferenceConfiguration.nativeWholeScreen(this)) return false;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && isInPictureInPictureMode()) return false;
+        return !PreferenceConfiguration.nativeResolution(this).equals(prefConfig.width + "x" + prefConfig.height);
+    }
+
     // "Move to TV" (handheld): end this stream (disconnect, the game keeps running) before the TV joins it.
     @Override
     public void endLocalSession(Runnable done) {
@@ -2667,6 +2714,13 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             throw new IllegalStateException("Surface changed before creation!");
         }
 
+        trace("surface " + width + "x" + height);
+        if (surfaceLostMidStream && !isFinishing()) {
+            surfaceLostMidStream = false;
+            streamView.post(() -> { if (!isFinishing()) reconnectHere("new surface " + width + "x" + height); });
+            return;
+        }
+
         if (!attemptedConnection) {
             attemptedConnection = true;
 
@@ -2731,9 +2785,59 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             decoderRenderer.prepareForStop();
 
             if (connected) {
+                // a foldable switching screens takes the surface away and gives a new one: reconnect then
+                surfaceLostMidStream = true;
+                trace("surface lost, stream stopped");
                 stopConnection();
             }
         }
+    }
+
+    // ---- TEST ONLY (fold trace): a small text box on the stream showing what the phone reports ----
+    private static final boolean FOLD_TRACE = true;
+    private android.widget.TextView foldTrace;
+    private final java.util.ArrayDeque<String> foldLines = new java.util.ArrayDeque<>();
+
+    private void trace(String line) {
+        LimeLog.info("MoonCast trace: " + line);
+        if (!FOLD_TRACE) return;
+        runOnUiThread(() -> {
+            if (foldTrace == null) {
+                android.view.ViewGroup root = findViewById(android.R.id.content);
+                if (root == null) return;
+                foldTrace = new android.widget.TextView(this);
+                foldTrace.setTextColor(0xFFFFFF66);
+                foldTrace.setBackgroundColor(0xB0000000);
+                foldTrace.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 11);
+                foldTrace.setPadding(16, 10, 16, 10);
+                root.addView(foldTrace, new android.widget.FrameLayout.LayoutParams(-2, -2, android.view.Gravity.TOP | android.view.Gravity.START));
+            }
+            String t = new java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(new java.util.Date());
+            foldLines.addLast(t + "  " + line);
+            while (foldLines.size() > 9) foldLines.removeFirst();
+            foldTrace.setText(android.text.TextUtils.join("\n", foldLines));
+            foldTrace.bringToFront();
+        });
+    }
+
+    /** Folded or open, from the screen this is on: an open foldable is a big screen (600 dp and more across). */
+    private String foldLabel(Configuration c) {
+        return c.smallestScreenWidthDp >= 600 ? "UNFOLDED" : "FOLDED";
+    }
+
+    /** The stream ended because its surface went away (a fold or unfold); a new surface reconnects. */
+    private boolean surfaceLostMidStream;
+    private boolean reconnecting;
+
+    /** Start the stream again on this screen (Native: at its size); the game is still running on the PC. */
+    private void reconnectHere(String why) {
+        if (reconnecting) return;   // a fold can bring both a new surface and onStart: rebuild once
+        reconnecting = true;
+        surfaceLostMidStream = false;
+        stoppedAwhile = false;
+        trace("reconnecting (" + why + ")");
+        Toast.makeText(this, "Fitting the stream to this screen…", Toast.LENGTH_SHORT).show();
+        recreate();
     }
 
     @Override

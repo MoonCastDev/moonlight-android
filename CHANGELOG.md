@@ -1,5 +1,23 @@
 # Changelog
 
+## 12.2-test212 (2026-10-20)
+- Fix, found with the test211 trace on the Fold ("Native false"): picking Resolution in Settings could leave it showing Native with the screen's size saved but Native's switch off, so the stream kept that size after a fold. The page redrew before the pick's switch was saved, and the redraw put the screen size back. The pick is now saved first. A saved size that is the current screen's own now counts as Native, which repairs phones already in that state (open MoonCast or Settings on that screen once). The test trace stays for one more try.
+
+## 12.2-test211 (2026-10-20)
+- TEST ONLY: a small yellow text box at the top left of a PC stream traces what the phone reports, with the time: FOLDED or UNFOLDED and the stream's size at start, each screen-size change, the video surface lost or replaced, the stream screen hidden or shown again, and the check 1.5 seconds after a change (screen size, stream size, connected, Native, and whether it reconnects). To find why unfolding doesn't reconnect; it comes out again once that's fixed.
+
+## 12.2-test210 (2026-10-20)
+- Fix (test207-209): unfolding mid-game kept the stream going at the cover's size and never reconnected. The size check ran only at the moment the screen changed, when the new screen's size may not be known yet, and it measured the display's mode, which can still report the other panel for a moment. It now checks again once the screen settles, after every change, and measures the app's own full-screen window. The "MoonCast:" log lines show the sizes it saw.
+
+## 12.2-test209 (2026-10-20)
+- Fix (test208): unfolding mid-game still left a stopped stream. On the Fold the screen switch replaces the video surface without hiding the app, and losing the surface ends the stream (Moonlight's own behaviour); the new surface only ever started the first connection. Now a new surface after one lost mid-stream reconnects, at the new screen's size with Native ("Fitting the stream to this screen…"). The other two ways in (shown again within 2 seconds, or a size change) stay, and only one reconnect happens. Log lines starting "MoonCast:" trace it.
+
+## 12.2-test208 (2026-10-20)
+- Fix (test207): unfolding the Fold mid-game ended the PC stream instead of reconnecting. Switching screens hides the app for a moment, and the stream screen closed as soon as it was hidden (Moonlight's own behaviour), so the reconnect never ran. Now, when hidden, it ends the stream as before but waits 2 seconds before closing; if it comes back in that time (a fold or unfold), it reconnects at the new screen's size ("Fitting the stream to this screen…"). Leaving the app or turning the screen off closes it 2 seconds later, as before. PS5 and Xbox streams still end on a fold (issue filed).
+
+## 12.2-test207 (2026-10-20)
+- PC streams with Resolution on Native: folding or unfolding a foldable mid-game now reconnects by itself at the new screen's size, about 1.5 seconds after the screen settles ("Fitting the stream to this screen…"; a short blackout, the game keeps running on the PC). The Quick menu's "Fit this screen" is gone. Not in picture-in-picture. (With a PC that sets its own resolution only when a game launches, the PC keeps its desktop size until the game is started again.)
+
 ## 12.2-test206 (2026-10-20)
 - Handheld: no 16:9 choice any more. Resolution is 720p, 1080p, 1440p, 4K or Native, and Native is always the whole screen in its own shape (an open Fold 2448 × 1848, folded 1968 × 1248; on other handhelds their full screen, rounded to multiples of 8), following the screen a stream starts on. An earlier Native (16:9) becomes this one.
 

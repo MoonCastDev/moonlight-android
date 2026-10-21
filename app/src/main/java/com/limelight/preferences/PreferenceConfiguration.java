@@ -468,6 +468,13 @@ public class PreferenceConfiguration {
 
     /** The physical size of the screen [context] is on, the long side first. */
     private static int[] screenSize(Context context) {
+        // An activity's own window, full screen, follows a foldable's switch together with its configuration
+        // (the display's mode can still report the other panel for a moment)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && context instanceof android.app.Activity) {
+            android.graphics.Rect b = ((android.app.Activity) context).getWindowManager().getMaximumWindowMetrics().getBounds();
+            int w = b.width(), h = b.height();
+            if (w > 0 && h > 0) return new int[] { Math.max(w, h), Math.min(w, h) };
+        }
         Display d = null;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             try { d = context.getDisplay(); } catch (UnsupportedOperationException ignored) { }
