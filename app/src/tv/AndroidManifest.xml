@@ -7,6 +7,10 @@
     <uses-feature
         android:name="android.software.leanback"
         android:required="false" />
+    <!-- Already optional in the main manifest; said again here because lint checks a TV manifest on its own -->
+    <uses-feature
+        android:name="android.hardware.touchscreen"
+        android:required="false" />
 
     <application>
         <!-- MoonCast TV home (Big Picture style). It also listens for the phone on :8099. -->
