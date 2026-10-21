@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased
+- README: rewritten for MoonCast (it was still Moonlight's). It covers what the two apps play and how, the features, install and Sunshine's gamepad setting, building with the chiaki-ng submodule, the licences and the credits.
+
 ## 12.2-test227 (2026-10-21)
 - About, Open-source licences (both apps; mockups in docs/mockups/about): the 23 open-source projects MoonCast is built on, grouped The app, PS5, Xbox and More, each with what it does and its licence. Pressing one shows its full licence text; Back returns to About.
 - About, Source code: github.com/MoonCastDev, GPL-3.0 with the PS5 and Xbox parts under AGPL-3.0 (on a phone it opens the page).
