@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0-test231 (2026-10-21)
+- Handheld, Settings, Picture: three settings that were only in About, All settings (Moonlight's screen); MoonCast TV already had them.
+  - **Unlock all frame rates** (under Frame rate): adds 144 and 240 to Frame rate, and Custom frame rate goes up to 240. Turning it off brings a rate above 120 back down to 120.
+  - **Custom bitrate** (under Bitrate): any bitrate from 0.5 to 150 Mbps in 0.5 steps, as Moonlight's slider allows. Bitrate shows "Custom" then.
+  - **Full range colour** (under HDR): experimental, off by default.
+
 ## 1.0-beta1 (2026-10-21)
 - The first beta for testers: test230's app as a signed release build (version 1.0-beta1, code 991, so 1.0 installs over it), published as a pre-release.
 - Release builds: code shrinking (R8) had removed what PS5 Remote Play's native code reads by name (`ConnectInfo` with its `psnToken` and `videoProfile`, and `Session`), so a release build couldn't start a PS5 session. Debug builds don't shrink, so the test builds never showed it. `proguard-rules.pro` keeps `com.metallic.chiaki.**` and Google's WebRTC (`org.webrtc.**`, Xbox). All 48 fields and 9 methods the PS5 library looks up are now present in the release build.
