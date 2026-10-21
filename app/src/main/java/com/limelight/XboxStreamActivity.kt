@@ -93,6 +93,7 @@ class XboxStreamActivity : Activity(), com.limelight.home.MoveToTv.LocalSession 
             addView(r, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
             addView(status, FrameLayout.LayoutParams(-1, -1))
         })
+        corner.apply()
         main.postDelayed(pictureWatchdog, 60_000)
         Thread { connect() }.start()
     }
@@ -249,6 +250,7 @@ class XboxStreamActivity : Activity(), com.limelight.home.MoveToTv.LocalSession 
     }
 
     override fun onDestroy() {
+        corner.stop()
         closed = true
         if (remoteOn) try { remotePad?.stop() } catch (e: Throwable) { }
         try { rtc?.stop() } catch (e: Throwable) { }
@@ -457,6 +459,8 @@ class XboxStreamActivity : Activity(), com.limelight.home.MoveToTv.LocalSession 
 
     // ---- Quick menu ----
     private val menu by lazy { QuickMenu(this) }
+    // Streaming status: the stats line in the corner while playing (Settings' "Stats while playing", or the Quick menu)
+    private val corner by lazy { com.limelight.home.StatusCorner(this) { liveStats() } }
 
     // Live numbers from WebRTC's own stats, refreshed every second (and logged every 5 s for diagnosis)
     @Volatile private var last: XboxRtc.Stats? = null
@@ -498,6 +502,7 @@ class XboxStreamActivity : Activity(), com.limelight.home.MoveToTv.LocalSession 
         val move = com.limelight.home.MoveToTv.item(this, com.limelight.home.MoveToTv.Target("xb", consoleName, xboxId = consoleId))
         menu.show(consoleName, "Xbox Remote Play. " + QuickMenu.COMBO_LABEL + " opens this menu", { liveStats() }, listOfNotNull(
             QuickMenu.Item("⊗", "Xbox button", "Opens the guide", false) { tapGuide() },
+            QuickMenu.Item("ⓘ", "Streaming status", if (com.limelight.home.StatusCorner.enabled(this)) "On" else "Off", false) { corner.toggle() }.asToggle(),
             move,
             QuickMenu.Item("←", "Disconnect", "The game keeps running", false) { finish() },
             QuickMenu.Item("⏻", "Turn off the Xbox", "Ends the game", true) { turnOff() }))

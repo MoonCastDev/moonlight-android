@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.0-test242 (2026-10-22)
+- Hibernate PC worked on Ahmed's PC (test240/241), but MoonCast stayed on the last picture, frozen: a hibernating PC just stops sending video, and Moonlight only notices after a long timeout. After Hibernate PC, MoonCast now watches the video: after 3 seconds without a new frame it checks whether the PC still answers (its http port), and if not it leaves the stream with "<PC> is hibernating". The game isn't quit; it stays as it was in the hibernated PC.
+
+## 1.0-test240 (2026-10-22)
+- Hibernate PC still didn't work on Ahmed's PC: the Run box never opened, so Win + R didn't arrive (games often turn the Windows key off while they play). It now opens Start with Ctrl + Esc, which doesn't use the Windows key, types `shutdown /h` into Start's search and presses Enter 2 seconds later.
+
+## 1.0-test239 (2026-10-22)
+- Hibernate PC didn't work on Ahmed's PC (Task Manager and Streaming status did). The power menu's U and H only match on an English layout and English Windows. It now opens Run (Win + R), types `shutdown /h` as text (Sunshine types text the same on any keyboard layout) and presses Enter. That also works without Hibernate ticked in Power Options; it needs hibernation itself on, which most PCs have (`powercfg /h on` turns it on).
+
+## 1.0-test238 (2026-10-22)
+- In-game Quick menu, new items:
+  - **Streaming status** (PC, PS5 and Xbox): turns the stats corner on or off right away, and saves it as Settings' "Stats while playing". The PC shows Moonlight's stats; PS5 and Xbox get a new one-line corner (frame rate, network delay, bitrate, lost packets, and decode time on PS5).
+  - **Task Manager** (PC): presses Ctrl + Shift + Esc on the PC, which opens Task Manager on Windows. It does nothing on Linux or macOS PCs.
+  - **Hibernate PC** (PC): asks first, with Cancel picked, then presses Win + X, U, H: the Windows power menu's Hibernate. Windows only lists Hibernate when it's turned on in Power Options; without it, the power menu stays open on the PC. When the PC goes down within a minute, the stream ends with "<PC> is hibernating" instead of an error. Wake the PC from MoonCast's home.
+
 ## 1.0-test237 (2026-10-21)
 - Handheld, "On battery, stream at" (Settings, Handheld) now works (#65). It was saved but nothing read it. Unplugged, PC and PS5 streams go no higher than the chosen height (1080p, 720p or 540p); plugged in, the Picture settings apply as before.
   - PC: the size keeps the stream's shape (Native 2448 × 1696 at 720p becomes 1040 × 720). The fold check compares the screen with the size before the cap, so a capped stream doesn't keep reconnecting at the screen's size.
