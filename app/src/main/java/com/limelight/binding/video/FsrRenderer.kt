@@ -16,202 +16,99 @@ import android.view.Surface
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
+// Super resolution with AMD FidelityFX Super Resolution 1.0 (FSR 1, MIT licence, see assets/licences).
+// The shaders are ports of ffx_fsr1.h's 32-bit FsrEasuF and FsrRcasF to OpenGL ES 3.0. ES 3.0 has no textureGather,
+// so each gather is four texelFetches in gather order.
+
 /**
- * Super resolution with AMD FidelityFX Super Resolution 1.0 (FSR 1, MIT licence, see assets/licences).
- *
- * The decoder renders into [inputSurface] (a SurfaceTexture). Each frame then takes three GPU passes on our own thread:
- *  1. copy the decoder's frame (an external OES texture) into a plain texture at the stream's size,
- *  2. EASU: upscale it to the screen surface's size (AMD's edge-adaptive Lanczos),
- *  3. RCAS: sharpen at [sharpness] (0..1) and draw to the screen surface.
- * The frame keeps the decoder's presentation time, so frame pacing still applies. The screen surface can come and go
- * (a foldable's fold) with [attachOutput]/[detachOutput] while the decoder keeps its own surface.
- *
- * The shaders are ports of ffx_fsr1.h's 32-bit FsrEasuF and FsrRcasF to OpenGL ES 3.0. ES 3.0 has no textureGather,
- * so each gather is four texelFetches in gather order.
+ * The three FSR passes on the current GL context (OpenGL ES 3.0): copy an external OES frame into a plain texture at
+ * the frame's size, EASU (AMD's edge-adaptive Lanczos) to the output size, RCAS sharpening into [targetFb]'s viewport.
+ * GL objects are made on first use and remade when a size changes. Used by [FsrRenderer] (PS5, PC) and [FsrGlDrawer]
+ * (Xbox, inside WebRTC's renderer).
  */
-class FsrRenderer(private val videoWidth: Int, private val videoHeight: Int, sharpness: Float) {
-    private val thread = HandlerThread("fsr-gl").apply { start() }
-    private val handler = Handler(thread.looper)
-    private var display: EGLDisplay = EGL14.EGL_NO_DISPLAY
-    private var context: EGLContext = EGL14.EGL_NO_CONTEXT
-    private var config: EGLConfig? = null
-    private var pbuffer: EGLSurface = EGL14.EGL_NO_SURFACE
-    private var window: EGLSurface = EGL14.EGL_NO_SURFACE
-    private var outW = 0
-    private var outH = 0
-    private var oesTex = 0
+class FsrPasses(sharpness: Float) {
+    private var copyProg = 0
+    private var easuProg = 0
+    private var rcasProg = 0
     private var copyTex = 0
     private var copyFbo = 0
+    private var copyW = 0
+    private var copyH = 0
     private var easuTex = 0
     private var easuFbo = 0
     private var easuW = 0
     private var easuH = 0
-    private var copyProg = 0
-    private var easuProg = 0
-    private var rcasProg = 0
-    private lateinit var texture: SurfaceTexture
-    private val stMatrix = FloatArray(16)
+    private val vao = IntArray(1)
     private val sharp = Math.pow(2.0, -((1.0 - sharpness.coerceIn(0f, 1f)) * 2.0)).toFloat()   // stops: 100% = 0, 0% = 2
-    @Volatile private var released = false
-    var frames = 0L
-        private set
 
-    /** The surface the decoder renders into. */
-    lateinit var inputSurface: Surface
-        private set
-
-    init {
-        val ready = CountDownLatch(1)
-        var error: Throwable? = null
-        handler.post {
-            try { setUp() } catch (t: Throwable) { error = t }
-            ready.countDown()
+    /** Draws one frame. [oesTex] with [texMatrix] is the frame ([inW] x [inH]); the result fills the viewport. */
+    fun draw(oesTex: Int, texMatrix: FloatArray, inW: Int, inH: Int, targetFb: Int, vx: Int, vy: Int, outW: Int, outH: Int) {
+        if (inW <= 0 || inH <= 0 || outW <= 0 || outH <= 0) return
+        if (copyProg == 0) {
+            copyProg = program(VERTEX, COPY); easuProg = program(VERTEX, EASU); rcasProg = program(VERTEX, RCAS)
+            GLES30.glGenVertexArrays(1, vao, 0)
         }
-        ready.await(5, TimeUnit.SECONDS)
-        error?.let { release(); throw RuntimeException("FSR setup failed: ${it.message}", it) }
-        if (!this::inputSurface.isInitialized) { release(); throw RuntimeException("FSR setup timed out") }
-    }
-
-    private fun setUp() {
-        display = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
-        val ver = IntArray(2)
-        check(EGL14.eglInitialize(display, ver, 0, ver, 1)) { "eglInitialize" }
-        val attrs = intArrayOf(EGL14.EGL_RED_SIZE, 8, EGL14.EGL_GREEN_SIZE, 8, EGL14.EGL_BLUE_SIZE, 8,
-            EGL14.EGL_RENDERABLE_TYPE, EGLExt.EGL_OPENGL_ES3_BIT_KHR, EGL14.EGL_SURFACE_TYPE, EGL14.EGL_WINDOW_BIT or EGL14.EGL_PBUFFER_BIT,
-            EGL14.EGL_NONE)
-        val configs = arrayOfNulls<EGLConfig>(1)
-        val n = IntArray(1)
-        check(EGL14.eglChooseConfig(display, attrs, 0, configs, 0, 1, n, 0) && n[0] > 0) { "eglChooseConfig" }
-        config = configs[0]
-        context = EGL14.eglCreateContext(display, config, EGL14.EGL_NO_CONTEXT, intArrayOf(EGL14.EGL_CONTEXT_CLIENT_VERSION, 3, EGL14.EGL_NONE), 0)
-        check(context != EGL14.EGL_NO_CONTEXT) { "eglCreateContext" }
-        pbuffer = EGL14.eglCreatePbufferSurface(display, config, intArrayOf(EGL14.EGL_WIDTH, 1, EGL14.EGL_HEIGHT, 1, EGL14.EGL_NONE), 0)
-        check(EGL14.eglMakeCurrent(display, pbuffer, pbuffer, context)) { "eglMakeCurrent" }
-
-        copyProg = program(VERTEX, COPY)
-        easuProg = program(VERTEX, EASU)
-        rcasProg = program(VERTEX, RCAS)
-
-        val t = IntArray(1)
-        GLES30.glGenTextures(1, t, 0); oesTex = t[0]
-        GLES30.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, oesTex)
-        GLES30.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
-        GLES30.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
-        GLES30.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
-        GLES30.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
-        val (ct, cf) = target(videoWidth, videoHeight); copyTex = ct; copyFbo = cf
-
-        texture = SurfaceTexture(oesTex).apply {
-            setDefaultBufferSize(videoWidth, videoHeight)
-            setOnFrameAvailableListener({ draw() }, handler)
+        if (copyW != inW || copyH != inH) {
+            free(copyTex, copyFbo)
+            val (t, f) = target(inW, inH); copyTex = t; copyFbo = f; copyW = inW; copyH = inH
         }
-        inputSurface = Surface(texture)
-        Log.i(TAG, "ready: ${videoWidth}x$videoHeight, sharpness $sharp, GL ${GLES30.glGetString(GLES30.GL_RENDERER)}")
-    }
-
-    /** Draw to this screen surface from now on (blocks until it's in use). */
-    fun attachOutput(surface: Surface) = onGl {
-        destroyWindow()
-        window = EGL14.eglCreateWindowSurface(display, config, surface, intArrayOf(EGL14.EGL_NONE), 0)
-        if (window == EGL14.EGL_NO_SURFACE) Log.w(TAG, "eglCreateWindowSurface failed: ${EGL14.eglGetError()}")
-    }
-
-    /** Stop drawing to the screen surface before it goes away (blocks); frames are dropped until [attachOutput]. */
-    fun detachOutput() = onGl { destroyWindow() }
-
-    private fun destroyWindow() {
-        if (window != EGL14.EGL_NO_SURFACE) {
-            EGL14.eglMakeCurrent(display, pbuffer, pbuffer, context)
-            EGL14.eglDestroySurface(display, window)
-            window = EGL14.EGL_NO_SURFACE
-        }
-    }
-
-    private fun draw() {
-        if (released) return
-        if (window == EGL14.EGL_NO_SURFACE) {
-            // nowhere to show it: take the frame anyway so the decoder doesn't stall
-            EGL14.eglMakeCurrent(display, pbuffer, pbuffer, context)
-            texture.updateTexImage()
-            return
-        }
-        if (!EGL14.eglMakeCurrent(display, window, window, context)) { Log.w(TAG, "eglMakeCurrent: ${EGL14.eglGetError()}"); return }
-        texture.updateTexImage()
-        texture.getTransformMatrix(stMatrix)
-        val q = IntArray(1)
-        EGL14.eglQuerySurface(display, window, EGL14.EGL_WIDTH, q, 0); outW = q[0]
-        EGL14.eglQuerySurface(display, window, EGL14.EGL_HEIGHT, q, 0); outH = q[0]
-        if (outW <= 0 || outH <= 0) return
         if (easuW != outW || easuH != outH) {
-            if (easuTex != 0) { GLES30.glDeleteTextures(1, intArrayOf(easuTex), 0); GLES30.glDeleteFramebuffers(1, intArrayOf(easuFbo), 0) }
-            val (et, ef) = target(outW, outH); easuTex = et; easuFbo = ef; easuW = outW; easuH = outH
-            Log.i(TAG, "output ${outW}x$outH (from ${videoWidth}x$videoHeight)")
+            free(easuTex, easuFbo)
+            val (t, f) = target(outW, outH); easuTex = t; easuFbo = f; easuW = outW; easuH = outH
+            Log.i(TAG, "output ${outW}x$outH (from ${inW}x$inH)")
         }
-
-        // 1. the decoder's frame into a plain texture at the stream's size
-        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, copyFbo)
-        GLES30.glViewport(0, 0, videoWidth, videoHeight)
-        GLES30.glUseProgram(copyProg)
+        GLES30.glBindVertexArray(vao[0])
+        GLES30.glDisable(GLES30.GL_BLEND)
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
+
+        // 1. the frame into a plain texture at its own size
+        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, copyFbo)
+        GLES30.glViewport(0, 0, inW, inH)
+        GLES30.glUseProgram(copyProg)
         GLES30.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, oesTex)
         GLES30.glUniform1i(GLES30.glGetUniformLocation(copyProg, "uTex"), 0)
-        GLES30.glUniformMatrix4fv(GLES30.glGetUniformLocation(copyProg, "uSt"), 1, false, stMatrix, 0)
+        GLES30.glUniformMatrix4fv(GLES30.glGetUniformLocation(copyProg, "uSt"), 1, false, texMatrix, 0)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
 
-        // 2. EASU up to the screen surface's size (constants as FsrEasuCon, kept as floats)
+        // 2. EASU up to the output size (constants as FsrEasuCon, kept as floats)
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, easuFbo)
         GLES30.glViewport(0, 0, outW, outH)
         GLES30.glUseProgram(easuProg)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, copyTex)
         GLES30.glUniform1i(GLES30.glGetUniformLocation(easuProg, "uTex"), 0)
-        val iw = videoWidth.toFloat(); val ih = videoHeight.toFloat()
+        val iw = inW.toFloat(); val ih = inH.toFloat()
         GLES30.glUniform4f(GLES30.glGetUniformLocation(easuProg, "uCon0"), iw / outW, ih / outH, 0.5f * iw / outW - 0.5f, 0.5f * ih / outH - 0.5f)
         GLES30.glUniform4f(GLES30.glGetUniformLocation(easuProg, "uCon1"), 1f / iw, 1f / ih, 1f / iw, -1f / ih)
         GLES30.glUniform4f(GLES30.glGetUniformLocation(easuProg, "uCon2"), -1f / iw, 2f / ih, 1f / iw, 2f / ih)
         GLES30.glUniform4f(GLES30.glGetUniformLocation(easuProg, "uCon3"), 0f, 4f / ih, 0f, 0f)
-        GLES30.glUniform2i(GLES30.glGetUniformLocation(easuProg, "uInSize"), videoWidth, videoHeight)
+        GLES30.glUniform2i(GLES30.glGetUniformLocation(easuProg, "uInSize"), inW, inH)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
 
-        // 3. RCAS sharpening, to the screen
-        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
-        GLES30.glViewport(0, 0, outW, outH)
+        // 3. RCAS sharpening into the target
+        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, targetFb)
+        GLES30.glViewport(vx, vy, outW, outH)
         GLES30.glUseProgram(rcasProg)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, easuTex)
         GLES30.glUniform1i(GLES30.glGetUniformLocation(rcasProg, "uTex"), 0)
         GLES30.glUniform1f(GLES30.glGetUniformLocation(rcasProg, "uSharp"), sharp)
         GLES30.glUniform2i(GLES30.glGetUniformLocation(rcasProg, "uSize"), outW, outH)
+        GLES30.glUniform2i(GLES30.glGetUniformLocation(rcasProg, "uOrigin"), vx, vy)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
-
-        // the decoder's presentation time: frame pacing keeps working
-        EGLExt.eglPresentationTimeANDROID(display, window, texture.timestamp)
-        if (!EGL14.eglSwapBuffers(display, window)) Log.w(TAG, "eglSwapBuffers: ${EGL14.eglGetError()}")
-        frames++
+        GLES30.glBindVertexArray(0)
+        GLES30.glUseProgram(0)
     }
 
-    /** End it (blocks briefly). Call after the decoder has let go of [inputSurface]. */
+    /** Frees the GL objects; call on the same GL context. */
     fun release() {
-        if (released) return
-        released = true
-        onGl {
-            destroyWindow()
-            if (this::inputSurface.isInitialized) inputSurface.release()
-            if (this::texture.isInitialized) texture.release()
-            if (display != EGL14.EGL_NO_DISPLAY) {
-                EGL14.eglMakeCurrent(display, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
-                if (pbuffer != EGL14.EGL_NO_SURFACE) EGL14.eglDestroySurface(display, pbuffer)
-                if (context != EGL14.EGL_NO_CONTEXT) EGL14.eglDestroyContext(display, context)
-                EGL14.eglTerminate(display)
-            }
-            display = EGL14.EGL_NO_DISPLAY
-        }
-        thread.quitSafely()
+        free(copyTex, copyFbo); free(easuTex, easuFbo)
+        copyTex = 0; easuTex = 0; copyW = 0; easuW = 0
+        if (copyProg != 0) { GLES30.glDeleteProgram(copyProg); GLES30.glDeleteProgram(easuProg); GLES30.glDeleteProgram(rcasProg); copyProg = 0 }
+        if (vao[0] != 0) { GLES30.glDeleteVertexArrays(1, vao, 0); vao[0] = 0 }
     }
 
-    private fun onGl(block: () -> Unit) {
-        if (Thread.currentThread() === thread) { block(); return }
-        val done = CountDownLatch(1)
-        if (!handler.post { try { block() } finally { done.countDown() } }) return
-        done.await(2, TimeUnit.SECONDS)
+    private fun free(tex: Int, fbo: Int) {
+        if (tex != 0) GLES30.glDeleteTextures(1, intArrayOf(tex), 0)
+        if (fbo != 0) GLES30.glDeleteFramebuffers(1, intArrayOf(fbo), 0)
     }
 
     private fun target(w: Int, h: Int): Pair<Int, Int> {
@@ -250,15 +147,6 @@ class FsrRenderer(private val videoWidth: Int, private val videoHeight: Int, sha
 
     companion object {
         private const val TAG = "MoonCast-FSR"
-
-        /** Settings: Super resolution (off / fsr1) and its Sharpening (0..100). */
-        const val PREF = "mc_super_resolution"
-        const val SHARPNESS_PREF = "mc_fsr_sharpness"
-        const val DEFAULT_SHARPNESS = 60
-
-        /** Worth it only when the stream is clearly smaller than the screen surface. */
-        fun worthIt(videoHeight: Int, outHeight: Int) = outHeight > videoHeight * 1.1
-
         // a full-screen triangle; no vertex buffers
         private const val VERTEX = """#version 300 es
 out vec2 vUv;
@@ -398,9 +286,10 @@ uniform highp sampler2D uTex;
 uniform float uSharp;
 uniform ivec2 uSize;
 out vec4 o;
+uniform ivec2 uOrigin;
 vec3 texel(ivec2 p) { return texelFetch(uTex, clamp(p, ivec2(0), uSize - 1), 0).rgb; }
 void main() {
-    ivec2 sp = ivec2(gl_FragCoord.xy);
+    ivec2 sp = ivec2(gl_FragCoord.xy) - uOrigin;
     vec3 b = texel(sp + ivec2(0, -1));
     vec3 d = texel(sp + ivec2(-1, 0));
     vec3 e = texel(sp);
@@ -414,5 +303,209 @@ void main() {
     float lobe = max(-(0.25 - 1.0 / 16.0), min(max(lobeRGB.r, max(lobeRGB.g, lobeRGB.b)), 0.0)) * uSharp;
     o = vec4((lobe * (b + d + h + f) + e) / (4.0 * lobe + 1.0), 1.0);
 }"""
+    }
+}
+
+/**
+ * Super resolution for a decoder that renders into a Surface (PS5 via chiaki, PC via MediaCodec): the decoder renders
+ * into [inputSurface] (a SurfaceTexture) and each frame is drawn to the screen surface through [FsrPasses], on our own
+ * GL thread. The frame keeps the decoder's presentation time, so frame pacing still applies. The screen surface can
+ * come and go (a foldable's fold) with [attachOutput]/[detachOutput] while the decoder keeps its own surface.
+ */
+class FsrRenderer(private val videoWidth: Int, private val videoHeight: Int, sharpness: Float) {
+    private val thread = HandlerThread("fsr-gl").apply { start() }
+    private val handler = Handler(thread.looper)
+    private var display: EGLDisplay = EGL14.EGL_NO_DISPLAY
+    private var context: EGLContext = EGL14.EGL_NO_CONTEXT
+    private var config: EGLConfig? = null
+    private var pbuffer: EGLSurface = EGL14.EGL_NO_SURFACE
+    private var window: EGLSurface = EGL14.EGL_NO_SURFACE
+    private var oesTex = 0
+    private val passes = FsrPasses(sharpness)
+    private lateinit var texture: SurfaceTexture
+    private val stMatrix = FloatArray(16)
+    @Volatile private var released = false
+    var frames = 0L
+        private set
+
+    /** The surface the decoder renders into. */
+    lateinit var inputSurface: Surface
+        private set
+
+    init {
+        val ready = CountDownLatch(1)
+        var error: Throwable? = null
+        handler.post {
+            try { setUp() } catch (t: Throwable) { error = t }
+            ready.countDown()
+        }
+        ready.await(5, TimeUnit.SECONDS)
+        error?.let { release(); throw RuntimeException("FSR setup failed: ${it.message}", it) }
+        if (!this::inputSurface.isInitialized) { release(); throw RuntimeException("FSR setup timed out") }
+    }
+
+    private fun setUp() {
+        display = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
+        val ver = IntArray(2)
+        check(EGL14.eglInitialize(display, ver, 0, ver, 1)) { "eglInitialize" }
+        val attrs = intArrayOf(EGL14.EGL_RED_SIZE, 8, EGL14.EGL_GREEN_SIZE, 8, EGL14.EGL_BLUE_SIZE, 8,
+            EGL14.EGL_RENDERABLE_TYPE, EGLExt.EGL_OPENGL_ES3_BIT_KHR, EGL14.EGL_SURFACE_TYPE, EGL14.EGL_WINDOW_BIT or EGL14.EGL_PBUFFER_BIT,
+            EGL14.EGL_NONE)
+        val configs = arrayOfNulls<EGLConfig>(1)
+        val n = IntArray(1)
+        check(EGL14.eglChooseConfig(display, attrs, 0, configs, 0, 1, n, 0) && n[0] > 0) { "eglChooseConfig" }
+        config = configs[0]
+        context = EGL14.eglCreateContext(display, config, EGL14.EGL_NO_CONTEXT, intArrayOf(EGL14.EGL_CONTEXT_CLIENT_VERSION, 3, EGL14.EGL_NONE), 0)
+        check(context != EGL14.EGL_NO_CONTEXT) { "eglCreateContext" }
+        pbuffer = EGL14.eglCreatePbufferSurface(display, config, intArrayOf(EGL14.EGL_WIDTH, 1, EGL14.EGL_HEIGHT, 1, EGL14.EGL_NONE), 0)
+        check(EGL14.eglMakeCurrent(display, pbuffer, pbuffer, context)) { "eglMakeCurrent" }
+        val t = IntArray(1)
+        GLES30.glGenTextures(1, t, 0); oesTex = t[0]
+        GLES30.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, oesTex)
+        GLES30.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
+        GLES30.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
+        GLES30.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
+        GLES30.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
+        // compile the shaders now: a GPU that can't run them fails here, and the caller shows the stream directly
+        passes.draw(oesTex, IDENTITY, 2, 2, 0, 0, 0, 2, 2)
+        texture = SurfaceTexture(oesTex).apply {
+            setDefaultBufferSize(videoWidth, videoHeight)
+            setOnFrameAvailableListener({ draw() }, handler)
+        }
+        inputSurface = Surface(texture)
+        Log.i(TAG, "ready: ${videoWidth}x$videoHeight, GL ${GLES30.glGetString(GLES30.GL_RENDERER)}")
+    }
+
+    /** Draw to this screen surface from now on (blocks until it's in use). */
+    fun attachOutput(surface: Surface) = onGl {
+        destroyWindow()
+        window = EGL14.eglCreateWindowSurface(display, config, surface, intArrayOf(EGL14.EGL_NONE), 0)
+        if (window == EGL14.EGL_NO_SURFACE) Log.w(TAG, "eglCreateWindowSurface failed: ${EGL14.eglGetError()}")
+    }
+
+    /** Stop drawing to the screen surface before it goes away (blocks); frames are dropped until [attachOutput]. */
+    fun detachOutput() = onGl { destroyWindow() }
+
+    private fun destroyWindow() {
+        if (window != EGL14.EGL_NO_SURFACE) {
+            EGL14.eglMakeCurrent(display, pbuffer, pbuffer, context)
+            EGL14.eglDestroySurface(display, window)
+            window = EGL14.EGL_NO_SURFACE
+        }
+    }
+
+    private fun draw() {
+        if (released) return
+        if (window == EGL14.EGL_NO_SURFACE) {
+            // nowhere to show it: take the frame anyway so the decoder doesn't stall
+            EGL14.eglMakeCurrent(display, pbuffer, pbuffer, context)
+            texture.updateTexImage()
+            return
+        }
+        if (!EGL14.eglMakeCurrent(display, window, window, context)) { Log.w(TAG, "eglMakeCurrent: ${EGL14.eglGetError()}"); return }
+        texture.updateTexImage()
+        texture.getTransformMatrix(stMatrix)
+        val q = IntArray(1)
+        EGL14.eglQuerySurface(display, window, EGL14.EGL_WIDTH, q, 0); val outW = q[0]
+        EGL14.eglQuerySurface(display, window, EGL14.EGL_HEIGHT, q, 0); val outH = q[0]
+        passes.draw(oesTex, stMatrix, videoWidth, videoHeight, 0, 0, 0, outW, outH)
+        // the decoder's presentation time: frame pacing keeps working
+        EGLExt.eglPresentationTimeANDROID(display, window, texture.timestamp)
+        if (!EGL14.eglSwapBuffers(display, window)) Log.w(TAG, "eglSwapBuffers: ${EGL14.eglGetError()}")
+        frames++
+    }
+
+    /** End it (blocks briefly). Call after the decoder has let go of [inputSurface]. */
+    fun release() {
+        if (released) return
+        released = true
+        onGl {
+            destroyWindow()
+            if (display != EGL14.EGL_NO_DISPLAY && context != EGL14.EGL_NO_CONTEXT) {
+                EGL14.eglMakeCurrent(display, pbuffer, pbuffer, context)
+                passes.release()
+            }
+            if (this::inputSurface.isInitialized) inputSurface.release()
+            if (this::texture.isInitialized) texture.release()
+            if (display != EGL14.EGL_NO_DISPLAY) {
+                EGL14.eglMakeCurrent(display, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
+                if (pbuffer != EGL14.EGL_NO_SURFACE) EGL14.eglDestroySurface(display, pbuffer)
+                if (context != EGL14.EGL_NO_CONTEXT) EGL14.eglDestroyContext(display, context)
+                EGL14.eglTerminate(display)
+            }
+            display = EGL14.EGL_NO_DISPLAY
+        }
+        thread.quitSafely()
+    }
+
+    private fun onGl(block: () -> Unit) {
+        if (Thread.currentThread() === thread) { block(); return }
+        val done = CountDownLatch(1)
+        if (!handler.post { try { block() } finally { done.countDown() } }) return
+        done.await(2, TimeUnit.SECONDS)
+    }
+
+    companion object {
+        private const val TAG = "MoonCast-FSR"
+
+        /** Settings: Super resolution (off / fsr1) and its Sharpening (0..100). */
+        const val PREF = "mc_super_resolution"
+        const val SHARPNESS_PREF = "mc_fsr_sharpness"
+        const val DEFAULT_SHARPNESS = 60
+
+        private val IDENTITY = floatArrayOf(1f, 0f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 0f, 1f)
+
+        /** Worth it only when the stream is clearly smaller than the screen surface. */
+        fun worthIt(videoHeight: Int, outHeight: Int) = outHeight > videoHeight * 1.1
+
+        /** Settings, Picture, Super resolution is FSR 1.0. */
+        fun enabled(prefs: android.content.SharedPreferences) = prefs.getString(PREF, "off") == "fsr1"
+
+        /** Settings, Picture, Sharpening as 0..1. */
+        fun sharpness(prefs: android.content.SharedPreferences) = prefs.getInt(SHARPNESS_PREF, DEFAULT_SHARPNESS) / 100f
+    }
+}
+
+/**
+ * Super resolution for Xbox: WebRTC's SurfaceViewRenderer draws each frame through this GlDrawer, on its own GL thread.
+ * Hardware-decoded frames (OES) take the FSR passes when they're clearly smaller than the view; everything else, and
+ * any GPU without OpenGL ES 3, goes to WebRTC's own drawer.
+ */
+class FsrGlDrawer(sharpness: Float) : org.webrtc.RendererCommon.GlDrawer {
+    private val plain = org.webrtc.GlRectDrawer()
+    private val passes = FsrPasses(sharpness)
+    private var es3: Boolean? = null
+    private var logged = false
+
+    override fun drawOes(oesTextureId: Int, texMatrix: FloatArray, frameWidth: Int, frameHeight: Int,
+                         viewportX: Int, viewportY: Int, viewportWidth: Int, viewportHeight: Int) {
+        if (es3 == null) {
+            val v = GLES30.glGetString(GLES30.GL_VERSION) ?: ""
+            es3 = Regex("OpenGL ES (\\d+)").find(v)?.groupValues?.get(1)?.toIntOrNull()?.let { it >= 3 } ?: false
+            Log.i("MoonCast-FSR", "Xbox drawer: $v -> ${if (es3 == true) "FSR" else "plain"}")
+        }
+        if (es3 == true && FsrRenderer.worthIt(frameHeight, viewportHeight)) {
+            try {
+                if (!logged) { Log.i("MoonCast-FSR", "Xbox: ${frameWidth}x$frameHeight to ${viewportWidth}x$viewportHeight"); logged = true }
+                passes.draw(oesTextureId, texMatrix, frameWidth, frameHeight, 0, viewportX, viewportY, viewportWidth, viewportHeight)
+                return
+            } catch (e: RuntimeException) {
+                Log.w("MoonCast-FSR", "Xbox FSR failed, drawing plain: $e"); es3 = false
+            }
+        }
+        plain.drawOes(oesTextureId, texMatrix, frameWidth, frameHeight, viewportX, viewportY, viewportWidth, viewportHeight)
+    }
+
+    override fun drawRgb(textureId: Int, texMatrix: FloatArray, frameWidth: Int, frameHeight: Int,
+                         viewportX: Int, viewportY: Int, viewportWidth: Int, viewportHeight: Int) =
+        plain.drawRgb(textureId, texMatrix, frameWidth, frameHeight, viewportX, viewportY, viewportWidth, viewportHeight)
+
+    override fun drawYuv(yuvTextures: IntArray, texMatrix: FloatArray, frameWidth: Int, frameHeight: Int,
+                         viewportX: Int, viewportY: Int, viewportWidth: Int, viewportHeight: Int) =
+        plain.drawYuv(yuvTextures, texMatrix, frameWidth, frameHeight, viewportX, viewportY, viewportWidth, viewportHeight)
+
+    override fun release() {
+        plain.release()
+        if (es3 == true) try { passes.release() } catch (e: RuntimeException) { }
     }
 }

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0-test235 (2026-10-21)
+- Super resolution now works on PC and Xbox streams too, not only PS5. The FSR passes are shared (`FsrPasses`), used by:
+  - PC: Moonlight's decoder renders into FSR's surface. FSR stays off with HDR, since its passes are 8-bit. The screen surface keeps the screen's size instead of the stream's, so FSR has room to upscale into; with Stretch, the picture is stretched by FSR.
+  - Xbox: WebRTC's renderer draws each frame through FSR's drawer (`FsrGlDrawer`), with WebRTC's hardware scaler off so the surface keeps the view's size. Frames that aren't hardware-decoded, and GPUs without OpenGL ES 3, are drawn by WebRTC's own drawer, as before.
+  - PS5: as in test234.
+- In all three, FSR only takes effect when the stream is clearly smaller than the screen; otherwise the picture shows as before.
+
 ## 1.0-test234 (2026-10-21)
 - Super resolution (Settings, Picture, both apps): AMD FidelityFX Super Resolution 1.0, for the PS5 first (mockups in docs/mockups/fsr). With it on, and the stream clearly smaller than the screen (a PS5's 1080p or 720p on the Fold's 2448 × 1696, say), each frame takes three GPU passes before it shows:
   - a copy of the decoder's frame at the stream's size;

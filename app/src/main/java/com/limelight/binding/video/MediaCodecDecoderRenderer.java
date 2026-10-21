@@ -273,6 +273,13 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         this.renderTarget = renderTarget;
     }
 
+    // MoonCast: Super resolution. The decoder renders into FSR's surface instead of the screen's
+    private android.view.Surface surfaceOverride;
+
+    public void setSurfaceOverride(android.view.Surface surface) {
+        this.surfaceOverride = surface;
+    }
+
     public MediaCodecDecoderRenderer(Activity activity, PreferenceConfiguration prefs,
                                      CrashListener crashListener, int consecutiveCrashCount,
                                      boolean meteredData, boolean requestedHdr,
@@ -516,7 +523,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
         LimeLog.info("Configuring with format: "+format);
 
-        videoDecoder.configure(format, renderTarget.getSurface(), null, 0);
+        videoDecoder.configure(format, surfaceOverride != null ? surfaceOverride : renderTarget.getSurface(), null, 0);
 
         configuredFormat = format;
 
