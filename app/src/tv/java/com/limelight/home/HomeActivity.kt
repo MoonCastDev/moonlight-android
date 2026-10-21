@@ -949,7 +949,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                             else android.graphics.drawable.ColorDrawable(0))
                 }
                 tv.focusableView(this)
-                setOnClickListener { settingsGroup = k; render(force = true); firstFocusable(content.findViewWithTag<View>("settings:list") ?: content)?.requestFocus() }
+                setOnClickListener { settingsGroup = k; licencesOpen = false; render(force = true); firstFocusable(content.findViewWithTag<View>("settings:list") ?: content)?.requestFocus() }
             }, tv.lp(-1, 76).apply { if (i == groups.size - 1) topMargin = tv.px(24) })
         }
         row.addView(nav, tv.lp(440, -2).apply { rightMargin = tv.px(40) })
@@ -1130,9 +1130,15 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                 action(list, "set:lang", "Language while playing", "For messages during a game and errors. These menus stay in English",
                         if (cur == 0) "Same as the TV" else names[cur]) { pickLanguage(langs, names, cur) }
             }
-            "about" -> {
+            "about" -> if (licencesOpen) licences(list) else {
                 val ver = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (e: Exception) { "" }
                 info(list, "MoonCast TV", ver ?: "")
+                action(list, "set:licences", "Open-source licences",
+                        "MoonCast is free software, built on Moonlight, chiaki-ng and about twenty more open-source projects", "›") {
+                    licencesOpen = true; render(force = true)
+                    firstFocusable(content.findViewWithTag<View>("settings:list") ?: content)?.requestFocus()
+                }
+                info(list, "Source code", "github.com/MoonCastDev · ${Licences.SOURCE_LICENCE}")
                 info(list, "Phones send games here", "Port ${PhoneLink.PORT}")
                 action(list, "set:add", "Add a PC by its address", "For a PC this TV doesn't find on its own", null) { addPcByAddress() }
                 action(list, "set:all", "All settings", "Every option, including the rare ones", null) {
@@ -1303,6 +1309,23 @@ class HomeActivity : Activity(), PhoneLink.Listener {
     // ---------------------------------------------------------------- actions
 
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_LONG).show()
+
+    /** About, Open-source licences: each project with its licence; pressing one shows the full text. Back returns to About. */
+    private var licencesOpen = false
+    private fun licences(list: LinearLayout) {
+        action(list, "lic:back", "‹ About and help", "Back to About", null) {
+            licencesOpen = false; render(force = true)
+            firstFocusable(content.findViewWithTag<View>("settings:list") ?: content)?.requestFocus()
+        }
+        var group = ""
+        Licences.parts.forEach { p ->
+            if (p.group != group) {
+                group = p.group
+                list.addView(tv.text(group.uppercase(), 17, tv.p.dust, tv.ui(800)).apply { setPadding(tv.px(24), tv.px(22), 0, tv.px(6)) })
+            }
+            action(list, "lic:${p.name}", p.name, p.what, p.licence) { Licences.open(this, p) }
+        }
+    }
 
     private fun start(pc: ComputerDetails, app: NvApp) {
         val b = binder ?: return toast(getString(R.string.error_manager_not_running))
@@ -2020,6 +2043,10 @@ class HomeActivity : Activity(), PhoneLink.Listener {
     override fun onBackPressed() {
         when {
             overlayKind != null -> hideOverlay()
+            licencesOpen && tab == Tab.SETTINGS -> {
+                FeelSounds.play(this, FeelSounds.Cue.BACK); licencesOpen = false; render(force = true)
+                content.findViewWithTag<View>("set:licences")?.requestFocus()
+            }
             detail != null -> { FeelSounds.play(this, FeelSounds.Cue.BACK); val d = detail; detail = null; render(force = true); content.findViewWithTag<View>(d)?.requestFocus() }
             tab != Tab.HOME -> { FeelSounds.play(this, FeelSounds.Cue.BACK); go(Tab.HOME) }
             else -> { FeelSounds.play(this, FeelSounds.Cue.BACK); moveTaskToBack(true) }   // keep listening for the phone

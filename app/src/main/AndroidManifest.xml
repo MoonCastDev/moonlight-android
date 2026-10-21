@@ -202,6 +202,11 @@
             android:launchMode="singleTop"
             android:screenOrientation="sensorLandscape"
             android:configChanges="mcc|mnc|touchscreen|keyboard|keyboardHidden|navigation|screenLayout|fontScale|uiMode|orientation|screenSize|smallestScreenSize|layoutDirection" />
+        <!-- About, Open-source licences: one licence's full text (both apps) -->
+        <activity
+            android:name=".home.LicenceActivity"
+            android:exported="false"
+            android:theme="@style/StreamTheme" />
     </application>
 
 </manifest>

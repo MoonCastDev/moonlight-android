@@ -1,0 +1,48 @@
+MoonCast
+Copyright (C) MoonCast contributors
+
+MoonCast is free software: you can redistribute it and/or modify it under the terms of the GNU General Public
+License, version 3 (LICENSE.txt). The parts that come from chiaki-ng (PS5) and follow XStreaming (Xbox) are
+under the GNU Affero General Public License, version 3. MoonCast is based on Moonlight for Android.
+
+The source code: https://github.com/MoonCastDev (the app) and https://github.com/MoonCastDev/chiaki-ng-mooncast
+(chiaki-ng with MoonCast's changes, built into the app from third-party/chiaki-ng).
+
+MoonCast includes the open-source projects below. Each licence's full text is in
+app/src/main/assets/licences/ and in the app, under Settings, About, Open-source licences.
+
+
+The app
+-------
+Moonlight for Android (GPL-3.0): The app MoonCast grew from: PC streaming, the on-screen controller. https://github.com/moonlight-stream/moonlight-android  [licences/gpl-3.0.txt]
+moonlight-common-c (GPL-3.0): The PC streaming protocol. https://github.com/moonlight-stream/moonlight-common-c  [licences/gpl-3.0.txt]
+ENet (MIT): Inside moonlight-common-c: the network link. https://github.com/lsalzman/enet  [licences/enet.txt]
+nanors (MIT): Inside moonlight-common-c: repairing lost video. https://github.com/sleepybishop/nanors  [licences/nanors.txt]
+
+PS5
+---
+chiaki-ng (AGPL-3.0): PS5 Remote Play, with MoonCast's changes (MoonCastDev/chiaki-ng-mooncast). https://github.com/streetpea/chiaki-ng  [licences/agpl-3.0.txt]
+OpenSSL (OpenSSL): Inside chiaki-ng: encryption. https://www.openssl.org  [licences/openssl.txt]
+curl (curl): Inside chiaki-ng: PSN sign-in and play away from home. https://curl.se  [licences/curl.txt]
+json-c (MIT): Inside chiaki-ng: PSN messages. https://github.com/json-c/json-c  [licences/json-c.txt]
+miniupnpc (BSD-3-Clause): Inside chiaki-ng: router port setup (UPnP). https://github.com/miniupnp/miniupnp  [licences/miniupnpc.txt]
+Jerasure (BSD-3-Clause): Inside chiaki-ng: repairing lost video. https://github.com/streetpea/jerasure  [licences/jerasure.txt]
+GF-Complete (BSD-3-Clause): Inside chiaki-ng: the maths behind the repair. https://github.com/streetpea/gf-complete  [licences/gf-complete.txt]
+nanopb (Zlib): Inside chiaki-ng: messages with the console. https://github.com/nanopb/nanopb  [licences/nanopb.txt]
+Oboe (Apache-2.0): Inside chiaki-ng: sound. https://github.com/google/oboe  [licences/apache-2.0.txt]
+LLVM libc++ (Apache-2.0 with LLVM exception): The C++ runtime chiaki-ng runs on. https://libcxx.llvm.org  [licences/libcxx.txt]
+
+Xbox
+----
+XStreaming (AGPL-3.0): The Xbox Remote Play protocol MoonCast follows. https://github.com/Geocld/XStreaming  [licences/agpl-3.0.txt]
+WebRTC (BSD-3-Clause): Xbox video and sound. https://webrtc.org  [licences/webrtc.txt]
+
+More
+----
+Bouncy Castle (MIT): Pairing with a PC: its certificates. https://www.bouncycastle.org  [licences/bouncycastle.txt]
+OkHttp (Apache-2.0): Talking to PCs and Xbox and PlayStation services. https://square.github.io/okhttp  [licences/apache-2.0.txt]
+JmDNS (Apache-2.0): Finding PCs on the network. https://github.com/jmdns/jmdns  [licences/apache-2.0.txt]
+JCodec (BSD-2-Clause): Reading video stream settings. https://github.com/jcodec/jcodec  [licences/jcodec.txt]
+Shield Controller Extensions (MIT): Rumble and battery on NVIDIA Shield controllers. https://github.com/cgutman/ShieldControllerExtensions  [licences/shield-controller-extensions.txt]
+Figtree (OFL-1.1): The menus' font. https://github.com/erikdkennedy/figtree  [licences/figtree.txt]
+Unbounded (OFL-1.1): The headings' font. https://github.com/googlefonts/unbounded  [licences/unbounded.txt]

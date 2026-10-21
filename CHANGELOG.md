@@ -1,5 +1,11 @@
 # Changelog
 
+## 12.2-test227 (2026-10-21)
+- About, Open-source licences (both apps; mockups in docs/mockups/about): the 23 open-source projects MoonCast is built on, grouped The app, PS5, Xbox and More, each with what it does and its licence. Pressing one shows its full licence text; Back returns to About.
+- About, Source code: github.com/MoonCastDev, GPL-3.0 with the PS5 and Xbox parts under AGPL-3.0 (on a phone it opens the page).
+- The licence texts ship in the app (assets/licences, 176 KB; the GPL, AGPL and Apache texts once each), and NOTICE in the repo lists the same projects.
+- Xbox: XStreaming, whose protocol the Xbox code follows, is AGPL-3.0 (not MIT, as assumed before), so that part is listed as AGPL.
+
 ## 12.2-test226 (2026-10-21)
 - PS5 on Android 5 (5.0 and 5.1): starting a PS5 stream crashed. Picking the home bitrate asked Android for the active network, which only exists from Android 6, and the error it throws there isn't one the code caught. Below Android 6 it now skips the Ethernet check and goes by Wi-Fi speed.
 - MoonCast TV on Android 5: the service that keeps the TV reachable for the phone crashed as it started (it looked up the notification service the Android 6 way).
