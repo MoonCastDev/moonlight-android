@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0-test243 (2026-10-22)
+- Touch screen (Quick menu, PC), found by Saleh on test242:
+  - The PC's pointer stayed in the picture with touch Off. With Off, MoonCast now moves it to the middle of the right edge, where it's off the screen, when the stream starts and when you switch to Off. (Not a corner: Windows' bottom-right corner is Show desktop.)
+  - New: Settings, Handheld, **Touch screen** (Off, Mouse, Touch, default Off) sets how each PC stream starts. The Quick menu still changes it for the game you're in.
+- Quick menu: with more items than fit (the PC menu now has up to 9), the last ones were out of reach with a controller, so Hibernate PC looked gone. The list now scrolls with the selection, on the handheld and the TV (the TV's list didn't scroll at all).
+
 ## 1.0-test242 (2026-10-22)
 - Hibernate PC worked on Ahmed's PC (test240/241), but MoonCast stayed on the last picture, frozen: a hibernating PC just stops sending video, and Moonlight only notices after a long timeout. After Hibernate PC, MoonCast now watches the video: after 3 seconds without a new frame it checks whether the PC still answers (its http port), and if not it leaves the stream with "<PC> is hibernating". The game isn't quit; it stays as it was in the hibernated PC.
 

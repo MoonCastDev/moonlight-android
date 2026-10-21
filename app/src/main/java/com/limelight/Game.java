@@ -527,8 +527,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         InputManager inputManager = (InputManager) getSystemService(Context.INPUT_SERVICE);
         inputManager.registerInputDeviceListener(keyboardTranslator, null);
 
-        // Touch screen starts Off every stream; the Quick menu switches it to Mouse or Touch for this stream
-        setTouchMode(TOUCH_OFF);
+        // Touch screen starts as Settings, Handheld, Touch screen say (Off unless changed there); the Quick menu
+        // switches it for this stream
+        setTouchMode(defaultTouchMode());
 
         if (prefConfig.onscreenController) {
             // create virtual onscreen controller
@@ -1623,7 +1624,25 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     // where the finger is. A stylus and a real mouse work in every mode.
     private static final int TOUCH_OFF = 0, TOUCH_MOUSE = 1, TOUCH_DIRECT = 2;
     private static final String[] TOUCH_LABELS = {"Off", "Mouse", "Touch"};
+    /** Settings, Handheld, Touch screen: how each stream starts ("off", "mouse" or "touch"). */
+    public static final String TOUCH_DEFAULT_PREF = "mc_touch_default";
     private int touchMode = TOUCH_OFF;
+
+    private int defaultTouchMode() {
+        String v = android.preference.PreferenceManager.getDefaultSharedPreferences(this).getString(TOUCH_DEFAULT_PREF, "off");
+        return "mouse".equals(v) ? TOUCH_MOUSE : "touch".equals(v) ? TOUCH_DIRECT : TOUCH_OFF;
+    }
+
+    /**
+     * Touch screen Off: the PC's pointer is drawn into the picture, so move it to the middle of the right edge, where
+     * the arrow (drawn right and down from its tip) is off the screen. Not a corner: Windows' bottom-right corner is
+     * Show desktop.
+     */
+    private void parkPointer() {
+        if (conn == null || !connected) return;
+        conn.sendMousePosition((short) (REFERENCE_HORIZ_RES - 1), (short) (REFERENCE_VERT_RES / 2),
+                (short) REFERENCE_HORIZ_RES, (short) REFERENCE_VERT_RES);
+    }
 
     private void setTouchMode(int mode) {
         for (TouchContext c : touchContextMap) {
@@ -1635,6 +1654,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                     : new RelativeTouchContext(conn, i, REFERENCE_HORIZ_RES, REFERENCE_VERT_RES, streamView, prefConfig);
         }
         LimeLog.info("Touch screen: " + TOUCH_LABELS[mode]);
+        if (mode == TOUCH_OFF) parkPointer();
     }
 
     // Quick menu, Streaming status: Moonlight's stats corner on or off right away, saved like Settings' "Stats while playing"
@@ -2779,6 +2799,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                 connected = true;
                 connecting = false;
                 updatePipAutoEnter();
+                // Touch screen Off: the PC's pointer out of the way once the picture is up
+                if (touchMode == TOUCH_OFF) new Handler(getMainLooper()).postDelayed(Game.this::parkPointer, 1500);
 
                 // The phone drives this stream as the controller (native receiver flow): feed its pad into our conn.
                 PhoneGamepad.start(conn, null);

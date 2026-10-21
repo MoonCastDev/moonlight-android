@@ -93,8 +93,9 @@ class QuickMenu(private val act: Activity) {
                 list.addView(this, tv.lp(-1, 80))
             }
         }
-        panel.addView(list, tv.lp(-1, -2).apply { topMargin = tv.px(16) })
-        panel.addView(View(act), LinearLayout.LayoutParams(-1, 0, 1f))
+        // the list takes the room between the stats and the hints, and scrolls when the items don't fit
+        val scroll = android.widget.ScrollView(act).apply { isVerticalScrollBarEnabled = false; addView(list) }
+        panel.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = tv.px(16) })
         panel.addView(tv.row().apply {
             addView(tv.hint("A", "Select")); addView(tv.hint("B", "Back to the game"))
         })
@@ -275,6 +276,14 @@ class QuickMenu(private val act: Activity) {
     private fun paint() {
         rows.forEachIndexed { i, v ->
             v.background = if (switchStyle) switchRow(i == sel) else if (i == sel) tv.round(tv.p.raise, 16, Tv.CORONA, 3) else null
+        }
+        // keep the selected row in view: with more items than fit, the last ones were out of reach (test242)
+        val row = rows.getOrNull(sel) ?: return
+        val sc = row.parent?.parent as? android.widget.ScrollView ?: return
+        sc.post {
+            val gap = row.height / 2
+            if (row.top - gap < sc.scrollY) sc.smoothScrollTo(0, maxOf(0, row.top - gap))
+            else if (row.bottom + gap > sc.scrollY + sc.height) sc.smoothScrollTo(0, row.bottom + gap - sc.height)
         }
     }
 
