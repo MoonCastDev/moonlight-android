@@ -1606,7 +1606,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             if (move != null) items.add(move);
             items.add(new com.limelight.home.QuickMenu.Item("←", "Disconnect", "The game keeps running", false, this::finish));
             items.add(new com.limelight.home.QuickMenu.Item("✕", "Quit game", null, true, this::quitOnHostAndFinish));
-            items.add(new com.limelight.home.QuickMenu.Item("Zz", "Hibernate PC", "Windows: runs shutdown /h", true, this::confirmHibernate));
+            if (HIBERNATE_IN_MENU) items.add(new com.limelight.home.QuickMenu.Item("Zz", "Hibernate PC", "Windows: runs shutdown /h", true, this::confirmHibernate));
             quickMenu.show(appName != null ? appName : "Your game",
                     (pcName != null ? "On " + pcName + ". " : "") + com.limelight.home.QuickMenu.COMBO_LABEL + " opens this menu",
                     () -> java.util.Arrays.asList(
@@ -1669,6 +1669,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     private void openTaskManager() {
         sendKeys(new short[] {VK_LCONTROL, VK_LSHIFT, VK_ESCAPE});
     }
+
+    /** Hibernate PC is out of the menu for 1.0-beta2: after waking, Steam Big Picture started fresh instead of resuming. */
+    private static final boolean HIBERNATE_IN_MENU = false;
 
     // Quick menu, Hibernate PC: asks first, with Cancel picked, since the game and the stream both stop
     private void confirmHibernate() {

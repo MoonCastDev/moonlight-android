@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.0-beta2 (2026-10-22)
+- Beta 2, built from test243 with Hibernate PC left out of the Quick menu (`HIBERNATE_IN_MENU`): it hibernates the PC, but after waking, Steam Big Picture started fresh instead of resuming. It comes back once that's sorted out.
+
 ## 1.0-test243 (2026-10-22)
 - Touch screen (Quick menu, PC), found by Saleh on test242:
   - The PC's pointer stayed in the picture with touch Off. With Off, MoonCast now moves it to the middle of the right edge, where it's off the screen, when the stream starts and when you switch to Off. (Not a corner: Windows' bottom-right corner is Show desktop.)
