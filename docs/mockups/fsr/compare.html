@@ -1,0 +1,70 @@
+<html><head><style>
+@font-face{font-family:F;src:url(Figtree.ttf);font-weight:100 900}
+body{margin:0;width:1968px;height:1248px;background:#1e2024;font-family:F;color:#fff;overflow:hidden}
+.h{position:absolute;top:28px;left:0;right:0;text-align:center;font-size:40px;font-weight:800}
+.sub{position:absolute;top:84px;left:0;right:0;text-align:center;font-size:24px;color:#B5BAC3}
+.pane{position:absolute;top:150px;width:944px;height:944px;border-radius:14px;overflow:hidden;background:#000}
+.l{left:30px}.r{left:994px}
+.lab{position:absolute;bottom:18px;left:18px;font-size:28px;font-weight:800;background:rgba(0,0,0,.65);padding:8px 16px;border-radius:10px}
+canvas{display:block}
+.foot{position:absolute;bottom:40px;left:0;right:0;text-align:center;font-size:22px;color:#B5BAC3}
+</style></head><body>
+<div class="h">Super resolution: a 720p stream on a 2448 × 1696 screen</div>
+<div class="sub">The same frame, enlarged 3.4×; a close-up of the middle of the picture</div>
+<div class="pane l"><canvas id="a" width="944" height="944"></canvas><div class="lab">Off: plain enlargement</div></div>
+<div class="pane r"><canvas id="b" width="944" height="944"></canvas><div class="lab">FSR 1.0, sharpening 60%</div></div>
+<div class="foot">Illustration: plain enlargement plus FSR's own sharpening pass (RCAS). Real FSR also upscales edges smarter (EASU), so it's crisper still.</div>
+<script>
+// a detailed made-up game frame (no real game), drawn at the stream's low resolution
+const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+<defs><linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2b5ea8"/><stop offset="1" stop-color="#9cc7ef"/></linearGradient>
+<pattern id="brick" width="32" height="16" patternUnits="userSpaceOnUse"><rect width="32" height="16" fill="#b4542e"/><path d="M0 0H32M0 8H32M16 0V8M0 8V16M32 8V16" stroke="#6e2a13" stroke-width="1.4"/></pattern>
+<pattern id="grass" width="6" height="10" patternUnits="userSpaceOnUse"><path d="M1 10L3 0L5 10" fill="#3f9a3a"/></pattern></defs>
+<rect width="1280" height="720" fill="url(#sky)"/>
+<g fill="#fff" opacity=".9"><ellipse cx="220" cy="120" rx="90" ry="28"/><ellipse cx="900" cy="90" rx="120" ry="30"/></g>
+<path d="M0 470 Q200 330 420 430 T860 400 T1280 420 V720 H0Z" fill="#4c8a46"/>
+<path d="M0 520 Q300 420 640 500 T1280 480 V720 H0Z" fill="#3a7537"/>
+<rect y="600" width="1280" height="120" fill="url(#brick)"/>
+<rect y="586" width="1280" height="16" fill="url(#grass)"/>
+<g transform="translate(560,380)"><rect x="0" y="0" width="160" height="40" fill="url(#brick)" stroke="#5a200c" stroke-width="2"/>
+<rect x="190" y="-70" width="40" height="40" fill="#f2b33d" stroke="#7a4a05" stroke-width="2"/><text x="210" y="-41" font-family="Arial" font-weight="900" font-size="28" text-anchor="middle" fill="#7a4a05">?</text></g>
+<g transform="translate(610,470)"><rect x="-14" y="0" width="56" height="16" rx="3" fill="#d42f2f"/><rect x="-6" y="16" width="40" height="40" fill="#f3c9a3"/>
+<circle cx="24" cy="32" r="3" fill="#111"/><rect x="-10" y="56" width="48" height="50" fill="#d42f2f"/>
+<g stroke="#8a1616" stroke-width="1.2">${Array.from({length:9},(_,i)=>`<path d="M${-10+i*6} 56V106"/>`).join('')}</g>
+<rect x="-10" y="106" width="20" height="10" fill="#2f4bd4"/><rect x="18" y="106" width="20" height="10" fill="#2f4bd4"/></g>
+<g font-family="Arial" font-weight="900" fill="#fff" stroke="#000" stroke-width="1.2"><text x="40" y="58" font-size="34">SCORE 012300</text><text x="1240" y="58" font-size="34" text-anchor="end">TIME 247</text></g>
+<g font-family="Arial" font-size="15" fill="#fff"><text x="40" y="84">WORLD 1-2 · COINS ×24 · LIVES 3</text></g>
+<g stroke="#333" stroke-width="1"><path d="M840 470 L1000 330 M850 470 L1010 330 M860 470 L1020 330"/></g>
+<g transform="translate(860,300)">${Array.from({length:6},(_,i)=>`<circle cx="${i*30}" cy="0" r="9" fill="#f7cf3b" stroke="#8a6a00" stroke-width="2"/>`).join('')}</g>
+</svg>`;
+const img=new Image();
+img.onload=()=>{
+  // the stream: 1280x720. The screen shows it 3.4x larger; we look at a 278x278 patch (944/3.4) in the middle
+  const S=944, scale=3.4, patch=S/scale, sx=500, sy=330;
+  const up=document.createElement('canvas'); up.width=S; up.height=S;
+  const u=up.getContext('2d'); u.imageSmoothingEnabled=true; u.imageSmoothingQuality='medium';
+  // the stream really is 1280x720 pixels: draw the frame at that size first, then enlarge those pixels
+  const low=document.createElement('canvas'); low.width=1280; low.height=720;
+  low.getContext('2d').drawImage(img,0,0,1280,720);
+  u.drawImage(low, sx, sy, patch, patch, 0, 0, S, S);
+  document.getElementById('a').getContext('2d').drawImage(up,0,0);
+  // FSR 1.0 RCAS (robust contrast-adaptive sharpening) on the enlarged picture, sharpness 60%
+  const d=u.getImageData(0,0,S,S), src=new Float32Array(d.data.length), out=new Uint8ClampedArray(d.data.length);
+  for(let i=0;i<d.data.length;i++) src[i]=d.data[i]/255;
+  const stops=(1-0.6)*2.0, sharp=Math.pow(2,-stops), LIMIT=0.25-1/16;
+  const px=(x,y,c)=>src[((Math.min(S-1,Math.max(0,y)))*S+Math.min(S-1,Math.max(0,x)))*4+c];
+  for(let y=0;y<S;y++) for(let x=0;x<S;x++){
+    let lobeMax=-1e9; const B=[],D=[],E=[],F=[],Hh=[];
+    for(let c=0;c<3;c++){B[c]=px(x,y-1,c);D[c]=px(x-1,y,c);E[c]=px(x,y,c);F[c]=px(x+1,y,c);Hh[c]=px(x,y+1,c);
+      const mn4=Math.min(B[c],D[c],F[c],Hh[c]), mx4=Math.max(B[c],D[c],F[c],Hh[c]);
+      const hitMin=Math.min(mn4,E[c])/(4*mx4+1e-6), hitMax=(1-Math.max(mx4,E[c]))/(4*mn4-4-1e-6);
+      lobeMax=Math.max(lobeMax,Math.max(-hitMin,hitMax));}
+    const lobe=Math.max(-LIMIT,Math.min(lobeMax,0))*sharp, rcp=1/(4*lobe+1);
+    const o=(y*S+x)*4;
+    for(let c=0;c<3;c++) out[o+c]=255*((lobe*(B[c]+D[c]+Hh[c]+F[c])+E[c])*rcp);
+    out[o+3]=255;}
+  document.getElementById('b').getContext('2d').putImageData(new ImageData(out,S,S),0,0);
+  document.title='done';
+};
+img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
+</script></body></html>
