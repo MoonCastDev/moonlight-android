@@ -55,6 +55,9 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
         /** The connect thread of the newest PS5 screen. A new screen waits for the last one's to end, so two never overlap. */
         @Volatile private var connectThread: Thread? = null
 
+        /** Settings, PlayStation, Decoder: standard, low (default) or ultra. */
+        const val DECODER_PREF = "ps5_decoder_latency"
+
         /** Stop a PSN connect in flight; older libraries without psnCancel just let it time out. */
         private fun cancelPsn() {
             try { com.metallic.chiaki.lib.psnCancel() } catch (e: UnsatisfiedLinkError) { }
@@ -270,6 +273,8 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
         t.start()
     }
 
+    private fun androidx_prefs() = android.preference.PreferenceManager.getDefaultSharedPreferences(this)
+
     /** This screen's connect thread (the newest screen's is [connectThread]). */
     @Volatile private var myConnect: Thread? = null
 
@@ -309,6 +314,10 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
         var attempt = 0
         // remote: a missed PSN start request is only fixed by a fresh attempt. Home network: a console still waking
         // from rest mode refuses the session at once, so keep trying for about a minute.
+        // Settings, PlayStation, Decoder: how hard the device's video decoder is pushed for low latency
+        val latency = when (androidx_prefs().getString(DECODER_PREF, "low")) { "standard" -> 0; "ultra" -> 2; else -> 1 }
+        try { com.metallic.chiaki.lib.decoderLatencyMode(latency) } catch (e: UnsatisfiedLinkError) { }
+        Log.i(TAG, "decoder latency mode $latency")
         var maxAttempts = if (remote) 4 else 20
         while (!closed && attempt < maxAttempts) {
             // A console PSN woke (or one just switched on) may answer at home while we wait on PSN: switch to the home
@@ -749,14 +758,16 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
         if (lastShown >= 0 && v[4] + v[5] > lastShown + lastLost)
             lastLossPct = 100.0 * (v[5] - lastLost) / (v[4] + v[5] - lastShown - lastLost)
         lastShown = v[4]; lastLost = v[5]; lastAt = now
-        Log.d(TAG, "stats mbps=${v[0]} loss=${v[1]} rtt=${v[2]} rtt0=${v[3]} shown=${v[4]} lost=${v[5]}")
+        val decodeMs = if (v.size > 6) v[6] else 0.0
+        Log.d(TAG, "stats mbps=${v[0]} loss=${v[1]} rtt=${v[2]} rtt0=${v[3]} shown=${v[4]} lost=${v[5]} decode=${"%.2f".format(java.util.Locale.US, decodeMs)}ms")
         val loss = maxOf(v[1] * 100.0, lastLossPct)
         val rtt = if (v[3] > 1.0) v[3] else 0.0   // chiaki uses 1 ms when it couldn't measure
         return listOf(
             (if (fps < 0) "…" else "%.0f".format(java.util.Locale.US, minOf(fps, 60.0))) to "Frames per second",
             (if (rtt > 0) "%.0f ms".format(java.util.Locale.US, rtt) else "…") to "Network delay",
             (if (v[0] > 0) "%.1f Mbps".format(java.util.Locale.US, v[0]) else "…") to "Picture quality",
-            "%.1f%%".format(java.util.Locale.US, loss) to "Lost packets")
+            "%.1f%%".format(java.util.Locale.US, loss) to "Lost packets",
+            (if (decodeMs > 0) "%.1f ms".format(java.util.Locale.US, decodeMs) else "…") to "Decode time")
     }
 
     private fun openMenu() {
