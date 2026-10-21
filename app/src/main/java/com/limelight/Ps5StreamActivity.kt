@@ -147,6 +147,15 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
             away && awayQuality == "1080" -> VideoResolutionPreset.RES_1080P
             weak || (!away && prefs.getString("ps5_resolution", "1080") == "720") -> VideoResolutionPreset.RES_720P
             else -> VideoResolutionPreset.RES_1080P
+        }.let { chosen ->
+            // #65: on battery, Settings, Handheld, "On battery, stream at" caps it
+            val cap = com.limelight.home.BatteryCap.height(this)
+            val h = when (chosen) { VideoResolutionPreset.RES_540P -> 540; VideoResolutionPreset.RES_720P -> 720; else -> 1080 }
+            when {
+                cap in 1 until h && cap <= 540 -> VideoResolutionPreset.RES_540P
+                cap in 1 until h -> VideoResolutionPreset.RES_720P
+                else -> chosen
+            }.also { if (it != chosen) Log.i(TAG, "on battery: $chosen capped to $it") }
         }
         val h264 = !ps5 || (if (away) prefs.getString("away_codec", "h265") else prefs.getString("ps5_codec", "h265")) == "h264"
         // Frame rate: the PS5 streams at 30 or 60 fps only; any other rate broke the picture (#39). A Custom value

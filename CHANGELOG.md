@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0-test237 (2026-10-21)
+- Handheld, "On battery, stream at" (Settings, Handheld) now works (#65). It was saved but nothing read it. Unplugged, PC and PS5 streams go no higher than the chosen height (1080p, 720p or 540p); plugged in, the Picture settings apply as before.
+  - PC: the size keeps the stream's shape (Native 2448 × 1696 at 720p becomes 1040 × 720). The fold check compares the screen with the size before the cap, so a capped stream doesn't keep reconnecting at the screen's size.
+  - PS5: the lower of the PS5's own setting and the cap.
+  - Xbox: not affected; its resolution comes from the Xbox service.
+
 ## 1.0-test236 (2026-10-21)
 - Found on the JAL TV (AQUOS, Android 11, MediaTek with a Mali GPU), PS5 over PlayStation Network at 720p:
   - Super resolution didn't start there ("eglChooseConfig"): the GPU has no OpenGL ES 3 setup for both a window and an off-screen surface. FSR now tries several setups, and without an off-screen surface it works surfaceless. Before, it fell back to the plain picture, as designed.
