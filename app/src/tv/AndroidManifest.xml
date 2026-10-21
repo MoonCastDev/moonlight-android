@@ -12,6 +12,7 @@
         <!-- MoonCast TV home (Big Picture style). It also listens for the phone on :8099. -->
         <activity
             android:name=".home.HomeActivity"
+            android:banner="@drawable/atv_banner"
             android:exported="true"
             android:screenOrientation="landscape"
             android:launchMode="singleTask"
