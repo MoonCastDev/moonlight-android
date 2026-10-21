@@ -76,6 +76,9 @@ data class ConnectInfo(
 /** MoonCast: stop the PSN connect in flight (see ChiakiNative.psnCancel). */
 fun psnCancel() = ChiakiNative.psnCancel()
 
+/** MoonCast: set the PS5 decoder's latency mode before a session (see ChiakiNative.decoderLatencyMode). */
+fun decoderLatencyMode(mode: Int) = ChiakiNative.decoderLatencyMode(mode)
+
 private class ChiakiNative
 {
 	data class CreateResult(var errorCode: Int, var ptr: Long)
@@ -100,6 +103,8 @@ private class ChiakiNative
 		@JvmStatic external fun sessionGotoBed(ptr: Long): Int
 		/** MoonCast: stop the PSN connect in flight (a sessionCreate stuck in its hole-punch). Needs a libchiaki-jni.so with psnCancel. */
 		@JvmStatic external fun psnCancel()
+		/** MoonCast: the PS5 decoder's latency mode for the next session: 0 standard, 1 low latency, 2 ultra low latency. */
+		@JvmStatic external fun decoderLatencyMode(mode: Int)
 		@JvmStatic external fun sessionStats(ptr: Long): DoubleArray?
 		@JvmStatic external fun discoveryServiceCreate(result: CreateResult, options: DiscoveryServiceOptions, javaService: DiscoveryService)
 		@JvmStatic external fun discoveryServiceFree(ptr: Long)

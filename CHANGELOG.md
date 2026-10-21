@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0-test232 (2026-10-21)
+- PS5: a decoder setting (Settings, PlayStation, Decoder: Low latency, Ultra low latency, Standard). The PS5 player decodes in chiaki-ng, which set up the device's video decoder with nothing but the format and size. It now gets the same low-latency settings as MoonCast's PC player.
+  - Low latency (the default): Android's standard low-latency mode, real-time priority, MediaTek and Amlogic's low-latency decode, and Qualcomm's low-latency decode.
+  - Ultra low latency: Artemis' presets on top, notably software output fencing on Snapdragon 8 Gen 2 and newer (the Odin 2 Portal's chip), plus the MediaTek and NVIDIA presets.
+  - Standard: as before.
+  - A decoder that refuses any of these settings starts again without them.
+- PS5 Quick menu: a fifth number, Decode time (from a frame reaching the decoder to its picture coming out), so the settings can be compared.
+
 ## 1.0-test231 (2026-10-21)
 - Handheld, Settings, Picture: three settings that were only in About, All settings (Moonlight's screen); MoonCast TV already had them.
   - **Unlock all frame rates** (under Frame rate): adds 144 and 240 to Frame rate, and Custom frame rate goes up to 240. Turning it off brings a rate above 120 back down to 120.

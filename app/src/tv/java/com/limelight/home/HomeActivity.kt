@@ -1067,6 +1067,8 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                 choice(list, "ps5_on_disconnect", "When I disconnect", "What happens to the PS5 after you leave a game",
                         listOf("Ask" to "ask", "Rest mode" to "rest", "Keep it on" to "keep"), "ask")
                 toggle(list, "ps5_swap_cross_circle", "Swap Cross and Circle", "For the Japanese layout", false)
+                choice(list, com.limelight.Ps5StreamActivity.DECODER_PREF, "Decoder", "Low latency shows each frame sooner. Ultra pushes this TV's chip harder. Standard if the picture misbehaves",
+                        listOf("Low latency" to "low", "Ultra low latency" to "ultra", "Standard" to "standard"), "low")
                 val pin = prefs.getString("ps5_login_pin", "") ?: ""
                 action(list, "set:pspin", "Console PIN", "Signs in for you when the PS5 asks for its 4-digit login PIN",
                         if (pin.isEmpty()) "Not set" else "••••") { enterLoginPin() }
