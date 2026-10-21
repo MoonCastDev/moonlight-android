@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0-test229 (2026-10-21)
+- Version: MoonCast's own numbering. The version is 1.0 (code 1000) instead of Moonlight's 12.2 (315); test builds are now 1.0-testN. The code only ever goes up (1.0.1 = 1001, 1.1 = 1100), so each release installs over the one before it.
+- Release signing: release builds are signed with MoonCast's own key, which is never in git. `keystore.properties` sits next to `settings.gradle`, or `MOONCAST_KEYSTORE` names it; without it, release builds come out unsigned, as before. `.gitignore` keeps out `keystore.properties`, `*.jks` and `*.keystore`.
+- `scripts/release.sh`: builds both signed release APKs (`out/MoonCast-<version>.apk`, `out/MoonCastTV-<version>.apk`) and prints their signing certificate.
+- CI: `.github/workflows/build.yml` builds both apps and runs lint from a clean clone on every pull request and every push to master, keeping the APKs and lint reports. While chiaki-ng-mooncast is private, the runner needs a `SUBMODULES_TOKEN` secret to clone it.
+
 ## 12.2-test228 (2026-10-21)
 - PS5: the encryption library inside chiaki-ng is OpenSSL 3.5.9 (the 3.5 long-term line, security fixes until 2030) instead of 1.1.1w, which has had no security fixes since September 2023. It secures the PSN sign-in, playing away from home and the PS5 connection itself.
   - chiaki-ng's own unit tests pass on OpenSSL 3.5 (114 of 114: PSN certificate chains, stream encryption, registration). The console's key exchange isn't among them, so a PS5 session is the real test.

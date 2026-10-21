@@ -11,8 +11,9 @@ android {
         minSdk 21
         targetSdk 36
 
-        versionName "12.2"
-        versionCode = 315
+        // MoonCast's own numbering (Moonlight's was 12.2 / 315). versionCode only ever goes up: 1.0 = 1000, 1.0.1 = 1001, 1.1 = 1100
+        versionName "1.0"
+        versionCode = 1000
 
         // MoonCast TV dev build: arm64 only (the stick + JAL TV are arm64) to keep the native compile within memory,
         // and limit parallel native jobs so Gradle + ndk-build don't OOM the 4 GB builder.
@@ -97,6 +98,23 @@ android {
         }
     }
 
+    // Release signing: MoonCast's own key, never in git. keystore.properties (storeFile, storePassword, keyAlias,
+    // keyPassword) sits next to settings.gradle, or MOONCAST_KEYSTORE names it. Without it, release builds come out
+    // unsigned, as before.
+    def keystoreFile = System.getenv("MOONCAST_KEYSTORE") ? new File(System.getenv("MOONCAST_KEYSTORE")) : rootProject.file("keystore.properties")
+    if (keystoreFile.exists()) {
+        def ks = new Properties()
+        keystoreFile.withInputStream { ks.load(it) }
+        signingConfigs {
+            release {
+                storeFile file(ks.getProperty("storeFile"))
+                storePassword ks.getProperty("storePassword")
+                keyAlias ks.getProperty("keyAlias")
+                keyPassword ks.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         debug {
             applicationIdSuffix ".debug"
@@ -104,6 +122,7 @@ android {
             versionNameSuffix "-" + (System.getenv("BUILD") ?: "dev")
         }
         release {
+            if (keystoreFile.exists()) signingConfig signingConfigs.release
             // To whomever is releasing/using an APK in release mode with
             // Moonlight's official application ID, please stop. I see every
             // single one of your crashes in my Play Console and it makes
