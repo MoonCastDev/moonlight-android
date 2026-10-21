@@ -197,7 +197,7 @@ tasks.register('buildChiaki', Exec) {
         exclude 'android/app/src/main/cpp/oboe/**'
     })
     outputs.files(chiakiLibs)
-    environment 'ANDROID_HOME', android.sdkDirectory.path
+    // the script finds the SDK from ANDROID_HOME or local.properties
     commandLine 'sh', new File(chiakiDir, 'mooncast/build-jni.sh').path, rootProject.projectDir.path
     doFirst {
         if (!new File(chiakiDir, 'mooncast/build-jni.sh').exists()) {
