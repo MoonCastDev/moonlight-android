@@ -43,7 +43,8 @@ class PhoneLinkService : Service(), PhoneLink.Listener {
     override fun onRegistered(host: String, name: String?) { listener?.onRegistered(host, name) }
 
     private fun goForeground() {
-        val nm = getSystemService(NotificationManager::class.java)
+        // the name-based lookup: getSystemService(Class) is Android 6+, and the TV app runs on Android 5 sticks too
+        val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         val b = if (Build.VERSION.SDK_INT >= 26) {
             nm.createNotificationChannel(NotificationChannel(CHANNEL, "Ready for your phone", NotificationManager.IMPORTANCE_MIN).apply {
                 description = "Keeps MoonCast TV reachable so your phone can start games here"
