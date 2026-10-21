@@ -593,6 +593,8 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         return col
     }
 
+    // FrameLayout has had setForeground since API 1; lint reads Kotlin's `foreground =` as View's (API 23)
+    @android.annotation.SuppressLint("NewApi")
     private fun coverFrame(key: String, seed: String, onClick: () -> Unit) = FrameLayout(this).apply {
         background = tv.twoTone(seed)
         foreground = tv.focusRing(16)
