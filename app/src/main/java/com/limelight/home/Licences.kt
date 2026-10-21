@@ -23,6 +23,7 @@ object Licences {
     val parts = listOf(
         Part("The app", "Moonlight for Android", "The app MoonCast grew from: PC streaming, the on-screen controller", "GPL-3.0", "gpl-3.0.txt", "https://github.com/moonlight-stream/moonlight-android"),
         Part("The app", "moonlight-common-c", "The PC streaming protocol", "GPL-3.0", "gpl-3.0.txt", "https://github.com/moonlight-stream/moonlight-common-c"),
+        Part("The app", "AMD FidelityFX Super Resolution 1.0", "Super resolution: the upscaling and sharpening (FSR 1)", "MIT", "fsr1.txt", "https://github.com/GPUOpen-Effects/FidelityFX-FSR"),
         Part("The app", "ENet", "Inside moonlight-common-c: the network link", "MIT", "enet.txt", "https://github.com/lsalzman/enet"),
         Part("The app", "nanors", "Inside moonlight-common-c: repairing lost video", "MIT", "nanors.txt", "https://github.com/sleepybishop/nanors"),
         Part("PS5", "chiaki-ng", "PS5 Remote Play, with MoonCast's changes (MoonCastDev/chiaki-ng-mooncast)", "AGPL-3.0", "agpl-3.0.txt", "https://github.com/streetpea/chiaki-ng"),

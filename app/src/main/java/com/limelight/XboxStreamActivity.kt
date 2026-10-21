@@ -71,13 +71,18 @@ class XboxStreamActivity : Activity(), com.limelight.home.MoveToTv.LocalSession 
         com.limelight.binding.video.MediaCodecHelper.initialize(this,
                 com.limelight.preferences.GlPreferences.readPreferences(this).glRenderer)
         val r = SurfaceViewRenderer(this).also { renderer = it }
+        // Super resolution (FSR 1.0): WebRTC's renderer draws each frame through FSR's drawer. The surface then keeps
+        // the view's real size (no hardware scaler, which would shrink it to the frame's) so FSR has room to upscale
+        val fsrOn = com.limelight.binding.video.FsrRenderer.enabled(prefs)
         r.init(egl.eglBaseContext, object : RendererCommon.RendererEvents {
             override fun onFirstFrameRendered() { firstFrame = true; main.removeCallbacks(pictureWatchdog); showStatus(null); com.limelight.home.StreamReport.playing() }
             override fun onFrameResolutionChanged(w: Int, h: Int, rotation: Int) {
                 Log.i(TAG, "picture ${w}x$h"); runOnUiThread { applyShape(w, h) }
             }
-        })
-        r.setEnableHardwareScaler(true)
+        }, org.webrtc.EglBase.CONFIG_PLAIN,
+            if (fsrOn) com.limelight.binding.video.FsrGlDrawer(com.limelight.binding.video.FsrRenderer.sharpness(prefs)) else org.webrtc.GlRectDrawer())
+        r.setEnableHardwareScaler(!fsrOn)
+        if (fsrOn) Log.i(TAG, "FSR drawer on")
         applyShape(0, 0)
         status = TextView(this).apply {
             setTextColor(0xFFE8ECFF.toInt()); textSize = 22f; gravity = Gravity.CENTER

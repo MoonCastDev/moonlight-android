@@ -125,6 +125,10 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     private boolean connected = false;
     private boolean autoEnterPip = false;
     private boolean surfaceCreated = false;
+    // MoonCast: Super resolution (FSR 1.0)
+    private boolean fsrPlanned = false;
+    private float fsrSharpness = 0.6f;
+    private volatile com.limelight.binding.video.FsrRenderer fsr;
     private boolean attemptedConnection = false;
     private int suppressPipRefCount = 0;
     private String pcName;
@@ -403,6 +407,21 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         if (willStreamHdr && !decoderRenderer.isHevcMain10Hdr10Supported() && !decoderRenderer.isAv1Main10Supported()) {
             willStreamHdr = false;
             Toast.makeText(this, "Decoder does not support HDR10 profile", Toast.LENGTH_LONG).show();
+        }
+
+        // MoonCast: Super resolution (FSR 1.0) when it's on, the stream isn't HDR (FSR's passes are 8-bit) and the
+        // stream is clearly smaller than this screen. The surface then keeps the screen's size (no setFixedSize)
+        // so FSR has room to upscale into.
+        {
+            android.content.SharedPreferences sp = android.preference.PreferenceManager.getDefaultSharedPreferences(this);
+            android.graphics.Point real = new android.graphics.Point();
+            getWindowManager().getDefaultDisplay().getRealSize(real);
+            fsrPlanned = com.limelight.binding.video.FsrRenderer.Companion.enabled(sp) && !willStreamHdr
+                    && com.limelight.binding.video.FsrRenderer.Companion.worthIt(prefConfig.height, Math.min(real.x, real.y));
+            fsrSharpness = com.limelight.binding.video.FsrRenderer.Companion.sharpness(sp);
+            if (com.limelight.binding.video.FsrRenderer.Companion.enabled(sp))
+                LimeLog.info("FSR " + (fsrPlanned ? "on" : "not needed") + ": stream " + prefConfig.width + "x" + prefConfig.height
+                        + ", screen " + real.x + "x" + real.y + (willStreamHdr ? ", HDR" : ""));
         }
 
         // Display a message to the user if HEVC was forced on but we still didn't find a decoder
@@ -972,15 +991,16 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             }
         }
 
-        if (prefConfig.stretchVideo || aspectRatioMatch) {
+        if (!fsrPlanned && (prefConfig.stretchVideo || aspectRatioMatch)) {
             // Set the surface to the size of the video
             streamView.getHolder().setFixedSize(prefConfig.width, prefConfig.height);
         }
-        else {
+        else if (!(fsrPlanned && prefConfig.stretchVideo)) {
             // Set the surface to scale based on the aspect ratio of the stream
             streamView.setDesiredAspectRatio((double)prefConfig.width / (double)prefConfig.height);
             streamView.setFill(prefConfig.fillVideo);
         }
+        // (FSR with Stretch: the view fills the screen and FSR stretches the picture into it)
 
         // MoonCast: Settings, Video, Zoom. Enlarges the picture for TVs that crop the edges (overscan).
         if (prefConfig.videoZoomPercent > 100) {
@@ -2411,6 +2431,10 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             new Thread() {
                 public void run() {
                     conn.stop();
+                    // the decoder is gone: FSR's surface can go too
+                    com.limelight.binding.video.FsrRenderer f = fsr;
+                    fsr = null;
+                    if (f != null) f.release();
                     if (done != null) runOnUiThread(done);
                 }
             }.start();
@@ -2723,6 +2747,17 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             UiHelper.notifyStreamConnecting(Game.this);
 
             decoderRenderer.setRenderTarget(holder);
+            if (fsrPlanned && fsr == null) {
+                try {
+                    fsr = new com.limelight.binding.video.FsrRenderer(prefConfig.width, prefConfig.height, fsrSharpness);
+                    fsr.attachOutput(holder.getSurface());
+                    decoderRenderer.setSurfaceOverride(fsr.getInputSurface());
+                    LimeLog.info("FSR on: " + prefConfig.width + "x" + prefConfig.height + " to " + width + "x" + height);
+                } catch (RuntimeException e) {
+                    LimeLog.warning("FSR unavailable, showing the stream directly: " + e);
+                    fsr = null;
+                }
+            }
             conn.start(new AndroidAudioRenderer(Game.this, prefConfig.enableAudioFx),
                     decoderRenderer, Game.this);
         }
@@ -2774,6 +2809,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         if (!surfaceCreated) {
             throw new IllegalStateException("Surface destroyed before creation!");
         }
+
+        // FSR stops drawing to the screen surface before it goes
+        if (fsr != null) fsr.detachOutput();
 
         if (attemptedConnection) {
             // Let the decoder know immediately that the surface is gone

@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.0-test236 (2026-10-21)
+- Found on the JAL TV (AQUOS, Android 11, MediaTek with a Mali GPU), PS5 over PlayStation Network at 720p:
+  - Super resolution didn't start there ("eglChooseConfig"): the GPU has no OpenGL ES 3 setup for both a window and an off-screen surface. FSR now tries several setups, and without an off-screen surface it works surfaceless. Before, it fell back to the plain picture, as designed.
+  - PS5 decoder: the TV's decoder (OMX.MS.HEVC.Decoder) refused the low-latency settings, and MoonCast dropped all of them. Now it drops them one step at a time (vendor settings, then MediaTek's low-latency decode, then Android's standard low-latency mode, then real-time priority), so a decoder keeps as many as it takes. The log says which level was used.
+- The same JAL TV test passed: PS5 over PSN on OpenSSL 3 (connected in 84 s including waking the console), 60 fps, 25 ms network delay, no lost packets, Decode time 20.5 ms, and Put PS5 to rest from the Quick menu.
+
+## 1.0-test235 (2026-10-21)
+- Super resolution now works on PC and Xbox streams too, not only PS5. The FSR passes are shared (`FsrPasses`), used by:
+  - PC: Moonlight's decoder renders into FSR's surface. FSR stays off with HDR, since its passes are 8-bit. The screen surface keeps the screen's size instead of the stream's, so FSR has room to upscale into; with Stretch, the picture is stretched by FSR.
+  - Xbox: WebRTC's renderer draws each frame through FSR's drawer (`FsrGlDrawer`), with WebRTC's hardware scaler off so the surface keeps the view's size. Frames that aren't hardware-decoded, and GPUs without OpenGL ES 3, are drawn by WebRTC's own drawer, as before.
+  - PS5: as in test234.
+- In all three, FSR only takes effect when the stream is clearly smaller than the screen; otherwise the picture shows as before.
+
+## 1.0-test234 (2026-10-21)
+- Super resolution (Settings, Picture, both apps): AMD FidelityFX Super Resolution 1.0, for the PS5 first (mockups in docs/mockups/fsr). With it on, and the stream clearly smaller than the screen (a PS5's 1080p or 720p on the Fold's 2448 × 1696, say), each frame takes three GPU passes before it shows:
+  - a copy of the decoder's frame at the stream's size;
+  - EASU, FSR's edge-adaptive upscale to the screen's size;
+  - RCAS, FSR's sharpening, at the new Sharpening setting (0 to 100%, 60% by default).
+- How it fits in:
+  - The shaders are ports of AMD's ffx_fsr1.h (MIT) to OpenGL ES 3.0. Its 4-texel gathers are 4 texel reads, as ES 3.0 has no textureGather.
+  - Frames keep the decoder's presentation time, so Frame pacing still works.
+  - On a foldable, a fold only moves FSR's output; the decoder keeps drawing into FSR.
+  - Off by default. When it's not worth it (the stream is as big as the screen) or the GPU can't set it up, the stream shows directly, as before.
+- About, Open-source licences: AMD FidelityFX Super Resolution 1.0 (MIT).
+
 ## 1.0-test233 (2026-10-21)
 - PS5: frame pacing (Settings, PlayStation, Frame pacing: Lowest delay, Balanced, Smoothest), like the PC's.
   - Lowest delay (the default, as before): each frame shows the moment it's decoded, so frames that arrive unevenly over Wi-Fi show unevenly.
