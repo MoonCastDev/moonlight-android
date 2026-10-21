@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0-test233 (2026-10-21)
+- PS5: frame pacing (Settings, PlayStation, Frame pacing: Lowest delay, Balanced, Smoothest), like the PC's.
+  - Lowest delay (the default, as before): each frame shows the moment it's decoded, so frames that arrive unevenly over Wi-Fi show unevenly.
+  - Balanced and Smoothest: each frame is handed to Android to show one stream frame interval after the last (1/60 s at 60 fps), so they land on evenly spaced screen refreshes. That costs at most 1 (Balanced) or 3 (Smoothest) frames of extra delay. When frames pile up past that, it shows the next one at once, so the delay can't build up.
+
 ## 1.0-test232 (2026-10-21)
 - PS5: a decoder setting (Settings, PlayStation, Decoder: Low latency, Ultra low latency, Standard). The PS5 player decodes in chiaki-ng, which set up the device's video decoder with nothing but the format and size. It now gets the same low-latency settings as MoonCast's PC player.
   - Low latency (the default): Android's standard low-latency mode, real-time priority, MediaTek and Amlogic's low-latency decode, and Qualcomm's low-latency decode.
