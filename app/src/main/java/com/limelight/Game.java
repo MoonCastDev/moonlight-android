@@ -1645,8 +1645,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         items.add(new com.limelight.home.QuickMenu.Item("↩", "Cancel", "Keep playing", false, () -> { }));
         items.add(new com.limelight.home.QuickMenu.Item("Zz", "Hibernate", "Unsaved progress may be lost", true, this::hibernate));
         quickMenu.show("Hibernate " + pc + "?",
-                "MoonCast opens Run on the PC (Win + R) and types shutdown /h, which works on Windows with hibernation " +
-                        "on (most PCs). Wake the PC again from MoonCast's home.",
+                "MoonCast opens Start on the PC (Ctrl + Esc), types shutdown /h and presses Enter. It works on Windows " +
+                        "with hibernation on (most PCs). Wake the PC again from MoonCast's home.",
                 java.util.Collections::emptyList, items);
     }
 
@@ -1656,18 +1656,19 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     private void hibernate() {
         hibernateAt = android.os.SystemClock.uptimeMillis();
         LimeLog.info("Quick menu: Hibernate PC");
-        // Run, not the Win + X power menu: its U and H don't match on other keyboard layouts or Windows languages
-        // (Arabic, for one), and it only lists Hibernate when that's ticked. The command goes as text, which Sunshine
-        // types the same on any layout.
-        sendKeys(new short[] {VK_LWIN, VK_R});
+        // Start's search runs the command. Not Win + R: games turn the Windows key off while they play (test239), and
+        // Ctrl + Esc opens Start without it. Not the Win + X power menu either: its U and H don't match on other
+        // keyboard layouts or Windows languages (test238). The command goes as text, which Sunshine types the same
+        // on any layout; search needs a moment to find it before Enter.
+        sendKeys(new short[] {VK_LCONTROL, VK_ESCAPE});
         Handler h = new Handler(getMainLooper());
-        h.postDelayed(() -> { if (conn != null) conn.sendUtf8Text("shutdown /h"); }, 1000);
-        h.postDelayed(() -> sendKeys(new short[] {VK_RETURN}), 1600);
+        h.postDelayed(() -> { if (conn != null) conn.sendUtf8Text("shutdown /h"); }, 1500);
+        h.postDelayed(() -> sendKeys(new short[] {VK_RETURN}), 3500);
     }
 
     // Windows virtual-key codes, with Moonlight's 0x80 prefix (KeyboardTranslator)
-    private static final short VK_LCONTROL = (short) 0x80A2, VK_LSHIFT = (short) 0x80A0, VK_LWIN = (short) 0x805B,
-            VK_ESCAPE = (short) 0x801B, VK_R = (short) 0x8052, VK_RETURN = (short) 0x800D;
+    private static final short VK_LCONTROL = (short) 0x80A2, VK_LSHIFT = (short) 0x80A0,
+            VK_ESCAPE = (short) 0x801B, VK_RETURN = (short) 0x800D;
 
     /** Press [keys] in order, holding each, then let them go in reverse, like a person pressing a shortcut. */
     private void sendKeys(short[] keys) {
@@ -1692,7 +1693,6 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         switch (k) {
             case VK_LCONTROL: return KeyboardPacket.MODIFIER_CTRL;
             case VK_LSHIFT: return KeyboardPacket.MODIFIER_SHIFT;
-            case VK_LWIN: return KeyboardPacket.MODIFIER_META;
             default: return 0;
         }
     }

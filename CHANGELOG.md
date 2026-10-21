@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.0-test240 (2026-10-22)
+- Hibernate PC still didn't work on Ahmed's PC: the Run box never opened, so Win + R didn't arrive (games often turn the Windows key off while they play). It now opens Start with Ctrl + Esc, which doesn't use the Windows key, types `shutdown /h` into Start's search and presses Enter 2 seconds later.
+
 ## 1.0-test239 (2026-10-22)
 - Hibernate PC didn't work on Ahmed's PC (Task Manager and Streaming status did). The power menu's U and H only match on an English layout and English Windows. It now opens Run (Win + R), types `shutdown /h` as text (Sunshine types text the same on any keyboard layout) and presses Enter. That also works without Hibernate ticked in Power Options; it needs hibernation itself on, which most PCs have (`powercfg /h on` turns it on).
 
