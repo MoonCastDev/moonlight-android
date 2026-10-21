@@ -6,6 +6,7 @@
   - The PS5 library is about 3 MB bigger (OpenSSL 3 is larger).
 - About, Open-source licences: OpenSSL 3 is under Apache-2.0 (1.1.1 had its own licence).
 - Build: buildChiaki also runs when chiaki's cmake files change.
+- Build: chiaki's build script starts the native build clean when chiaki's build files change. The OpenSSL upgrade otherwise failed on a machine that had built before (old configured headers left in the cache).
 
 ## Unreleased
 - README: rewritten for MoonCast (it was still Moonlight's). It covers what the two apps play and how, the features, install and Sunshine's gamepad setting, building with the chiaki-ng submodule, the licences and the credits.
