@@ -183,6 +183,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
         val profile = if (away) preset.copy(bitrate = awayKbps ?: minOf(preset.bitrate, linkCap)) else preset.copy(bitrate = homeKbps)
         streamInfo = Triple(when (resPreset) { VideoResolutionPreset.RES_540P -> "540p"; VideoResolutionPreset.RES_720P -> "720p"; else -> "1080p" }, if (h264) "H.264" else "H.265", profile.bitrate / 1000)
         streamRemote = remote
+        videoW = profile.width; videoH = profile.height
         Log.i(TAG, "stream ${streamInfo.first}${profile.maxFPS} at ${profile.bitrate / 1000} Mbps (${if (remote) "PSN" else "home"}, ${if (away) "away" else "home"} profile, link ${if (link > 0) "$link Mbps" else "cable/unknown"})")
         if (!remote) return ConnectInfo(ps5, host, registKey, morning, profile)
         val account = intent.getStringExtra(EXTRA_ACCOUNT_ID)?.let {
@@ -270,7 +271,9 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
     } catch (e: Exception) { false }
 
     override fun surfaceCreated(holder: SurfaceHolder) {
-        if (started) { session?.setSurface(holder.surface); return }
+        screenHolder = holder
+        // with FSR the decoder keeps its own surface: only FSR's output moves to the new screen surface
+        if (started) { val f = fsr; if (f != null) f.attachOutput(holder.surface) else session?.setSurface(holder.surface); return }
         started = true
         val surface = holder.surface
         val previous = connectThread
@@ -334,7 +337,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
                 val s = try { Session(connectInfo(remote), null, false) } finally { watch?.interrupt() }
                 if (closed) { try { s.dispose() } catch (e: Exception) {}; return }   // the screen closed during the hole-punch
                 s.eventCallback = { ev -> onEvent(ev) }
-                s.setSurface(surface)
+                s.setSurface(decoderSurface(surface))
                 // Only the first picture counts as success; a quit before that is a failed attempt -> retry.
                 // Remote: the data-channel hole-punch may fail. Home: the console may still be waking up.
                 // Armed before start() (#38): a console still waking refuses within milliseconds, often before
@@ -740,6 +743,35 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
     private val menu by lazy { com.limelight.home.QuickMenu(this) }
     private var comboPending = false
     @Volatile private var streamInfo = Triple("1080p", "H.265", 0)
+
+    // ---- Super resolution (FSR 1.0): the decoder renders into FSR's surface, FSR upscales to the screen's
+    @Volatile private var fsr: com.limelight.binding.video.FsrRenderer? = null
+    @Volatile private var screenHolder: SurfaceHolder? = null
+    @Volatile private var videoW = 1920
+    @Volatile private var videoH = 1080
+
+    /** The surface the decoder renders into: the screen's, or FSR's when it's on and the stream is smaller than the screen. */
+    private fun decoderSurface(screen: android.view.Surface): android.view.Surface {
+        val prefs = android.preference.PreferenceManager.getDefaultSharedPreferences(this)
+        if (prefs.getString(com.limelight.binding.video.FsrRenderer.PREF, "off") != "fsr1") return screen
+        val outH = screenHolder?.surfaceFrame?.height() ?: 0
+        if (!com.limelight.binding.video.FsrRenderer.worthIt(videoH, outH)) {
+            Log.i(TAG, "FSR not needed: stream ${videoW}x$videoH, screen ${screenHolder?.surfaceFrame?.width()}x$outH")
+            return screen
+        }
+        fsr?.let { return it.inputSurface }
+        return try {
+            val sharp = prefs.getInt(com.limelight.binding.video.FsrRenderer.SHARPNESS_PREF, com.limelight.binding.video.FsrRenderer.DEFAULT_SHARPNESS)
+            val f = com.limelight.binding.video.FsrRenderer(videoW, videoH, sharp / 100f)
+            f.attachOutput(screen)
+            fsr = f
+            Log.i(TAG, "FSR on: ${videoW}x$videoH to ${screenHolder?.surfaceFrame?.width()}x$outH, sharpening $sharp%")
+            f.inputSurface
+        } catch (e: Exception) {
+            Log.w(TAG, "FSR unavailable, showing the stream directly: $e")
+            screen
+        }
+    }
     @Volatile private var streamRemote = false
     private val startedAt = System.currentTimeMillis()
     private val swapCrossCircle by lazy {
@@ -897,12 +929,14 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
     // into a dead surface fails, and chiaki then crashed copying a frame into a missing buffer. The release runs on a
     // worker (it takes chiaki's decoder lock) and the wait is bounded, so a stuck session can't freeze the app.
     override fun surfaceDestroyed(holder: SurfaceHolder) {
+        fsr?.detachOutput()   // FSR stops drawing to the screen surface before it goes; the decoder keeps FSR's
         if (closed) {
             if (session != null && teardownThread == null) teardown(null)   // the PS5 quit: tear down now, not in onDestroy
             try { teardownThread?.join(SURFACE_RELEASE_WAIT_MS) } catch (e: InterruptedException) { }
             return
         }
         val s = session ?: return
+        if (fsr != null) return   // the decoder draws into FSR's surface, which stays
         val t = Thread({ synchronized(sessionLock) { if (!closed && synchronized(disposed) { s !in disposed }) try { s.setSurface(null) } catch (e: Exception) { } } },
             "ps5-surface")
         t.start()
@@ -937,6 +971,8 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
                 try { s.stop() } catch (e: Exception) { }
                 synchronized(sessionLock) { try { s.dispose() } catch (e: Exception) { } }
             }
+            // after the decoder has let go of its surface
+            fsr?.release(); fsr = null
             if (done != null) android.os.Handler(android.os.Looper.getMainLooper()).post(done)
         }, "ps5-teardown")
         teardownThread = t

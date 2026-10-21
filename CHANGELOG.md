@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0-test234 (2026-10-21)
+- Super resolution (Settings, Picture, both apps): AMD FidelityFX Super Resolution 1.0, for the PS5 first (mockups in docs/mockups/fsr). With it on, and the stream clearly smaller than the screen (a PS5's 1080p or 720p on the Fold's 2448 × 1696, say), each frame takes three GPU passes before it shows:
+  - a copy of the decoder's frame at the stream's size;
+  - EASU, FSR's edge-adaptive upscale to the screen's size;
+  - RCAS, FSR's sharpening, at the new Sharpening setting (0 to 100%, 60% by default).
+- How it fits in:
+  - The shaders are ports of AMD's ffx_fsr1.h (MIT) to OpenGL ES 3.0. Its 4-texel gathers are 4 texel reads, as ES 3.0 has no textureGather.
+  - Frames keep the decoder's presentation time, so Frame pacing still works.
+  - On a foldable, a fold only moves FSR's output; the decoder keeps drawing into FSR.
+  - Off by default. When it's not worth it (the stream is as big as the screen) or the GPU can't set it up, the stream shows directly, as before.
+- About, Open-source licences: AMD FidelityFX Super Resolution 1.0 (MIT).
+
 ## 1.0-test233 (2026-10-21)
 - PS5: frame pacing (Settings, PlayStation, Frame pacing: Lowest delay, Balanced, Smoothest), like the PC's.
   - Lowest delay (the default, as before): each frame shows the moment it's decoded, so frames that arrive unevenly over Wi-Fi show unevenly.

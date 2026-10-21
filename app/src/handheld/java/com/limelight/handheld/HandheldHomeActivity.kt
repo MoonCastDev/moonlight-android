@@ -1254,6 +1254,13 @@ class HandheldHomeActivity : Activity() {
                         else { stream.edit().putInt("seekbar_bitrate_kbps", (Math.round(v * 2) * 500).toInt()).apply(); render(force = true); null }
                     }
                 }
+                // Super resolution: AMD FSR 1.0 upscales a stream smaller than the screen, then sharpens it (PS5 for now)
+                choice(list, stream, com.limelight.binding.video.FsrRenderer.PREF, "Super resolution",
+                        "Sharper picture when the stream is smaller than this screen (AMD FSR 1.0). PlayStation for now. Uses a little of the GPU",
+                        listOf("Off" to "off", "FSR 1.0" to "fsr1"), "off")
+                if (stream.getString(com.limelight.binding.video.FsrRenderer.PREF, "off") == "fsr1")
+                    intChoice(list, com.limelight.binding.video.FsrRenderer.SHARPNESS_PREF, "Sharpening", "How crisp FSR makes edges. Lower it if you see halos",
+                            listOf(0, 20, 40, 60, 80, 100), com.limelight.binding.video.FsrRenderer.DEFAULT_SHARPNESS) { "$it%" }
                 choice(list, stream, "video_format", "Video codec", "H.265 and AV1 look better at the same bitrate",
                         listOf("Auto" to "auto", "H.264" to "neverh265", "H.265" to "forceh265", "AV1" to "forceav1"), "auto")
                 toggle(list, "checkbox_enable_hdr", "HDR", "Only when the PC, the game and this screen support it", false)

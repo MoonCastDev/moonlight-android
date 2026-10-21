@@ -16,6 +16,7 @@ The app
 -------
 Moonlight for Android (GPL-3.0): The app MoonCast grew from: PC streaming, the on-screen controller. https://github.com/moonlight-stream/moonlight-android  [licences/gpl-3.0.txt]
 moonlight-common-c (GPL-3.0): The PC streaming protocol. https://github.com/moonlight-stream/moonlight-common-c  [licences/gpl-3.0.txt]
+AMD FidelityFX Super Resolution 1.0 (MIT): Super resolution: the upscaling and sharpening (FSR 1). https://github.com/GPUOpen-Effects/FidelityFX-FSR  [licences/fsr1.txt]
 ENet (MIT): Inside moonlight-common-c: the network link. https://github.com/lsalzman/enet  [licences/enet.txt]
 nanors (MIT): Inside moonlight-common-c: repairing lost video. https://github.com/sleepybishop/nanors  [licences/nanors.txt]
 
