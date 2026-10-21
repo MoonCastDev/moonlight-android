@@ -223,6 +223,10 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
         // Read the stream preferences
         prefConfig = PreferenceConfiguration.readPreferences(this);
+        // #65: on battery, Settings, Handheld, "On battery, stream at" caps the size. The fold checks compare the
+        // screen with the size before the cap, so a capped stream isn't taken for a wrong-size one.
+        uncappedSize = prefConfig.width + "x" + prefConfig.height;
+        com.limelight.home.BatteryCap.apply(this, prefConfig);
         trace(foldLabel(getResources().getConfiguration()) + ": stream " + prefConfig.width + "x" + prefConfig.height
                 + ", Native " + PreferenceConfiguration.nativeWholeScreen(this));
         tombstonePrefs = Game.this.getSharedPreferences("DecoderTombstone", 0);
@@ -2865,8 +2869,11 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     /** With Native on, the size this screen streams at now differs from this stream's. */
     private boolean sizeChanged() {
         return prefConfig != null && PreferenceConfiguration.nativeWholeScreen(this)
-                && !PreferenceConfiguration.nativeResolution(this).equals(prefConfig.width + "x" + prefConfig.height);
+                && !PreferenceConfiguration.nativeResolution(this).equals(uncappedSize != null ? uncappedSize : prefConfig.width + "x" + prefConfig.height);
     }
+
+    /** The stream's size before the battery cap (#65). */
+    private String uncappedSize;
 
     @Override
     public void mouseMove(int deltaX, int deltaY) {

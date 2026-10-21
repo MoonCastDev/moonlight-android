@@ -1202,7 +1202,7 @@ class HandheldHomeActivity : Activity() {
                 choice(list, prefs, "hh_screen_size", "Screen size", "Auto fits this screen. Compact and Large make everything bigger",
                         listOf("Auto" to "auto", "Compact" to "compact", "Normal" to "normal", "Large" to "large"), "auto") { recreate() }
                 appToggle(list, "hh_rotate", "Screen turns with the device", "Portrait when you hold it upright", true) { applyRotation() }
-                choice(list, prefs, "hh_battery_res", "On battery, stream at", "Plugged in, the Picture settings apply",
+                choice(list, prefs, com.limelight.home.BatteryCap.PREF, "On battery, stream at", "Unplugged, PC and PS5 streams go no higher than this. Plugged in, the Picture settings apply",
                         listOf("Same" to "same", "1080p" to "1080", "720p" to "720", "540p" to "540"), "same")
                 appToggle(list, "hh_dim_on_tv", "Dim the screen on a TV", "While this ${deviceShort()} is the controller for a TV", true)
                 toggle(list, "checkbox_ultra_low_latency", "Ultra low latency", "Experimental. This device: ${chipName()}", false)
