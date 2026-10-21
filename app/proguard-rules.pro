@@ -26,3 +26,9 @@
 # jMDNS
 -dontwarn javax.jmdns.impl.DNSCache
 -dontwarn org.slf4j.**
+
+# MoonCast: chiaki-ng's native code (PS5) reads these classes' fields and calls their methods by name, so code
+# shrinking must keep all of them. Without this a release build dropped ConnectInfo.psnToken and .videoProfile.
+-keep class com.metallic.chiaki.** { *; }
+# Google's WebRTC (Xbox) calls back into its Java classes from native code too
+-keep class org.webrtc.** { *; }
