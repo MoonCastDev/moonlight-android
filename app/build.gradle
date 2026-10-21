@@ -12,8 +12,9 @@ android {
         targetSdk 36
 
         // MoonCast's own numbering (Moonlight's was 12.2 / 315). versionCode only ever goes up: 1.0 = 1000, 1.0.1 = 1001, 1.1 = 1100
-        versionName "1.0"
-        versionCode = 1000
+        // A beta overrides both, below the release it leads to: -PmcVersionName=1.0-beta1 -PmcVersionCode=991
+        versionName (project.findProperty("mcVersionName") ?: "1.0")
+        versionCode = (project.findProperty("mcVersionCode") ?: "1000").toString().toInteger()
 
         // MoonCast TV dev build: arm64 only (the stick + JAL TV are arm64) to keep the native compile within memory,
         // and limit parallel native jobs so Gradle + ndk-build don't OOM the 4 GB builder.

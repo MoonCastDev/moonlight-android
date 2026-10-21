@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0-beta1 (2026-10-21)
+- The first beta for testers: test230's app as a signed release build (version 1.0-beta1, code 991, so 1.0 installs over it), published as a pre-release.
+- Release builds: code shrinking (R8) had removed what PS5 Remote Play's native code reads by name (`ConnectInfo` with its `psnToken` and `videoProfile`, and `Session`), so a release build couldn't start a PS5 session. Debug builds don't shrink, so the test builds never showed it. `proguard-rules.pro` keeps `com.metallic.chiaki.**` and Google's WebRTC (`org.webrtc.**`, Xbox). All 48 fields and 9 methods the PS5 library looks up are now present in the release build.
+- `scripts/release.sh`: `VERSION_NAME=1.0-beta1 VERSION_CODE=991` builds a beta; `app/build.gradle` takes `-PmcVersionName` and `-PmcVersionCode`.
+- Issue forms: MoonCast's "Something doesn't work" (app, version, device, what was played, home or away, what happened) and "Idea or wish" replace Moonlight's. Moonlight's issue bots' settings (stale, no-response, auto-comment, which pointed to Moonlight's Discord) are gone.
+
 ## 1.0-test230 (2026-10-21)
 - PS5: leaving the PS5 screen while it connects really stops the attempt. Before, an attempt through PlayStation Network carried on in the background for up to a minute and could still connect after you'd left. It then held the console, so the next try got "Connection refused" and the PS5 refused its stream (seen on the Odin).
   - Leaving cancels the PSN attempt in flight at once (a new `psnCancel` in chiaki-ng-mooncast).
