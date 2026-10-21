@@ -1175,9 +1175,9 @@ class HandheldHomeActivity : Activity() {
                 if (on) addView(View(this@HandheldHomeActivity).apply { background = sw.round(sw.ring, 3) }, sw.flp(6, -1).apply { topMargin = sw.px(18); bottomMargin = sw.px(18) })
                 addView(sw.text(label, 30, if (on) sw.ring else sw.sub, 700).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(sw.px(28), 0, 0, 0) }, FrameLayout.LayoutParams(-1, -1))
                 sw.focusable(this)
-                setOnFocusChangeListener { _, has -> if (has && settingsGroup != k) { settingsGroup = k; ui.post { render(force = true) } } }
+                setOnFocusChangeListener { _, has -> if (has && settingsGroup != k) { settingsGroup = k; licencesOpen = false; ui.post { render(force = true) } } }
                 setOnClickListener {
-                    settingsGroup = k
+                    settingsGroup = k; licencesOpen = false
                     render(force = true)
                     content.findViewWithTag<View>("settings:list")?.let { firstFocusable(it)?.requestFocus() }
                 }
@@ -1344,9 +1344,18 @@ class HandheldHomeActivity : Activity() {
                 srow(list, "theme:light", "Light", "Light grey, dark type", if (light) value("On") else null) {
                     if (!light) { prefs.edit().putString("hh_theme", "light").apply(); recreate() } }
             }
-            "about" -> {
+            "about" -> if (licencesOpen) licences(list) else {
                 val ver = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (e: Exception) { "" }
                 info(list, "MoonCast", ver ?: "")
+                action(list, "about:licences", "Open-source licences",
+                        "MoonCast is free software, built on Moonlight, chiaki-ng and about twenty more open-source projects", "›") {
+                    licencesOpen = true; render(force = true)
+                    content.findViewWithTag<View>("settings:list")?.let { firstFocusable(it)?.requestFocus() }
+                }
+                action(list, "about:source", "Source code", "github.com/MoonCastDev · ${com.limelight.home.Licences.SOURCE_LICENCE}", "Open") {
+                    try { startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(com.limelight.home.Licences.SOURCE))) }
+                    catch (e: Exception) { toast("No browser on this device: ${com.limelight.home.Licences.SOURCE}") }
+                }
                 action(list, "about:add", "Add a PC by its address", "For a PC this device doesn't find on its own", null) { addPcByAddress() }
                 action(list, "about:all", "All settings", "Every option, including the rare ones", null) {
                     startActivity(Intent(this, StreamSettings::class.java)) }
@@ -1355,6 +1364,20 @@ class HandheldHomeActivity : Activity() {
     }
 
     private fun value(s: String) = sw.text(s, 28, sw.ring, 700)
+
+    /** About, Open-source licences: each project with its licence; pressing one shows the full text. Back returns to About. */
+    private var licencesOpen = false
+    private fun licences(list: LinearLayout) {
+        action(list, "lic:back", "‹ About", "Back to About", null) { licencesOpen = false; render(force = true) }
+        var group = ""
+        com.limelight.home.Licences.parts.forEach { p ->
+            if (p.group != group) {
+                group = p.group
+                list.addView(sw.text(group.uppercase(), 22, sw.sub, 800).apply { setPadding(sw.px(26), sw.px(26), 0, sw.px(8)) })
+            }
+            action(list, "lic:${p.name}", p.name, p.what, p.licence) { com.limelight.home.Licences.open(this, p) }
+        }
+    }
 
     private fun srow(list: LinearLayout, key: String, title: String, sub: String?, value: View?, onClick: (() -> Unit)?) {
         list.addView(sw.row().apply {
@@ -2167,6 +2190,7 @@ class HandheldHomeActivity : Activity() {
     override fun onBackPressed() {
         when {
             overlayKind != null -> hideOverlay()
+            licencesOpen && page == Page.SETTINGS -> { FeelSounds.play(this, FeelSounds.Cue.BACK); licencesOpen = false; render(force = true) }
             page != Page.HOME -> { FeelSounds.play(this, FeelSounds.Cue.BACK); go(Page.HOME) }
             else -> { FeelSounds.play(this, FeelSounds.Cue.BACK); moveTaskToBack(true) }
         }
