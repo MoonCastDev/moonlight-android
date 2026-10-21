@@ -3,6 +3,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- A TV app (it has the TV launcher entry); not required, so it also installs on phones and tablets -->
+    <uses-feature
+        android:name="android.software.leanback"
+        android:required="false" />
 
     <application>
         <!-- MoonCast TV home (Big Picture style). It also listens for the phone on :8099. -->

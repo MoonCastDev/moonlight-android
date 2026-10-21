@@ -1,10 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- MoonCast handheld: the SENDER. It plays here or sends a game to a MoonCast TV; it never receives games (its only
      listener is the controller it serves to the TV it sent a game to, while controller mode is open). -->
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
-    <!-- The handheld app isn't a TV app: it has no TV launcher entry, so it doesn't claim TV support (that's MoonCast TV) -->
-    <uses-feature android:name="android.software.leanback" tools:node="remove" />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
         <!-- The handheld home (Switch style) -->
         <activity
