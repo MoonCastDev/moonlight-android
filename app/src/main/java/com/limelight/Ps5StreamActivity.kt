@@ -198,10 +198,16 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
     // Home-network bitrate from this device's own link: 30 Mbps on Ethernet or fast 5/6 GHz Wi-Fi, 20 on 2.4 GHz /
     // slow / unknown links. Measured 2026-10-16: the home Mi stick (2.4 GHz, 87 Mbps link) got ~25 Mbps at a 30 Mbps
     // ask but lost 6-9 % of packets (a glitch every ~7 s), the PS5 not backing off enough.
+    /** The active network's capabilities; null before Android 6, where there's no active-network API (no Ethernet check). */
+    private fun activeCaps(): android.net.NetworkCapabilities? {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.M) return null
+        val cm = getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        return cm.getNetworkCapabilities(cm.activeNetwork)
+    }
+
     /** Wi-Fi link speed in Mbps, or 0 for Ethernet / unknown (no cap). */
     private fun linkMbps(): Int = try {
-        val cm = getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
-        val caps = cm.getNetworkCapabilities(cm.activeNetwork)
+        val caps = activeCaps()
         if (caps != null && caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET)) 0
         else @Suppress("DEPRECATION") (applicationContext.getSystemService(android.content.Context.WIFI_SERVICE) as android.net.wifi.WifiManager)
                 .connectionInfo?.linkSpeed?.coerceAtLeast(0) ?: 0
@@ -209,8 +215,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
 
     private fun lanBitrateKbps(): Int {
         try {
-            val cm = getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
-            val caps = cm.getNetworkCapabilities(cm.activeNetwork)
+            val caps = activeCaps()
             if (caps != null && caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET)) {
                 Log.i(TAG, "LAN bitrate 30 Mbps (Ethernet)"); return 30000
             }

@@ -3,11 +3,20 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- A TV app (it has the TV launcher entry); not required, so it also installs on phones and tablets -->
+    <uses-feature
+        android:name="android.software.leanback"
+        android:required="false" />
+    <!-- Already optional in the main manifest; said again here because lint checks a TV manifest on its own -->
+    <uses-feature
+        android:name="android.hardware.touchscreen"
+        android:required="false" />
 
     <application>
         <!-- MoonCast TV home (Big Picture style). It also listens for the phone on :8099. -->
         <activity
             android:name=".home.HomeActivity"
+            android:banner="@drawable/atv_banner"
             android:exported="true"
             android:screenOrientation="landscape"
             android:launchMode="singleTask"

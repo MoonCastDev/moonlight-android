@@ -3,7 +3,7 @@
      listener is the controller it serves to the TV it sent a game to, while controller mode is open). -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
-        <!-- The handheld home (Switch style). Moonlight's PC list (PcView) stays reachable from Consoles. -->
+        <!-- The handheld home (Switch style) -->
         <activity
             android:name=".handheld.HandheldHomeActivity"
             android:exported="true"

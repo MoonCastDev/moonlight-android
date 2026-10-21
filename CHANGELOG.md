@@ -1,5 +1,10 @@
 # Changelog
 
+## 12.2-test226 (2026-10-21)
+- PS5 on Android 5 (5.0 and 5.1): starting a PS5 stream crashed. Picking the home bitrate asked Android for the active network, which only exists from Android 6, and the error it throws there isn't one the code caught. Below Android 6 it now skips the Ethernet check and goes by Wi-Fi speed.
+- MoonCast TV on Android 5: the service that keeps the TV reachable for the phone crashed as it started (it looked up the notification service the Android 6 way).
+- Only MoonCast TV tells Android it supports TVs (it has the TV launcher entry). The handheld app, which has none, no longer claims it. This was also the build check (lint) error.
+
 ## 12.2-test225 (2026-10-21)
 - Build: PS5 Remote Play's native libraries are now built from source. Before, `libchiaki-jni.so`, `liboboe.so` and `libc++_shared.so` sat only on the build machine (git ignores `jniLibs`), so a fresh clone built an app without PS5, and the chiaki-ng changes behind them were in no repository.
   - The patched chiaki-ng is a submodule, `third-party/chiaki-ng` (MoonCastDev/chiaki-ng-mooncast: upstream chiaki-ng plus one MoonCast commit, AGPL-3.0).
