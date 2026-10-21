@@ -78,6 +78,7 @@
 - Build: chiaki's build script starts the native build clean when chiaki's build files change. The OpenSSL upgrade otherwise failed on a machine that had built before (old configured headers left in the cache).
 
 ## Unreleased
+- CONTRIBUTING.md: how to report problems, build, and send changes (one topic per pull request, CHANGELOG in each, lint and CI, the chiaki-ng submodule, no game pictures or secrets, licences). SECURITY.md: report privately through GitHub's security advisories, and what MoonCast keeps where.
 - README: rewritten for MoonCast (it was still Moonlight's). It covers what the two apps play and how, the features, install and Sunshine's gamepad setting, building with the chiaki-ng submodule, the licences and the credits.
 
 ## 12.2-test227 (2026-10-21)
