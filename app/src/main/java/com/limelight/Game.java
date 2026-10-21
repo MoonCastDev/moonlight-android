@@ -1612,7 +1612,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             if (move != null) items.add(move);
             items.add(new com.limelight.home.QuickMenu.Item("←", "Disconnect", "The game keeps running", false, this::finish));
             items.add(new com.limelight.home.QuickMenu.Item("✕", "Quit game", null, true, this::quitOnHostAndFinish));
-            items.add(new com.limelight.home.QuickMenu.Item("Zz", "Hibernate PC", "Windows: its power menu's Hibernate", true, this::confirmHibernate));
+            items.add(new com.limelight.home.QuickMenu.Item("Zz", "Hibernate PC", "Windows: runs shutdown /h", true, this::confirmHibernate));
             quickMenu.show(appName != null ? appName : "Your game",
                     (pcName != null ? "On " + pcName + ". " : "") + com.limelight.home.QuickMenu.COMBO_LABEL + " opens this menu",
                     () -> java.util.Arrays.asList(
@@ -1645,8 +1645,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         items.add(new com.limelight.home.QuickMenu.Item("↩", "Cancel", "Keep playing", false, () -> { }));
         items.add(new com.limelight.home.QuickMenu.Item("Zz", "Hibernate", "Unsaved progress may be lost", true, this::hibernate));
         quickMenu.show("Hibernate " + pc + "?",
-                "MoonCast opens the Windows power menu (Win + X, U) and picks Hibernate (H). Windows only shows it when it's " +
-                        "turned on in Power Options. Wake the PC again from MoonCast's home.",
+                "MoonCast opens Run on the PC (Win + R) and types shutdown /h, which works on Windows with hibernation " +
+                        "on (most PCs). Wake the PC again from MoonCast's home.",
                 java.util.Collections::emptyList, items);
     }
 
@@ -1656,15 +1656,18 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     private void hibernate() {
         hibernateAt = android.os.SystemClock.uptimeMillis();
         LimeLog.info("Quick menu: Hibernate PC");
-        sendKeys(new short[] {VK_LWIN, VK_X});
+        // Run, not the Win + X power menu: its U and H don't match on other keyboard layouts or Windows languages
+        // (Arabic, for one), and it only lists Hibernate when that's ticked. The command goes as text, which Sunshine
+        // types the same on any layout.
+        sendKeys(new short[] {VK_LWIN, VK_R});
         Handler h = new Handler(getMainLooper());
-        h.postDelayed(() -> sendKeys(new short[] {VK_U}), 900);
-        h.postDelayed(() -> sendKeys(new short[] {VK_H}), 1800);
+        h.postDelayed(() -> { if (conn != null) conn.sendUtf8Text("shutdown /h"); }, 1000);
+        h.postDelayed(() -> sendKeys(new short[] {VK_RETURN}), 1600);
     }
 
     // Windows virtual-key codes, with Moonlight's 0x80 prefix (KeyboardTranslator)
     private static final short VK_LCONTROL = (short) 0x80A2, VK_LSHIFT = (short) 0x80A0, VK_LWIN = (short) 0x805B,
-            VK_ESCAPE = (short) 0x801B, VK_X = (short) 0x8058, VK_U = (short) 0x8055, VK_H = (short) 0x8048;
+            VK_ESCAPE = (short) 0x801B, VK_R = (short) 0x8052, VK_RETURN = (short) 0x800D;
 
     /** Press [keys] in order, holding each, then let them go in reverse, like a person pressing a shortcut. */
     private void sendKeys(short[] keys) {

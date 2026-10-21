@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.0-test239 (2026-10-22)
+- Hibernate PC didn't work on Ahmed's PC (Task Manager and Streaming status did). The power menu's U and H only match on an English layout and English Windows. It now opens Run (Win + R), types `shutdown /h` as text (Sunshine types text the same on any keyboard layout) and presses Enter. That also works without Hibernate ticked in Power Options; it needs hibernation itself on, which most PCs have (`powercfg /h on` turns it on).
+
 ## 1.0-test238 (2026-10-22)
 - In-game Quick menu, new items:
   - **Streaming status** (PC, PS5 and Xbox): turns the stats corner on or off right away, and saves it as Settings' "Stats while playing". The PC shows Moonlight's stats; PS5 and Xbox get a new one-line corner (frame rate, network delay, bitrate, lost packets, and decode time on PS5).
