@@ -1205,8 +1205,6 @@ class HandheldHomeActivity : Activity() {
                 // PC games: what a finger on the picture does when a game starts (the Quick menu changes it for that game)
                 choice(list, stream, com.limelight.Game.TOUCH_DEFAULT_PREF, "Touch screen", "In PC games. Mouse is a trackpad, Touch clicks where you tap. The Quick menu changes it while you play",
                         listOf("Off" to "off", "Mouse" to "mouse", "Touch" to "touch"), "off")
-                choice(list, prefs, com.limelight.home.BatteryCap.PREF, "On battery, stream at", "Unplugged, PC and PS5 streams go no higher than this. Plugged in, the Picture settings apply",
-                        listOf("Same" to "same", "1080p" to "1080", "720p" to "720", "540p" to "540"), "same")
                 appToggle(list, "hh_dim_on_tv", "Dim the screen on a TV", "While this ${deviceShort()} is the controller for a TV", true)
                 toggle(list, "checkbox_ultra_low_latency", "Ultra low latency", "Experimental. This device: ${chipName()}", false)
             }

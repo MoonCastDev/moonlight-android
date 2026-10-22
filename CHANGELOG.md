@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.0-test245 (2026-10-22)
+- **"On battery, stream at" is removed** (Settings, Handheld, and `home/BatteryCap.kt`, added for #65 in test237). It saved little: the screen uses most of the battery and doesn't change, and Native resolution already avoids streaming more pixels than the screen shows. With it goes test244's Auto-bitrate fix. A saved setting is simply ignored.
+
 ## 1.0-test244 (2026-10-22)
 - **Quit prompts pick Cancel.** "Quit X and start Y?", "Quit game?", Unpair and Remove now have Cancel selected, on the handheld and the TV, so pressing A (or OK on a remote) by habit doesn't do them. On 2026-10-21 an A on the pre-selected "Quit and start" quit Ryujinx. Wake it stays selected, since it's harmless.
   - Handheld: while a dialog is open the hints say "B Cancel, A OK" instead of the page's "A Start", and a tapped A hint presses the dialog's selected button, not the game behind it.
