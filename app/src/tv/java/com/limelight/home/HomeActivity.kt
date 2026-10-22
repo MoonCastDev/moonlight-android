@@ -123,6 +123,13 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         super.onResume()
         resumed = true
         lastInput = System.currentTimeMillis()
+        // anonymous usage check-in: once a day if the user said yes; the question once, a moment after home is up
+        com.limelight.home.Usage.checkIn(this)
+        if (com.limelight.home.Usage.shouldAsk(this)) ui.postDelayed({
+            if (resumed && overlayKind == null && com.limelight.home.Usage.shouldAsk(this))
+                confirm(com.limelight.home.Usage.QUESTION, com.limelight.home.Usage.EXPLAIN, "Yes, send", no = "No thanks",
+                        noPicked = true, onNo = { com.limelight.home.Usage.answer(this, false) }) { com.limelight.home.Usage.answer(this, true) }
+        }, 1500)
         PhoneLinkService.listener = this
         if (overlayKind == "incoming") hideOverlay()
         consoles = Ps5Store.all(this)
@@ -1150,6 +1157,9 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                 }
                 info(list, "Source code", "github.com/MoonCastDev · ${Licences.SOURCE_LICENCE}")
                 info(list, "Phones send games here", "Port ${PhoneLink.PORT}")
+                if (com.limelight.home.Usage.available)
+                    toggle(list, com.limelight.home.Usage.PREF, "Anonymous usage check-in",
+                            "Once a day: app version, device model, and whether you played PC, PS5 or Xbox. Nothing personal", false)
                 action(list, "set:add", "Add a PC by its address", "For a PC this TV doesn't find on its own", null) { addPcByAddress() }
                 action(list, "set:all", "All settings", "Every option, including the rare ones", null) {
                     startActivity(Intent(this, StreamSettings::class.java)) }
@@ -1875,20 +1885,21 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         setPadding(tv.px(44), tv.px(44), tv.px(44), tv.px(40))
     }
 
-    private fun confirm(title: String, body: String, yes: String, danger: Boolean = false, onYes: () -> Unit) {
+    private fun confirm(title: String, body: String, yes: String, danger: Boolean = false, no: String = "Cancel",
+                        noPicked: Boolean = danger, onNo: () -> Unit = {}, onYes: () -> Unit) {
         val card = dialogCard()
         card.addView(tv.text(title, 40, tv.p.moon, tv.display(700), 2))
         card.addView(tv.text(body, 22, tv.p.dust, tv.ui(500), 4), tv.lp(-1, -2).apply { topMargin = tv.px(12); bottomMargin = tv.px(28) })
         // danger (quit, unpair, remove): Cancel is picked, so a habitual OK on the remote doesn't do it
         card.addView(tv.row().apply {
-            addView(tv.pill(yes, if (danger) null else "A", !danger) {
+            addView(tv.pill(yes, if (noPicked) null else "A", !noPicked) {
                 // one sound per action: what the answer starts (a launch) speaks for it, else the dialog's close
                 val n = FeelSounds.serial
                 hideOverlay(cue = false); onYes()
                 if (n == FeelSounds.serial) FeelSounds.play(this@HomeActivity, FeelSounds.Cue.CLOSE)
             }.apply {
-                tag = if (danger) "yes" else "primary"; if (danger) (getChildAt(childCount - 1) as TextView).setTextColor(Tv.DANGER) })
-            addView(tv.pill("Cancel", "B", false) { hideOverlay() }.apply { if (danger) tag = "primary" })
+                tag = if (noPicked) "yes" else "primary"; if (danger) (getChildAt(childCount - 1) as TextView).setTextColor(Tv.DANGER) })
+            addView(tv.pill(no, "B", false) { hideOverlay(); onNo() }.apply { if (noPicked) tag = "primary" })
         })
         showOverlay("confirm", FrameLayout(this).apply { addView(card, tv.flp(900, -2, Gravity.CENTER)) })
     }

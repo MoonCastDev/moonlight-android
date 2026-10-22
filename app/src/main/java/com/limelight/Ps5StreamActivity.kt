@@ -73,6 +73,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        com.limelight.home.Usage.used(this, "ps5")   // for the next anonymous check-in, if the user said yes
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         val sv = SurfaceView(this)
         // Status over the (black) video surface until the first frame: waking a console over the internet takes up to a minute

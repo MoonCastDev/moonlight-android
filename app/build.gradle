@@ -19,6 +19,11 @@ android {
         // MoonCast TV dev build: arm64 only (the stick + JAL TV are arm64) to keep the native compile within memory,
         // and limit parallel native jobs so Gradle + ndk-build don't OOM the 4 GB builder.
         ndk { abiFilters "arm64-v8a", "armeabi-v7a" }
+
+        // Anonymous usage check-in (home/Usage.kt): only official builds get an app ID, from the release build's
+        // environment or -PmcTelemetryAppId; without one the app never asks and never sends
+        buildConfigField "String", "TELEMETRY_APP_ID",
+                "\"" + (project.findProperty("mcTelemetryAppId") ?: System.getenv("MOONCAST_TELEMETRY_APP_ID") ?: "") + "\""
     }
 
     flavorDimensions.add("root")

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0-test246 (2026-10-22)
+- **Anonymous usage check-in** (opt-in), so the project can count daily and monthly active users (`home/Usage.kt`, TelemetryDeck's ingest API v2, no SDK):
+  - Official builds ask once, a moment after the home screen opens: "Help improve MoonCast?" with **No thanks** selected. Settings, About has the switch afterwards.
+  - With yes: at most once a day, one signal with the app version, TV or handheld, Android version, device model, and whether PC, PS5 or Xbox was played since the last one. The install is a random ID made on the device, sent hashed. No names, addresses, games or accounts.
+  - Only builds made with an app ID (`-PmcTelemetryAppId` or `MOONCAST_TELEMETRY_APP_ID`) have it; everything else, forks and this test build included, never asks and never sends. Debug builds send in TelemetryDeck's test mode.
+  - TV: `confirm()` can pick its no button and run something on no.
+- README: install section for the beta's file names, **Obtainium** links for automatic updates (prereleases on, release titles `^MoonCast [0-9.]+( |$)`, one APK filter per app), and a **Privacy** section.
+
 ## 1.0-test245 (2026-10-22)
 - **"On battery, stream at" is removed** (Settings, Handheld, and `home/BatteryCap.kt`, added for #65 in test237). It saved little: the screen uses most of the battery and doesn't change, and Native resolution already avoids streaming more pixels than the screen shows. With it goes test244's Auto-bitrate fix. A saved setting is simply ignored.
 
