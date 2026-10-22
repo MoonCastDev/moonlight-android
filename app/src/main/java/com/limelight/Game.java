@@ -190,6 +190,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        com.limelight.home.Usage.used(this, "pc");   // for the next anonymous check-in, if the user said yes
 
         UiHelper.setLocale(this);
 

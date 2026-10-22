@@ -215,6 +215,14 @@ class HandheldHomeActivity : Activity() {
         super.onResume()
         resumed = true
         resumedAt = android.os.SystemClock.elapsedRealtime()
+        // anonymous usage check-in: once a day if the user said yes; the question once, a moment after home is up
+        com.limelight.home.Usage.checkIn(this)
+        if (com.limelight.home.Usage.shouldAsk(this)) ui.postDelayed({
+            if (resumed && overlayKind == null && com.limelight.home.Usage.shouldAsk(this))
+                dialog(com.limelight.home.Usage.QUESTION, com.limelight.home.Usage.EXPLAIN, emptyList(),
+                        listOf("No thanks" to { com.limelight.home.Usage.answer(this, false) },
+                                "Yes, send" to { com.limelight.home.Usage.answer(this, true) }), primaryAt = 0)
+        }, 1500)
         TvFinder.onChange = { render() }
         if (System.currentTimeMillis() - TvFinder.lastSweepAt > 90_000) TvFinder.sweep(this) else TvFinder.check(this)
         consoles = Ps5Store.all(this)
@@ -1389,6 +1397,9 @@ class HandheldHomeActivity : Activity() {
                     try { startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(com.limelight.home.Licences.SOURCE))) }
                     catch (e: Exception) { toast("No browser on this device: ${com.limelight.home.Licences.SOURCE}") }
                 }
+                if (com.limelight.home.Usage.available)
+                    toggle(list, com.limelight.home.Usage.PREF, "Anonymous usage check-in",
+                            "Once a day: app version, device model, and whether you played PC, PS5 or Xbox. Nothing personal", false)
                 action(list, "about:add", "Add a PC by its address", "For a PC this device doesn't find on its own", null) { addPcByAddress() }
                 action(list, "about:all", "All settings", "Every option, including the rare ones", null) {
                     startActivity(Intent(this, StreamSettings::class.java)) }

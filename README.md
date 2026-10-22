@@ -24,16 +24,25 @@ MoonCast grew from [Moonlight for Android](https://github.com/moonlight-stream/m
 - **On-screen controller** for PC games, with PlayStation and Xbox layouts. The keys are see-through over the game and give a light tick under your finger. The PC sees a real PlayStation or Xbox pad, so games show the right button symbols.
 - **Foldables.** The picture follows the screen when you fold or unfold, and Native resolution uses the whole screen.
 - **Controllers.** Bluetooth and USB pads, a test screen for every button, and rumble on the device when a pad can't rumble.
-- **Quick menu** while playing: keyboard, controllers, disconnect, quit, move to a TV.
+- **Quick menu** while playing: streaming status, touch screen (off, mouse or touch), keyboard, controllers, Task Manager, disconnect, quit, move to a TV.
 
 ## Install
 
-Download the APKs from [Releases](https://github.com/MoonCastDev/moonlight-android/releases):
+Download the APKs from [Releases](https://github.com/MoonCastDev/moonlight-android/releases). The betas (*MoonCast 1.0 beta …*) have:
 
-- `MoonCastHandheld-….apk` for phones and handhelds;
+- `MoonCast-….apk` for phones, handhelds and tablets;
 - `MoonCastTV-….apk` for Android TV and Google TV.
 
-Both run on Android 5.0 and later. Builds marked *Pre-release* are test builds.
+Both run on Android 5.0 and later. Releases named `1.0-test…` are development builds (`MoonCast (Debug)`), installed next to the beta.
+
+### Automatic updates with Obtainium
+
+[Obtainium](https://github.com/ImranR98/Obtainium) installs MoonCast from these releases and tells you when a new beta is out. Install Obtainium, then open one of these on the device:
+
+- [Add MoonCast (phones and handhelds) to Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22me.mooncast.handheld%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FMoonCastDev%2Fmoonlight-android%22%2C%22author%22%3A%22MoonCastDev%22%2C%22name%22%3A%22MoonCast%22%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3A%20true%2C%20%5C%22filterReleaseTitlesByRegEx%5C%22%3A%20%5C%22%5EMoonCast%20%5B0-9.%5D%2B%28%20%7C%24%29%5C%22%2C%20%5C%22apkFilterRegEx%5C%22%3A%20%5C%22%5EMoonCast-.%2A%5C%5C%5C%5C.apk%24%5C%22%2C%20%5C%22appName%5C%22%3A%20%5C%22MoonCast%5C%22%7D%22%7D)
+- [Add MoonCast TV to Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22me.mooncast.tv%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FMoonCastDev%2Fmoonlight-android%22%2C%22author%22%3A%22MoonCastDev%22%2C%22name%22%3A%22MoonCast%20TV%22%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3A%20true%2C%20%5C%22filterReleaseTitlesByRegEx%5C%22%3A%20%5C%22%5EMoonCast%20%5B0-9.%5D%2B%28%20%7C%24%29%5C%22%2C%20%5C%22apkFilterRegEx%5C%22%3A%20%5C%22%5EMoonCastTV-.%2A%5C%5C%5C%5C.apk%24%5C%22%2C%20%5C%22appName%5C%22%3A%20%5C%22MoonCast%20TV%5C%22%7D%22%7D)
+
+Or add it by hand: **Add App**, the URL `https://github.com/MoonCastDev/moonlight-android`, then in its settings turn on **Include prereleases**, set **Filter release titles by regular expression** to `^MoonCast [0-9.]+( |$)` and **Filter APKs by regular expression** to `^MoonCast-.*\.apk$` (or `^MoonCastTV-.*\.apk$` on a TV).
 
 ### On the PC
 
@@ -62,6 +71,12 @@ The APKs land in `app/build/outputs/apk/`. Two notes:
 - **Existing clone.** If you already cloned without submodules, run `git submodule update --init --recursive`.
 
 Test builds put the build number in the version: `BUILD=test123 ./gradlew …` gives `12.2-test123`.
+
+## Privacy
+
+MoonCast has no ads and no accounts of its own. Your PlayStation Network and Xbox sign-ins and your PC pairings stay on the device and go only to Sony, Microsoft and your own PC.
+
+Official builds ask once whether you'll send an **anonymous usage check-in** (Settings, About). If you say yes, once a day it sends [TelemetryDeck](https://telemetrydeck.com) the app version, TV or handheld, the device model and Android version, and whether you played PC, PS5 or Xbox. The install is a random ID made on the device, sent hashed. It never sends names, addresses, games, accounts or anything you type. Say no, or turn it off later, and nothing is sent. Builds you make yourself never ask and never send. The code is in [`home/Usage.kt`](app/src/main/java/com/limelight/home/Usage.kt).
 
 ## Licence
 

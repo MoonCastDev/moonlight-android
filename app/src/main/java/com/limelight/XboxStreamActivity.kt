@@ -66,6 +66,7 @@ class XboxStreamActivity : Activity(), com.limelight.home.MoveToTv.LocalSession 
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        com.limelight.home.Usage.used(this, "xbox")   // for the next anonymous check-in, if the user said yes
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         // The decoder rules the Xbox decoder borrows (MediaCodecHelper) need this first, as in Moonlight's Game
         com.limelight.binding.video.MediaCodecHelper.initialize(this,
