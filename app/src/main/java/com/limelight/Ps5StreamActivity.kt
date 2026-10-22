@@ -59,7 +59,8 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
         const val DECODER_PREF = "ps5_decoder_latency"
 
         /** Settings, PlayStation, Frame pacing: latency (default), balanced or smoothness, like the PC's. */
-        const val PACING_PREF = "ps5_frame_pacing"
+        /** Picture, Frame pacing: one setting for PC and PS5 (Moonlight's own key). It was a separate PS5 one. */
+        const val PACING_PREF = "frame_pacing"
 
         /** Stop a PSN connect in flight; older libraries without psnCancel just let it time out. */
         private fun cancelPsn() {
@@ -161,7 +162,8 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
             (prefs.getString(if (away) "away_fps_custom" else "ps5_fps_home_custom", "60")?.toIntOrNull() ?: 60) < 45
         else fpsSel == "30"
         // Settings, PlayStation, Frame pacing: frames spaced at this stream's rate (lowest delay, balanced, smoothest)
-        val pacing = when (prefs.getString(PACING_PREF, "latency")) { "balanced" -> 1; "smoothness" -> 2; else -> 0 }
+        // Moonlight's All settings also offers "cap-fps": the nearest PS5 mode for it is Balanced
+        val pacing = when (prefs.getString(PACING_PREF, "latency")) { "balanced", "cap-fps" -> 1; "smoothness" -> 2; else -> 0 }
         try { com.metallic.chiaki.lib.decoderPacing(pacing, if (fps30) 30 else 60) } catch (e: UnsatisfiedLinkError) { }
         Log.i(TAG, "frame pacing $pacing at ${if (fps30) 30 else 60} fps")
         val preset = ConnectVideoProfile.preset(

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0-test256 (2026-10-22)
+- Fixes from the UI review:
+  - **Menus show all their options:** dialog rows are a little tighter and the room is worked out more truly, so a PC game's menu (Play here, Play on a TV, Change picture, Hide…) no longer hides options below a scroll.
+  - **One Frame pacing** for PC and PS5, in Picture ("PC and PS5…; Xbox paces itself"). The PlayStation group's own Frame pacing is gone; the PS5 now reads the Picture one (Moonlight's Cap FPS counts as Balanced). A PS5-only choice saved before is no longer used.
+  - **Add apps on Home** is a quiet tile (plain, with + and its name) instead of a bright cover.
+  - **Top bar:** "Playing on <TV>" takes at most half the screen and a long TV name ends in "…" (it could run off the screen upright).
+  - **Settings groups:** the selected group has the same rounded corner as the rest of the app, and the focus ring follows it.
+
 ## 1.0-test255 (2026-10-22)
 - UI review on the Odin (test254, 20 screens): Home, All games (every tab), Add apps, the game menus, Consoles and every Settings group. Measured: cold start 327 ms; janky frames 0.6% moving along Home, 0.4% scrolling All games, 0.5% moving down the Settings groups (5-12 ms frames).
   - Fixed: lists ran on under the hint bar (Consoles' "Find my Xbox" drew over the controller name; a sliver of All games' next row showed below it). A view is clipped by its parent and the content area doesn't clip, so the All games grid, the list pages and the Settings list now sit in a frame that clips them.
