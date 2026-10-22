@@ -750,9 +750,11 @@ class HandheldHomeActivity : Activity() {
         col.addView(part(box), sw.lp(-1, 48).apply { topMargin = sw.px(headTop); leftMargin = sw.px(left) })
 
         val tiles = ArrayList<View>()
-        val shown = if (grid) games.take(cols * rows - 1) else games   // the last cell is All games
+        val shown = if (grid) games.take(cols * rows - 2) else games   // the last two cells: Add apps, All games
         if (games.isEmpty()) tiles += tileView(null, ts, 36, "g:add", "Add a console") { go(Page.CONSOLES) }
         shown.forEach { g -> tiles += tileView(g, ts, 36, "g:${g.key}", g.title) { play(g) } }
+        // always on Home: the way to add this device's apps (before, it was only in All games, This <device>)
+        tiles += tileView(null, ts, 36, "g:devadd", "Add apps") { pickDeviceApps() }
         tiles += tileView(null, ts, 36, "g:all", "All games") { gamesTab = "all"; go(Page.GAMES) }
         if (grid) {
             val gl = GridLayout(this).apply { columnCount = cols; clipChildren = false }
@@ -1376,6 +1378,8 @@ class HandheldHomeActivity : Activity() {
                 choice(list, prefs, "hh_screen_size", "Screen size", "Auto fits this screen. Compact and Large make everything bigger",
                         listOf("Auto" to "auto", "Compact" to "compact", "Normal" to "normal", "Large" to "large"), "auto") { recreate() }
                 appToggle(list, "hh_rotate", "Screen turns with the device", "Portrait when you hold it upright", true) { applyRotation() }
+                action(list, "set:devapps", "Apps on this ${deviceShort()}", "Pick Android apps to show next to your games (emulators, Steam Link…)",
+                        com.limelight.home.DeviceApps.pinned(this).size.let { if (it == 0) "None" else "$it" }) { pickDeviceApps() }
                 // PC games: what a finger on the picture does when a game starts (the Quick menu changes it for that game)
                 choice(list, stream, com.limelight.Game.TOUCH_DEFAULT_PREF, "Touch screen", "In PC games. Mouse is a trackpad, Touch clicks where you tap. The Quick menu changes it while you play",
                         listOf("Off" to "off", "Mouse" to "mouse", "Touch" to "touch"), "off")

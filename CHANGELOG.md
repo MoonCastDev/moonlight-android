@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.0-test252 (2026-10-22)
+- Adding more apps was hard to find (only All games, This <device>, Add apps). Now also: an **Add apps** tile on Home, always there before All games, and **Settings, Handheld, Apps on this <device>** (shows how many are added). All three open the same picker.
+
 ## 1.0-test251 (2026-10-22)
 - Added Android apps "disappeared after a while" (Saleh on the Odin):
   - **Home** kept the last-played games first and cut the row at ten, so after about ten games played your added apps (and the PS5 and Xbox) fell off Home. Now the row is: what's running, the last five played, then every console and every added app (they always keep a place), then PC games up to ten.
