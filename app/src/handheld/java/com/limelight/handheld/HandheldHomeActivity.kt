@@ -101,6 +101,7 @@ class HandheldHomeActivity : Activity() {
     private lateinit var foot: LinearLayout
     private lateinit var overlay: FrameLayout
     private lateinit var glide: FocusGlide
+    private var treeHooked = false
     private var padName: TextView? = null
     private var portrait = false
     private val ui = Handler(Looper.getMainLooper())
@@ -216,6 +217,8 @@ class HandheldHomeActivity : Activity() {
         super.onResume()
         resumed = true
         resumedAt = android.os.SystemClock.elapsedRealtime()
+        if (::glide.isInitialized) glide.resumeBreath()
+        com.limelight.home.DeviceApps.refresh()   // apps may have been installed, updated or removed meanwhile
         // anonymous usage check-in: once a day if the user said yes; the question once, a moment after home is up
         com.limelight.home.Usage.checkIn(this)
         if (com.limelight.home.Usage.shouldAsk(this)) ui.postDelayed({
@@ -244,6 +247,8 @@ class HandheldHomeActivity : Activity() {
         holdMulticast(false)
         stopPolling()
         ui.removeCallbacks(tick)
+        ui.removeCallbacks(groupRender)
+        if (::glide.isInitialized) glide.pauseBreath()
         super.onPause()
     }
 
@@ -456,6 +461,7 @@ class HandheldHomeActivity : Activity() {
 
     /** Every game: each PS5 and Xbox (one tile per console) and every PC game that isn't hidden. */
     private fun allGames(): List<Game> {
+        if (memoOn) gamesMemo?.let { return it }
         val out = ArrayList<Game>()
         consoles.forEach { c ->
             val st = psStatus[c.host]
@@ -469,6 +475,7 @@ class HandheldHomeActivity : Activity() {
                 out += Game("pc:${pc.uuid}:${a.appId}", a.appName, "PC", a.appName, a.appId == pc.runningGameId, pc = pc, app = a)
             }
         }
+        if (memoOn) gamesMemo = out
         return out
     }
 
@@ -549,7 +556,8 @@ class HandheldHomeActivity : Activity() {
                 val t = v.tag as? String
                 when {
                     v.getTag(R.id.hh_pill) == true -> 9999f
-                    t != null && (t.startsWith("rb:") || t.startsWith("pill:") || t.startsWith("tab:") || t.startsWith("dock:")) -> 9999f
+                    t != null && (t.startsWith("rb:") || t.startsWith("pill:") || t.startsWith("tab:") || t.startsWith("dock:") || t.startsWith("chip:")) -> 9999f
+                    t != null && t.startsWith("app:") -> sw.pxf(13 + 22)
                     t != null && t.startsWith("g:") -> sw.pxf(13 + sw.tileCorner)
                     else -> null
                 }
@@ -557,8 +565,12 @@ class HandheldHomeActivity : Activity() {
             accept = { v -> v !is EditText }
             breathe = true
         }.attach()
-        root.viewTreeObserver.addOnGlobalFocusChangeListener { _, n -> onFocus(n) }
-        root.viewTreeObserver.addOnScrollChangedListener { placeName() }
+        // once per window: buildShell runs again on every rotation or fold, and each run used to add another pair
+        if (!treeHooked) {
+            treeHooked = true
+            window.decorView.viewTreeObserver.addOnGlobalFocusChangeListener { _, n -> onFocus(n) }
+            window.decorView.viewTreeObserver.addOnScrollChangedListener { placeName() }
+        }
         snack = null
         FeelSounds.warm(this)
         lastPage = null
@@ -585,6 +597,15 @@ class HandheldHomeActivity : Activity() {
         Profile.syncPcSettings(this)
         val sig = signature()
         if (!force && sig == lastSig) return
+        gamesMemo = null; memoOn = true
+        try { renderPage(sig) } finally { memoOn = false; gamesMemo = null }
+    }
+
+    /** allGames() is asked for several times per render (Home's row, the wash, the selected game): work it out once. */
+    private var gamesMemo: List<Game>? = null
+    private var memoOn = false
+
+    private fun renderPage(sig: String) {
         lastSig = sig
         val entering = lastPage != page
         lastPage = page
@@ -661,7 +682,7 @@ class HandheldHomeActivity : Activity() {
             }, sw.lp(-2, 84))
         } else {
             // a back button you can tap: a touch screen has no B (the same as B / the system back)
-            topBar.addView(roundButton("top:back", "back", sw.ink, 84, sw.panel) { onBackPressed() }.apply { isFocusable = false },
+            topBar.addView(roundButton("top:back", "back", sw.ink, 84, sw.panel) { onBackPressed() }.apply { isFocusable = false; contentDescription = "Back" },
                     sw.lp(84, 84).apply { rightMargin = sw.px(24) })
             topBar.addView(sw.text(page.title, 44, sw.ink, 800))
         }
@@ -790,6 +811,7 @@ class HandheldHomeActivity : Activity() {
         listOf(Triple("Consoles", "consoles", Sw.C_CYAN), Triple(if (labelsShown) "Play on TV" else "Play on a TV", "tv", Sw.C_AMBER), Triple("Controllers", "pad", Sw.C_BLUE),
                 Triple(if (labelsShown) "Network" else "Network test", "net", Sw.C_GREEN), Triple("Settings", "gear", sw.sub), Triple("Exit", "power", Sw.C_RED)).forEachIndexed { i, (label, icon, color) ->
             val btn = roundButton("rb:$icon", icon, color, 112, sw.panel) { roundAction(icon) }
+            btn.contentDescription = label
             val lab = sw.text(label, 27, if (labelsShown) sw.label else sw.ring, 700).apply { gravity = Gravity.CENTER_HORIZONTAL; visibility = if (labelsShown) View.VISIBLE else View.INVISIBLE }
             rbLabels += btn to lab
             if (portrait) {
@@ -852,8 +874,9 @@ class HandheldHomeActivity : Activity() {
         val f = FrameLayout(this)
         f.tag = tag
         f.setTag(R.id.hh_title, label)
+        f.contentDescription = label
         val custom = g?.let { com.limelight.home.CustomArt.bitmap(this, it.key) }
-        val appColor = if (custom != null) com.limelight.home.CustomArt.color(custom)
+        val appColor = if (custom != null) com.limelight.home.CustomArt.color(g!!.key, custom)
                        else g?.dev?.let { com.limelight.home.DeviceApps.color(this, it.pkg) } ?: 0
         f.setTag(R.id.hh_tint, if (appColor != 0) appColor else if (g != null) sw.tint(g.seed) else 0)
         f.clipToOutline = true
@@ -1252,7 +1275,15 @@ class HandheldHomeActivity : Activity() {
      * "On this device": a grid of the installed apps with their icons, games first. A tap adds or removes an app at
      * once (a ✓ and a green ring mark what's added) and the grid stays as it is, so you can pick several.
      */
+    /** Opens Add apps; the first time, the app list and icons load off the main thread (hundreds of apps took a moment). */
     private fun pickDeviceApps() {
+        Thread {
+            com.limelight.home.DeviceApps.installed(this).forEach { com.limelight.home.DeviceApps.icon(this, it.pkg) }
+            runOnUiThread { if (!isFinishing && resumed) showPicker() }
+        }.start()
+    }
+
+    private fun showPicker() {
         val all = com.limelight.home.DeviceApps.installed(this)
         if (all.isEmpty()) { toast("No apps found on this ${deviceShort()}"); return }
         val games = all.filter { it.isGame }
@@ -1276,7 +1307,7 @@ class HandheldHomeActivity : Activity() {
                 background = sw.round(if (on) sw.ink else sw.bg, 30)
                 sw.focusable(this)
                 setOnClickListener {
-                    if (pickerFilter != k) { pickerFilter = k; FeelSounds.play(this@HandheldHomeActivity, FeelSounds.Cue.TAB); pickDeviceApps()
+                    if (pickerFilter != k) { pickerFilter = k; FeelSounds.play(this@HandheldHomeActivity, FeelSounds.Cue.TAB); showPicker()
                         this@HandheldHomeActivity.overlay.findViewWithTag<View>("chip:$k")?.requestFocus() }
                 }
             }, sw.lp(-2, 60).apply { if (i > 0) leftMargin = sw.px(14) })
@@ -1335,6 +1366,8 @@ class HandheldHomeActivity : Activity() {
         showOverlay("picker", card, wide = true)
     }
 
+    private val groupRender = Runnable { if (resumed && page == Page.SETTINGS) render(force = true) }
+
     // ---------------------------------------------------------------- Settings
 
     private val groups = listOf("handheld" to "Handheld", "picture" to "Picture", "sound" to "Sound", "pads" to "Controllers",
@@ -1351,7 +1384,9 @@ class HandheldHomeActivity : Activity() {
                 if (on) addView(View(this@HandheldHomeActivity).apply { background = sw.round(sw.ring, 3) }, sw.flp(6, -1).apply { topMargin = sw.px(18); bottomMargin = sw.px(18) })
                 addView(sw.text(label, 30, if (on) sw.ring else sw.sub, 700).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(sw.px(28), 0, 0, 0) }, FrameLayout.LayoutParams(-1, -1))
                 sw.focusable(this)
-                setOnFocusChangeListener { _, has -> if (has && settingsGroup != k) { settingsGroup = k; licencesOpen = false; ui.post { render(force = true) } } }
+                // moving down the sidebar rebuilt the whole screen at every step: wait until focus rests on a group
+                setOnFocusChangeListener { _, has -> if (has && settingsGroup != k) { settingsGroup = k; licencesOpen = false
+                    ui.removeCallbacks(groupRender); ui.postDelayed(groupRender, 160) } }
                 setOnClickListener {
                     settingsGroup = k; licencesOpen = false
                     render(force = true)
@@ -2346,7 +2381,7 @@ class HandheldHomeActivity : Activity() {
                     val step = if (e.keyCode == KeyEvent.KEYCODE_BUTTON_L1) -1 else 1
                     when (page) {
                         Page.GAMES -> {
-                            val tabs = listOf("all", "pc", "ps", "xb")
+                            val tabs = listOf("all", "pc", "ps", "xb", "dev")
                             gamesTab = tabs[(tabs.indexOf(gamesTab) + step + tabs.size) % tabs.size]
                             FeelSounds.play(this, FeelSounds.Cue.TAB, 0.3f * step); render(force = true); return true
                         }

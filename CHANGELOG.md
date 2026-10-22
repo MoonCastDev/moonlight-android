@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0-test253 (2026-10-22)
+- UI review, first round (handheld): faster and lighter, same look.
+  - Settings: moving down the groups rebuilt the whole screen at every step; it now waits until focus rests on a group (160 ms).
+  - Home and All games work out the games list once per redraw instead of 3 times, and "On this device" keeps its list, app names and icons in memory (refreshed when MoonCast comes back to the front, for installs and updates meanwhile).
+  - Tile pictures: which tiles have one is read from disk once, not checked per tile per redraw; the picture cache counts bytes (about 24 MB), and each picture's colour is worked out once.
+  - Add apps loads the app list and icons off the main thread; switching Games / All apps reuses them.
+  - The focus ring's breathing stops while MoonCast isn't in front (it redrew the ring 60 times a second in the background).
+  - Focus and scroll listeners were added again on every rotation or fold; now once.
+  - Stats corner and Quick menu: the numbers are only set when they changed (a new text lays the player out again).
+  - L1/R1 on All games skipped the This <device> tab.
+  - The focus ring fits the Add apps chips and app cells.
+  - TalkBack: tiles, the round buttons and Back say what they are.
+
 ## 1.0-test252 (2026-10-22)
 - Adding more apps was hard to find (only All games, This <device>, Add apps). Now also: an **Add apps** tile on Home, always there before All games, and **Settings, Handheld, Apps on this <device>** (shows how many are added). All three open the same picker.
 

@@ -200,6 +200,10 @@ class FocusGlide(private val host: FrameLayout) : View(host.context) {
         (parent as? ViewGroup)?.removeView(this)
     }
 
+    /** Stop the breathing while the screen isn't in front: it redrew the ring 60 times a second in the background. */
+    fun pauseBreath() { breath?.pause() }
+    fun resumeBreath() { breath?.resume() }
+
     private fun startBreath() {
         breath?.cancel(); breath = null
         if (reduced()) return

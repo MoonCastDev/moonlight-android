@@ -21,8 +21,9 @@ class StatusCorner(private val act: Activity, private val stats: () -> List<Pair
         override fun run() {
             val v = view ?: return
             val line = line()
-            v.text = line
-            v.visibility = if (line.isEmpty()) android.view.View.GONE else android.view.View.VISIBLE
+            if (v.text.toString() != line) v.text = line   // a new text lays the player out again: only when it changed
+            val vis = if (line.isEmpty()) android.view.View.GONE else android.view.View.VISIBLE
+            if (v.visibility != vis) v.visibility = vis
             ui.postDelayed(this, 1000)
         }
     }
