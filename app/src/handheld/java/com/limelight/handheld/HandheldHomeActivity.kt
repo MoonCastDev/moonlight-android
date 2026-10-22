@@ -843,7 +843,8 @@ class HandheldHomeActivity : Activity() {
         val f = FrameLayout(this)
         f.tag = tag
         f.setTag(R.id.hh_title, label)
-        f.setTag(R.id.hh_tint, if (g != null) sw.tint(g.seed) else 0)
+        val appColor = g?.dev?.let { com.limelight.home.DeviceApps.color(this, it.pkg) } ?: 0
+        f.setTag(R.id.hh_tint, if (appColor != 0) appColor else if (g != null) sw.tint(g.seed) else 0)
         f.clipToOutline = true
         f.outlineProvider = rounded(sw.tileCorner)
         f.elevation = sw.pxf(8)   // a soft shadow lifts the tiles off the background
@@ -856,7 +857,7 @@ class HandheldHomeActivity : Activity() {
                 gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL; setPadding(0, 0, 0, sw.px(size * 0.08f))
             }, FrameLayout.LayoutParams(-1, -1))
         } else {
-            f.background = sw.art(g.seed)
+            f.background = if (appColor != 0) sw.artFrom(appColor) else sw.art(g.seed)
             val k = size / 380f
             val title = sw.text(g.title, titleSize, 0xFFFFFFFF.toInt(), 800, 3).apply {
                 gravity = Gravity.BOTTOM
@@ -869,10 +870,18 @@ class HandheldHomeActivity : Activity() {
                 f.addView(title, FrameLayout.LayoutParams(-1, -1))
                 loader(g.pc).populateImageView(g.app, img, title)
             } else if (g.dev != null) {
-                // an Android app: its own icon in the middle of its colour, the name under it
+                // an Android app, on a cover in its own colour: a big faded copy of its icon leaning in from the
+                // corner, the icon itself above the middle, the name under it
                 val icon = com.limelight.home.DeviceApps.icon(this, g.dev.pkg)
-                if (icon != null) f.addView(ImageView(this).apply { setImageDrawable(icon); scaleType = ImageView.ScaleType.FIT_CENTER },
-                        FrameLayout.LayoutParams(sw.px(size * 0.42f), sw.px(size * 0.42f), Gravity.CENTER).apply { bottomMargin = sw.px(size * 0.1f) })
+                if (icon != null) {
+                    f.addView(ImageView(this).apply {
+                        setImageDrawable(icon.constantState?.newDrawable()?.mutate() ?: icon)
+                        scaleType = ImageView.ScaleType.FIT_CENTER; alpha = 0.16f; rotation = -14f
+                    }, FrameLayout.LayoutParams(sw.px(size * 0.95f), sw.px(size * 0.95f), Gravity.END or Gravity.BOTTOM).apply {
+                        rightMargin = -sw.px(size * 0.22f); bottomMargin = -sw.px(size * 0.18f) })
+                    f.addView(ImageView(this).apply { setImageDrawable(icon); scaleType = ImageView.ScaleType.FIT_CENTER },
+                            FrameLayout.LayoutParams(sw.px(size * 0.5f), sw.px(size * 0.5f), Gravity.CENTER_HORIZONTAL).apply { topMargin = sw.px(size * 0.15f) })
+                }
                 f.addView(title, FrameLayout.LayoutParams(-1, -1))
             } else f.addView(title, FrameLayout.LayoutParams(-1, -1))
             val bs = if (size >= 500) 24 else if (size >= 360) 20 else 17
@@ -1193,24 +1202,92 @@ class HandheldHomeActivity : Activity() {
                 }), listOf("Close" to {}))
     }
 
+    /** The picker's filter: "games" (what Android marks as games, the usual pick) or "all". */
+    private var pickerFilter = "games"
+
     /**
-     * "On this device": the installed apps, games first, each one ticked or not. A pick adds or removes it at once and
-     * the list stays open where you were, so you can pick several.
+     * "On this device": a grid of the installed apps with their icons, games first. A tap adds or removes an app at
+     * once (a ✓ and a green ring mark what's added) and the grid stays as it is, so you can pick several.
      */
-    private fun pickDeviceApps(at: Int = 0) {
-        val apps = com.limelight.home.DeviceApps.installed(this)
-        if (apps.isEmpty()) { toast("No apps found on this ${deviceShort()}"); return }
-        val opts = apps.mapIndexed { i, a ->
-            val on = com.limelight.home.DeviceApps.isPinned(this, a.pkg)
-            Opt(if (on) "✓" else "+", if (on) Sw.LIVE else sw.panel, a.label, if (a.isGame) "Game" else null, if (on) "Added" else null) {
-                if (on) com.limelight.home.DeviceApps.remove(this, a.pkg) else com.limelight.home.DeviceApps.add(this, a.pkg)
-                render(force = true)
-                pickDeviceApps(i)
-            }
+    private fun pickDeviceApps() {
+        val all = com.limelight.home.DeviceApps.installed(this)
+        if (all.isEmpty()) { toast("No apps found on this ${deviceShort()}"); return }
+        val games = all.filter { it.isGame }
+        if (games.isEmpty()) pickerFilter = "all"
+        val shown = if (pickerFilter == "games") games else all
+        val card = card()
+        val head = sw.row(Gravity.CENTER_VERTICAL)
+        head.addView(sw.text("Add apps", 40, sw.ink, 800), LinearLayout.LayoutParams(0, -2, 1f))
+        val count = sw.text("", 26, Sw.LIVE, 800)
+        fun recount() { val n = com.limelight.home.DeviceApps.pinned(this).size; count.text = if (n == 0) "None added yet" else "$n added" }
+        recount()
+        head.addView(count)
+        card.addView(head, sw.lp(-1, -2).apply { leftMargin = sw.px(56); rightMargin = sw.px(56); topMargin = sw.px(44) })
+        card.addView(sw.text("Tap an app to show it in MoonCast. Tap it again to take it out. Your apps stay installed.", 24, sw.sub, 600, 2),
+                sw.lp(-1, -2).apply { leftMargin = sw.px(56); rightMargin = sw.px(56); topMargin = sw.px(8) })
+        val chips = sw.row()
+        listOf("games" to "Games (${games.size})", "all" to "All apps (${all.size})").forEachIndexed { i, (k, label) ->
+            val on = k == pickerFilter
+            chips.addView(sw.text(label, 24, if (on) sw.bg else sw.sub, 700).apply {
+                tag = "chip:$k"; gravity = Gravity.CENTER; setPadding(sw.px(28), 0, sw.px(28), 0)
+                background = sw.round(if (on) sw.ink else sw.bg, 30)
+                sw.focusable(this)
+                setOnClickListener {
+                    if (pickerFilter != k) { pickerFilter = k; FeelSounds.play(this@HandheldHomeActivity, FeelSounds.Cue.TAB); pickDeviceApps()
+                        this@HandheldHomeActivity.overlay.findViewWithTag<View>("chip:$k")?.requestFocus() }
+                }
+            }, sw.lp(-2, 60).apply { if (i > 0) leftMargin = sw.px(14) })
         }
-        dialog("Add apps", "Pick the apps to show in MoonCast. Pick again to remove one.", opts, listOf("Done" to {}))
-        // back on the row just picked
-        (overlay.findViewWithTag<View>(if (at == 0) "primary" else "opt:$at"))?.requestFocus()
+        card.addView(chips, sw.lp(-2, 60).apply { leftMargin = sw.px(56); topMargin = sw.px(22) })
+
+        // the grid: as many columns as fit cells about 210 wide in the card
+        val cardW = minOf(1560f, sw.designWidth - 80)
+        val gap = 18
+        val cols = ((cardW - 2 * 48 + gap) / (210 + gap)).toInt().coerceIn(3, 7)
+        val cell = ((cardW - 2 * 48 - (cols - 1) * gap) / cols).toInt()
+        val grid = GridLayout(this).apply { columnCount = cols; clipChildren = false }
+        shown.forEachIndexed { i, a ->
+            val v = FrameLayout(this).apply {
+                tag = if (i == 0) "primary" else "app:$i"
+                clipChildren = false
+                sw.focusable(this); sw.pressable(this)
+            }
+            val check = sw.text("✓", 26, 0xFFFFFFFF.toInt(), 800).apply { gravity = Gravity.CENTER; background = sw.round(Sw.LIVE, 22) }
+            fun paint() {
+                val on = com.limelight.home.DeviceApps.isPinned(this, a.pkg)
+                v.background = sw.round(sw.bg, 22, if (on) Sw.LIVE else 0, if (on) 4 else 0)
+                check.visibility = if (on) View.VISIBLE else View.GONE
+            }
+            val iconSize = (cell * 0.5f).toInt()
+            com.limelight.home.DeviceApps.icon(this, a.pkg)?.let { d ->
+                v.addView(ImageView(this).apply { setImageDrawable(d); scaleType = ImageView.ScaleType.FIT_CENTER },
+                        FrameLayout.LayoutParams(sw.px(iconSize), sw.px(iconSize), Gravity.CENTER_HORIZONTAL).apply { topMargin = sw.px(cell * 0.12f) })
+            }
+            v.addView(sw.text(a.label, 21, sw.ink, 700, 2).apply {
+                gravity = Gravity.CENTER_HORIZONTAL; setPadding(sw.px(10), 0, sw.px(10), 0)
+            }, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { bottomMargin = sw.px(cell * 0.08f) })
+            v.addView(check, sw.flp(44, 44, Gravity.END).apply { topMargin = sw.px(10); rightMargin = sw.px(10) })
+            paint()
+            v.setOnClickListener {
+                if (com.limelight.home.DeviceApps.isPinned(this, a.pkg)) com.limelight.home.DeviceApps.remove(this, a.pkg)
+                else com.limelight.home.DeviceApps.add(this, a.pkg)
+                FeelSounds.play(this@HandheldHomeActivity, FeelSounds.Cue.TOGGLE)
+                paint(); recount()
+            }
+            grid.addView(v, GridLayout.LayoutParams().apply {
+                width = sw.px(cell); height = sw.px(cell * 1.08f)
+                if (i % cols != 0) leftMargin = sw.px(gap)
+                bottomMargin = sw.px(gap)
+            })
+        }
+        val gridH = (sw.designHeight - 470).coerceAtLeast(300f)
+        card.addView(ColScroll(this, sw.px(30)).apply {
+            isVerticalScrollBarEnabled = false; clipToPadding = false
+            setPadding(0, sw.px(8), 0, sw.px(8))
+            addView(grid)
+        }, sw.lp(-1, gridH).apply { leftMargin = sw.px(48); rightMargin = sw.px(48); topMargin = sw.px(22) })
+        buttons(card, listOf("Done" to {}), primary = false)
+        showOverlay("picker", card, wide = true)
     }
 
     // ---------------------------------------------------------------- Settings
@@ -2101,13 +2178,13 @@ class HandheldHomeActivity : Activity() {
 
     private var returnTag: String? = null
 
-    private fun showOverlay(kind: String, card: View) {
+    private fun showOverlay(kind: String, card: View, wide: Boolean = false) {
         FeelSounds.play(this, FeelSounds.Cue.OPEN)
         if (overlayKind == null) returnTag = currentFocus?.tag as? String   // where focus goes back to when it closes
         overlayKind = kind
         overlay.removeAllViews()
         overlay.setBackgroundColor(0x9E000000.toInt())
-        overlay.addView(card, FrameLayout.LayoutParams(sw.px(minOf(960f, sw.designWidth - 60)), -2, Gravity.CENTER))
+        overlay.addView(card, FrameLayout.LayoutParams(sw.px(if (wide) minOf(1560f, sw.designWidth - 80) else minOf(960f, sw.designWidth - 60)), -2, Gravity.CENTER))
         overlay.visibility = View.VISIBLE
         overlay.setOnClickListener { hideOverlay() }   // a tap outside the card closes it
         card.isClickable = true

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0-test249 (2026-10-22)
+- On this device, a better look:
+  - **Tiles** take their colour from the app's own icon (its strongest hue, toned down so the name stays readable), with a big faded copy of the icon leaning in from the corner and the icon itself larger, above the name. The background wash follows the same colour. Grey or white icons keep the usual covers.
+  - **Add apps** is a wide page with a grid of the apps' real icons and names instead of a text list: Games / All apps chips with counts, "N added" at the top, and a ✓ and green ring on what's added. A tap adds or removes at once without the grid jumping back to the top. MoonCast's own copies (a beta next to a test build) aren't listed.
+
 ## 1.0-test248 (2026-10-22)
 - On this device, tested on the Odin (test247): the tab, the picker (emulators listed first as games), adding, opening (Back returns to MoonCast) and Remove from MoonCast (the app stays installed) all work. The Add apps tile showed only "+": it now says Add apps.
 

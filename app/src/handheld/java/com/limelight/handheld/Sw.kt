@@ -215,6 +215,16 @@ class Sw(ctx: Context, val light: Boolean, val portrait: Boolean, val size: Size
     /** Cover art for things without box art: the mockup's radial gradients. */
     fun art(seed: String, radius: Number = tileCorner): Drawable = Art(ART[artIndex(seed)], pxf(radius))
 
+    /** A cover in one colour (an app's own, from its icon): lighter top, the colour, darker bottom. */
+    fun artFrom(color: Int, radius: Number = tileCorner): Drawable {
+        fun shade(f: Float): Int {
+            val hsv = FloatArray(3); android.graphics.Color.colorToHSV(color, hsv)
+            hsv[2] = (hsv[2] * f).coerceIn(0f, 1f); if (f > 1f) hsv[1] = (hsv[1] * 0.85f)
+            return android.graphics.Color.HSVToColor(hsv)
+        }
+        return Art(intArrayOf(shade(1.25f), color, shade(0.45f)), pxf(radius))
+    }
+
     /** The tint colour a cover sets for the background wash. */
     fun tint(seed: String): Int = ART[artIndex(seed)][1]
 

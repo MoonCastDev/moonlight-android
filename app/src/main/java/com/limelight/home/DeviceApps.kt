@@ -37,7 +37,7 @@ object DeviceApps {
 
     private fun save(c: Context, l: List<String>) = store(c).edit().putString(PREF, JSONArray(l).toString()).apply()
 
-    /** Every app with a launcher entry (phone or TV launcher), not MoonCast itself: games first, then A to Z. */
+    /** Every app with a launcher entry (phone or TV launcher), not MoonCast (any of its copies): games first, then A to Z. */
     @JvmStatic fun installed(c: Context): List<App> {
         val pm = c.packageManager
         val pkgs = LinkedHashSet<String>()
@@ -45,7 +45,7 @@ object DeviceApps {
             @Suppress("DEPRECATION")
             pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(cat), 0).forEach { pkgs += it.activityInfo.packageName }
         }
-        pkgs -= c.packageName
+        pkgs.removeAll { it == c.packageName || it.startsWith("me.mooncast.") }   // MoonCast itself, and its beta or test copy
         return pkgs.mapNotNull { info(c, it) }.sortedWith(compareByDescending<App> { it.isGame }.thenBy { it.label.lowercase() })
     }
 
@@ -63,6 +63,38 @@ object DeviceApps {
         val pm = c.packageManager
         (if (tvBanner) pm.getApplicationBanner(pkg) else null) ?: pm.getApplicationIcon(pkg)
     } catch (e: Exception) { null }
+
+    private val colors = HashMap<String, Int>()
+
+    /**
+     * The app's own colour, from its icon: the strongest hue among its vivid pixels, toned down so white text reads
+     * on it. 0 for a grey or white icon (the caller uses its usual cover then).
+     */
+    @JvmStatic fun color(c: Context, pkg: String): Int = colors.getOrPut(pkg) {
+        val d = icon(c, pkg) ?: return@getOrPut 0
+        val n = 32
+        val bmp = android.graphics.Bitmap.createBitmap(n, n, android.graphics.Bitmap.Config.ARGB_8888)
+        d.setBounds(0, 0, n, n); d.draw(android.graphics.Canvas(bmp))
+        val weight = FloatArray(12); val sum = Array(12) { FloatArray(3) }
+        val hsv = FloatArray(3)
+        for (y in 0 until n) for (x in 0 until n) {
+            val px = bmp.getPixel(x, y)
+            if (android.graphics.Color.alpha(px) < 200) continue
+            android.graphics.Color.colorToHSV(px, hsv)
+            if (hsv[1] < 0.25f || hsv[2] < 0.2f) continue   // greys, whites and near-blacks don't say much
+            val bin = ((hsv[0] / 30f).toInt()).coerceIn(0, 11)
+            val w = hsv[1] * hsv[2]
+            weight[bin] += w
+            sum[bin][0] += android.graphics.Color.red(px) * w; sum[bin][1] += android.graphics.Color.green(px) * w; sum[bin][2] += android.graphics.Color.blue(px) * w
+        }
+        bmp.recycle()
+        val best = weight.indices.maxByOrNull { weight[it] } ?: return@getOrPut 0
+        if (weight[best] < 8f) return@getOrPut 0
+        val avg = android.graphics.Color.rgb((sum[best][0] / weight[best]).toInt(), (sum[best][1] / weight[best]).toInt(), (sum[best][2] / weight[best]).toInt())
+        android.graphics.Color.colorToHSV(avg, hsv)
+        hsv[1] = hsv[1].coerceIn(0.45f, 0.85f); hsv[2] = hsv[2].coerceIn(0.45f, 0.72f)
+        android.graphics.Color.HSVToColor(hsv)
+    }
 
     /** Opens the app; false when it can't be opened (uninstalled, or no launcher entry any more). */
     @JvmStatic fun launch(c: Context, pkg: String): Boolean {
