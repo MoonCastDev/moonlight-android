@@ -40,6 +40,19 @@
         android:name="android.hardware.type.pc"
         android:required="false"/>
 
+    <!-- "On this device" (home/DeviceApps.kt): see the apps a launcher shows, so the user can pick some.
+         Only launcher entries, not QUERY_ALL_PACKAGES. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="true"
         android:fullBackupContent="@xml/backup_rules"

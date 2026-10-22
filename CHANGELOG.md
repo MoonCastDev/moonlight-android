@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.0-test252 (2026-10-22)
+- Adding more apps was hard to find (only All games, This <device>, Add apps). Now also: an **Add apps** tile on Home, always there before All games, and **Settings, Handheld, Apps on this <device>** (shows how many are added). All three open the same picker.
+
+## 1.0-test251 (2026-10-22)
+- Added Android apps "disappeared after a while" (Saleh on the Odin):
+  - **Home** kept the last-played games first and cut the row at ten, so after about ten games played your added apps (and the PS5 and Xbox) fell off Home. Now the row is: what's running, the last five played, then every console and every added app (they always keep a place), then PC games up to ten.
+  - **Add apps** started with the first app selected and the hints said "A OK", so an A meant to close the page took that app out (Azahar, first in the list). Focus now starts on Done, the hints say "B Done, A Add or remove", and each tap says "<app> added" or "<app> removed. Tap it again to add it back".
+
+## 1.0-test250 (2026-10-22)
+- **Change picture** for any game tile on the handheld: a PC game, a PS5, an Xbox or an Android app. Long press the tile (or X on Home), Change picture, and pick an image with Android's photo picker. MoonCast keeps a resized copy (longest side 900 px) in its own storage and shows it filling the tile, darkened at the bottom so the name stays readable; the background wash takes its colour. **Reset picture** goes back to MoonCast's own look.
+  - `home/CustomArt.kt`. PS5 and Xbox tiles now have a menu too (Play, Change picture).
+
+## 1.0-test249 (2026-10-22)
+- On this device, a better look:
+  - **Tiles** take their colour from the app's own icon (its strongest hue, toned down so the name stays readable), with a big faded copy of the icon leaning in from the corner and the icon itself larger, above the name. The background wash follows the same colour. Grey or white icons keep the usual covers.
+  - **Add apps** is a wide page with a grid of the apps' real icons and names instead of a text list: Games / All apps chips with counts, "N added" at the top, and a ✓ and green ring on what's added. A tap adds or removes at once without the grid jumping back to the top. MoonCast's own copies (a beta next to a test build) aren't listed.
+
+## 1.0-test248 (2026-10-22)
+- On this device, tested on the Odin (test247): the tab, the picker (emulators listed first as games), adding, opening (Back returns to MoonCast) and Remove from MoonCast (the app stays installed) all work. The Add apps tile showed only "+": it now says Add apps.
+
+## 1.0-test247 (2026-10-22)
+- **On this device** (handheld): Android apps you pick show in MoonCast next to your PC, PS5 and Xbox games, like ES-DE's Android apps. Nothing is added by itself.
+  - All games has a new tab, **This <device>** (This Odin), starting with **Add apps**: the installed apps, games first, each ticked or not. A pick adds or removes it straight away and the list stays open.
+  - The apps are tiles with their own icon and an "Android" badge, on Home and in All games, and open the app. Long press (or X on Home): **Open** or **Remove from MoonCast** (the app stays installed).
+  - `home/DeviceApps.kt`; the manifest's `<queries>` lets MoonCast see launcher apps only (no QUERY_ALL_PACKAGES).
+  - Play on TV doesn't apply to these yet: they open on the device (#99).
+
 ## 1.0-test246 (2026-10-22)
 - **Anonymous usage check-in** (opt-in), so the project can count daily and monthly active users (`home/Usage.kt`, TelemetryDeck's ingest API v2, no SDK):
   - Official builds ask once, a moment after the home screen opens: "Help improve MoonCast?" with **No thanks** selected. Settings, About has the switch afterwards.
