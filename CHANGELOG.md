@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.0-test248 (2026-10-22)
+- On this device, tested on the Odin (test247): the tab, the picker (emulators listed first as games), adding, opening (Back returns to MoonCast) and Remove from MoonCast (the app stays installed) all work. The Add apps tile showed only "+": it now says Add apps.
+
 ## 1.0-test247 (2026-10-22)
 - **On this device** (handheld): Android apps you pick show in MoonCast next to your PC, PS5 and Xbox games, like ES-DE's Android apps. Nothing is added by itself.
   - All games has a new tab, **This <device>** (This Odin), starting with **Add apps**: the installed apps, games first, each ticked or not. A pick adds or removes it straight away and the list stays open.

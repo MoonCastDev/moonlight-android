@@ -851,6 +851,10 @@ class HandheldHomeActivity : Activity() {
         if (g == null) {
             f.background = if (tag == "g:all") sw.allArt() else sw.art("add")   // g:add and g:devadd
             if (tag != "g:all") f.addView(sw.text("+", size * 0.3f, 0xFFFFFFFF.toInt(), 600).apply { gravity = Gravity.CENTER }, FrameLayout.LayoutParams(-1, -1))
+            // All games doesn't show the name above the grid, so Add apps carries its own
+            if (tag == "g:devadd") f.addView(sw.text(label, titleSize, 0xFFFFFFFF.toInt(), 800).apply {
+                gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL; setPadding(0, 0, 0, sw.px(size * 0.08f))
+            }, FrameLayout.LayoutParams(-1, -1))
         } else {
             f.background = sw.art(g.seed)
             val k = size / 380f
