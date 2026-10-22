@@ -1,0 +1,74 @@
+package com.limelight.home
+
+import android.content.Context
+import android.content.Intent
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
+import android.graphics.drawable.Drawable
+import android.os.Build
+import org.json.JSONArray
+
+/**
+ * "On this device": Android apps you pick to show in MoonCast next to your PC, PS5 and Xbox games (like ES-DE's
+ * Android apps). Nothing is added by itself: the user ticks apps in a list of what's installed, games first, and can
+ * remove them again. Only apps with a launcher entry are listed (the manifest's <queries>, not QUERY_ALL_PACKAGES).
+ */
+object DeviceApps {
+    class App(val pkg: String, val label: String, val isGame: Boolean)
+
+    private const val PREF = "mc_device_apps"   // in mc_tv: a JSON array of package names, in the order added
+
+    private fun store(c: Context) = c.getSharedPreferences("mc_tv", Context.MODE_PRIVATE)
+
+    /** The picked apps that are still installed, in the order they were added. */
+    @JvmStatic fun pinned(c: Context): List<App> = pinnedPkgs(c).mapNotNull { info(c, it) }
+
+    private fun pinnedPkgs(c: Context): List<String> = try {
+        val a = JSONArray(store(c).getString(PREF, "[]")); (0 until a.length()).map { a.getString(it) }
+    } catch (e: Exception) { emptyList() }
+
+    @JvmStatic fun isPinned(c: Context, pkg: String) = pkg in pinnedPkgs(c)
+
+    @JvmStatic fun add(c: Context, pkg: String) {
+        val l = pinnedPkgs(c); if (pkg !in l) save(c, l + pkg)
+    }
+
+    @JvmStatic fun remove(c: Context, pkg: String) = save(c, pinnedPkgs(c) - pkg)
+
+    private fun save(c: Context, l: List<String>) = store(c).edit().putString(PREF, JSONArray(l).toString()).apply()
+
+    /** Every app with a launcher entry (phone or TV launcher), not MoonCast itself: games first, then A to Z. */
+    @JvmStatic fun installed(c: Context): List<App> {
+        val pm = c.packageManager
+        val pkgs = LinkedHashSet<String>()
+        for (cat in listOf(Intent.CATEGORY_LAUNCHER, Intent.CATEGORY_LEANBACK_LAUNCHER)) {
+            @Suppress("DEPRECATION")
+            pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(cat), 0).forEach { pkgs += it.activityInfo.packageName }
+        }
+        pkgs -= c.packageName
+        return pkgs.mapNotNull { info(c, it) }.sortedWith(compareByDescending<App> { it.isGame }.thenBy { it.label.lowercase() })
+    }
+
+    @JvmStatic fun info(c: Context, pkg: String): App? = try {
+        @Suppress("DEPRECATION") val ai = c.packageManager.getApplicationInfo(pkg, 0)
+        App(pkg, c.packageManager.getApplicationLabel(ai).toString(), isGame(ai))
+    } catch (e: PackageManager.NameNotFoundException) { null }
+
+    @Suppress("DEPRECATION")
+    private fun isGame(ai: ApplicationInfo) =
+        (Build.VERSION.SDK_INT >= 26 && ai.category == ApplicationInfo.CATEGORY_GAME) || (ai.flags and ApplicationInfo.FLAG_IS_GAME) != 0
+
+    /** The app's icon; on a TV its wide banner when it has one. */
+    @JvmStatic fun icon(c: Context, pkg: String, tvBanner: Boolean = false): Drawable? = try {
+        val pm = c.packageManager
+        (if (tvBanner) pm.getApplicationBanner(pkg) else null) ?: pm.getApplicationIcon(pkg)
+    } catch (e: Exception) { null }
+
+    /** Opens the app; false when it can't be opened (uninstalled, or no launcher entry any more). */
+    @JvmStatic fun launch(c: Context, pkg: String): Boolean {
+        val pm = c.packageManager
+        val i = (if (com.limelight.BuildConfig.TV_APP) pm.getLeanbackLaunchIntentForPackage(pkg) else null)
+            ?: pm.getLaunchIntentForPackage(pkg) ?: pm.getLeanbackLaunchIntentForPackage(pkg) ?: return false
+        return try { c.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); true } catch (e: Exception) { false }
+    }
+}

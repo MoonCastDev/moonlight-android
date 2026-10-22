@@ -83,10 +83,11 @@ import java.util.concurrent.Executors
 class HandheldHomeActivity : Activity() {
     private enum class Page(val title: String) { HOME("Home"), GAMES("All games"), CONSOLES("Consoles"), SETTINGS("Settings") }
 
-    /** One thing you can play: a PC game, a PS5 or an Xbox. */
+    /** One thing you can play: a PC game, a PS5, an Xbox, or an Android app picked for "On this device". */
     private class Game(val key: String, val title: String, val src: String, val seed: String, val running: Boolean,
                        val pc: ComputerDetails? = null, val app: NvApp? = null,
-                       val ps: Ps5Store.Console? = null, val xb: Xbox.Console? = null)
+                       val ps: Ps5Store.Console? = null, val xb: Xbox.Console? = null,
+                       val dev: com.limelight.home.DeviceApps.App? = null)
 
     private class Opt(val icon: String?, val iconColor: Int, val title: String, val sub: String? = null, val right: String? = null,
                       val enabled: Boolean = true, val onClick: () -> Unit = {})
@@ -461,6 +462,7 @@ class HandheldHomeActivity : Activity() {
             out += Game("ps:${c.host}", st?.runningApp ?: c.name, "PS5", "ps", st?.power == Ps5Store.Power.ON && st.runningApp != null, ps = c)
         }
         xboxes.forEach { c -> out += Game("xb:${c.id}", c.name, "Xbox", "xb", false, xb = c) }
+        com.limelight.home.DeviceApps.pinned(this).forEach { a -> out += Game("dev:${a.pkg}", a.label, "Android", a.pkg, false, dev = a) }
         pcs.values.filter { paired(it) }.forEach { pc ->
             val hidden = hiddenIds(pc)
             (apps[pc.uuid] ?: emptyList()).filter { it.appId !in hidden }.forEach { a ->
@@ -479,6 +481,7 @@ class HandheldHomeActivity : Activity() {
         all.filter { it.running }.forEach { ordered[it.key] = it }
         recent.forEach { ordered[it.key] = it }
         all.filter { it.ps != null || it.xb != null }.forEach { ordered[it.key] = it }
+        all.filter { it.dev != null }.forEach { ordered[it.key] = it }
         all.filter { it.pc != null }.sortedBy { it.title.lowercase() }.forEach { ordered[it.key] = it }
         return ordered.values.take(10)
     }
@@ -846,7 +849,7 @@ class HandheldHomeActivity : Activity() {
         f.elevation = sw.pxf(8)   // a soft shadow lifts the tiles off the background
         sw.pressable(f)
         if (g == null) {
-            f.background = if (tag == "g:all") sw.allArt() else sw.art("add")
+            f.background = if (tag == "g:all") sw.allArt() else sw.art("add")   // g:add and g:devadd
             if (tag != "g:all") f.addView(sw.text("+", size * 0.3f, 0xFFFFFFFF.toInt(), 600).apply { gravity = Gravity.CENTER }, FrameLayout.LayoutParams(-1, -1))
         } else {
             f.background = sw.art(g.seed)
@@ -861,12 +864,18 @@ class HandheldHomeActivity : Activity() {
                 f.addView(img, FrameLayout.LayoutParams(-1, -1))
                 f.addView(title, FrameLayout.LayoutParams(-1, -1))
                 loader(g.pc).populateImageView(g.app, img, title)
+            } else if (g.dev != null) {
+                // an Android app: its own icon in the middle of its colour, the name under it
+                val icon = com.limelight.home.DeviceApps.icon(this, g.dev.pkg)
+                if (icon != null) f.addView(ImageView(this).apply { setImageDrawable(icon); scaleType = ImageView.ScaleType.FIT_CENTER },
+                        FrameLayout.LayoutParams(sw.px(size * 0.42f), sw.px(size * 0.42f), Gravity.CENTER).apply { bottomMargin = sw.px(size * 0.1f) })
+                f.addView(title, FrameLayout.LayoutParams(-1, -1))
             } else f.addView(title, FrameLayout.LayoutParams(-1, -1))
             val bs = if (size >= 500) 24 else if (size >= 360) 20 else 17
             val m = if (size >= 360) 18 else 12
             f.addView(sw.badge(g.src, bs), sw.flp(-2, bs * 2).apply { leftMargin = sw.px(m); topMargin = sw.px(m) })
             if (g.running) f.addView(sw.live(bs), sw.flp(-2, bs * 2, Gravity.END).apply { rightMargin = sw.px(m); topMargin = sw.px(m) })
-            if (g.pc != null && g.app != null) {
+            if ((g.pc != null && g.app != null) || g.dev != null) {
                 f.setOnLongClickListener { gameMenu(g); true }
                 f.setOnKeyListener { _, code, e ->
                     if (code == KeyEvent.KEYCODE_BUTTON_X && page == Page.HOME) { if (e.action == KeyEvent.ACTION_UP) gameMenu(g); true } else false
@@ -942,7 +951,7 @@ class HandheldHomeActivity : Activity() {
     private fun gamesPage(): View {
         val col = sw.col().apply { setPadding(sw.px(sw.edge), 0, sw.px(sw.edge), 0); clipChildren = false }
         val tabs = sw.row()
-        listOf("all" to "All", "pc" to "PC", "ps" to "PlayStation", "xb" to "Xbox").forEachIndexed { i, (k, label) ->
+        listOf("all" to "All", "pc" to "PC", "ps" to "PlayStation", "xb" to "Xbox", "dev" to "This ${deviceShort()}").forEachIndexed { i, (k, label) ->
             val on = k == gamesTab
             tabs.addView(sw.text(label, 26, if (on) sw.bg else sw.sub, 700).apply {
                 tag = "tab:$k"
@@ -956,11 +965,11 @@ class HandheldHomeActivity : Activity() {
         col.addView(part(tabs), sw.lp(-2, 64).apply { topMargin = sw.px(20) })
 
         val recent = Recents.list(this)
-        var list = allGames().filter { g -> when (gamesTab) { "pc" -> g.pc != null; "ps" -> g.ps != null; "xb" -> g.xb != null; else -> true } }
+        var list = allGames().filter { g -> when (gamesTab) { "pc" -> g.pc != null; "ps" -> g.ps != null; "xb" -> g.xb != null; "dev" -> g.dev != null; else -> true } }
         list = if (sortAz) list.sortedBy { it.title.lowercase() }
                else list.sortedWith(compareByDescending<Game> { it.running }.thenBy { recent.indexOf(it.key).let { i -> if (i < 0) Int.MAX_VALUE else i } }
                        .thenBy { if (it.pc != null) 1 else 0 }.thenBy { it.title.lowercase() })
-        if (list.isEmpty()) {
+        if (list.isEmpty() && gamesTab != "dev") {
             val what = when (gamesTab) { "pc" -> "No PC games yet"; "ps" -> "No PlayStation yet"; "xb" -> "No Xbox yet"; else -> "No games yet" }
             col.addView(part(sw.text(what, 40, sw.ink, 800)), sw.lp(-2, -2).apply { topMargin = sw.px(80) })
             col.addView(part(sw.text(if (pcs.isEmpty() && consoles.isEmpty() && xboxes.isEmpty()) "Pair a PC, register a PS5 or sign in to Xbox in Consoles."
@@ -973,8 +982,12 @@ class HandheldHomeActivity : Activity() {
         val gap = if (portrait) 22 else 24
         val size = ((sw.designWidth - 2 * sw.edge - (cols - 1) * gap) / cols).toInt()
         val grid = GridLayout(this).apply { columnCount = cols; clipChildren = false }
-        list.forEachIndexed { i, g ->
-            grid.addView(tileView(g, size, if (portrait) 28 else 26, "g:${g.key}", g.title) { play(g) }, GridLayout.LayoutParams().apply {
+        val cells = ArrayList<View>()
+        // This device's tab starts with Add apps: you pick which apps show (and remove them from a tile's menu)
+        if (gamesTab == "dev") cells += tileView(null, size, if (portrait) 28 else 26, "g:devadd", "Add apps") { pickDeviceApps() }
+        list.forEach { g -> cells += tileView(g, size, if (portrait) 28 else 26, "g:${g.key}", g.title) { play(g) } }
+        cells.forEachIndexed { i, t ->
+            grid.addView(t, GridLayout.LayoutParams().apply {
                 width = sw.px(size); height = sw.px(size)
                 if (i % cols != 0) leftMargin = sw.px(gap)
                 bottomMargin = sw.px(gap)
@@ -1154,6 +1167,15 @@ class HandheldHomeActivity : Activity() {
     }
 
     private fun gameMenu(g: Game) {
+        g.dev?.let { a ->
+            dialog(a.label, "An app on this ${deviceShort()}.", listOf(
+                    Opt("▶", Sw.LIVE, "Open") { playHere(g) },
+                    Opt("–", Sw.DANGER, "Remove from MoonCast", "It stays installed; add it again from All games, This ${deviceShort()}") {
+                        com.limelight.home.DeviceApps.remove(this, a.pkg); Recents.forget(this, g.key)
+                        render(force = true); toast("${a.label} removed from MoonCast")
+                    }), listOf("Close" to {}))
+            return
+        }
         val pc = g.pc ?: return; val app = g.app ?: return
         val running = app.appId == pc.runningGameId
         dialog(app.appName, "On ${pc.name}" + (if (running) ". Running now." else "."), listOfNotNull(
@@ -1165,6 +1187,26 @@ class HandheldHomeActivity : Activity() {
                     val set = HashSet(p.getStringSet(pc.uuid, emptySet())!!); set.add(app.appId.toString())
                     p.edit().putStringSet(pc.uuid, set).apply(); render(force = true); toast("${app.appName} hidden")
                 }), listOf("Close" to {}))
+    }
+
+    /**
+     * "On this device": the installed apps, games first, each one ticked or not. A pick adds or removes it at once and
+     * the list stays open where you were, so you can pick several.
+     */
+    private fun pickDeviceApps(at: Int = 0) {
+        val apps = com.limelight.home.DeviceApps.installed(this)
+        if (apps.isEmpty()) { toast("No apps found on this ${deviceShort()}"); return }
+        val opts = apps.mapIndexed { i, a ->
+            val on = com.limelight.home.DeviceApps.isPinned(this, a.pkg)
+            Opt(if (on) "✓" else "+", if (on) Sw.LIVE else sw.panel, a.label, if (a.isGame) "Game" else null, if (on) "Added" else null) {
+                if (on) com.limelight.home.DeviceApps.remove(this, a.pkg) else com.limelight.home.DeviceApps.add(this, a.pkg)
+                render(force = true)
+                pickDeviceApps(i)
+            }
+        }
+        dialog("Add apps", "Pick the apps to show in MoonCast. Pick again to remove one.", opts, listOf("Done" to {}))
+        // back on the row just picked
+        (overlay.findViewWithTag<View>(if (at == 0) "primary" else "opt:$at"))?.requestFocus()
     }
 
     // ---------------------------------------------------------------- Settings
@@ -1546,6 +1588,7 @@ class HandheldHomeActivity : Activity() {
 
     /** A: plays where games go now, this device or the TV picked in "Play on" (the top chip says which). */
     private fun play(g: Game) {
+        if (g.dev != null) { playHere(g); return }   // an app on this device opens here (Play on TV for apps: #99)
         val tv = TvFinder.target(this)
         if (tv != null) sendToTv(g, tv) else playHere(g)
     }
@@ -1561,6 +1604,10 @@ class HandheldHomeActivity : Activity() {
             }
             g.ps != null -> { Recents.touch(this, g.key); playPs(g.ps) }
             g.xb != null -> { Recents.touch(this, g.key); playXbox(g.xb) }
+            g.dev != null -> {
+                if (com.limelight.home.DeviceApps.launch(this, g.dev.pkg)) { Recents.touch(this, g.key); FeelSounds.play(this, FeelSounds.Cue.LAUNCH) }
+                else toast("${g.dev.label} can't be opened. Is it still installed?")
+            }
         }
     }
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0-test247 (2026-10-22)
+- **On this device** (handheld): Android apps you pick show in MoonCast next to your PC, PS5 and Xbox games, like ES-DE's Android apps. Nothing is added by itself.
+  - All games has a new tab, **This <device>** (This Odin), starting with **Add apps**: the installed apps, games first, each ticked or not. A pick adds or removes it straight away and the list stays open.
+  - The apps are tiles with their own icon and an "Android" badge, on Home and in All games, and open the app. Long press (or X on Home): **Open** or **Remove from MoonCast** (the app stays installed).
+  - `home/DeviceApps.kt`; the manifest's `<queries>` lets MoonCast see launcher apps only (no QUERY_ALL_PACKAGES).
+  - Play on TV doesn't apply to these yet: they open on the device (#99).
+
 ## 1.0-test246 (2026-10-22)
 - **Anonymous usage check-in** (opt-in), so the project can count daily and monthly active users (`home/Usage.kt`, TelemetryDeck's ingest API v2, no SDK):
   - Official builds ask once, a moment after the home screen opens: "Help improve MoonCast?" with **No thanks** selected. Settings, About has the switch afterwards.
