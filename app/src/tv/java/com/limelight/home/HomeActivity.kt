@@ -1342,7 +1342,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         val other = runningApp(pc)
         if (other != null && other.appId != app.appId) {
             confirm("Quit ${other.appName}?", "${pc.name} is running ${other.appName}. Quit it and start ${app.appName}?",
-                    "Quit and start") {
+                    "Quit and start", danger = true) {
                 FeelSounds.play(this, FeelSounds.Cue.LAUNCH)
                 ServerHelper.doQuit(this, pc, other, b) { runOnUiThread { ServerHelper.doStart(this, app, pc, b) } }
             }
@@ -1354,7 +1354,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
 
     private fun quit(pc: ComputerDetails, app: NvApp) {
         val b = binder ?: return
-        confirm("Quit ${app.appName}?", "The game closes on ${pc.name}. Anything you haven't saved is lost.", "Quit game") {
+        confirm("Quit ${app.appName}?", "The game closes on ${pc.name}. Anything you haven't saved is lost.", "Quit game", danger = true) {
             ServerHelper.doQuit(this, pc, app, b) { runOnUiThread { b.invalidateStateForComputer(pc.uuid) } }
         }
     }
@@ -1879,15 +1879,16 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         val card = dialogCard()
         card.addView(tv.text(title, 40, tv.p.moon, tv.display(700), 2))
         card.addView(tv.text(body, 22, tv.p.dust, tv.ui(500), 4), tv.lp(-1, -2).apply { topMargin = tv.px(12); bottomMargin = tv.px(28) })
+        // danger (quit, unpair, remove): Cancel is picked, so a habitual OK on the remote doesn't do it
         card.addView(tv.row().apply {
-            addView(tv.pill(yes, "A", !danger) {
+            addView(tv.pill(yes, if (danger) null else "A", !danger) {
                 // one sound per action: what the answer starts (a launch) speaks for it, else the dialog's close
                 val n = FeelSounds.serial
                 hideOverlay(cue = false); onYes()
                 if (n == FeelSounds.serial) FeelSounds.play(this@HomeActivity, FeelSounds.Cue.CLOSE)
             }.apply {
-                tag = "primary"; if (danger) (getChildAt(childCount - 1) as TextView).setTextColor(Tv.DANGER) })
-            addView(tv.pill("Cancel", "B", false) { hideOverlay() })
+                tag = if (danger) "yes" else "primary"; if (danger) (getChildAt(childCount - 1) as TextView).setTextColor(Tv.DANGER) })
+            addView(tv.pill("Cancel", "B", false) { hideOverlay() }.apply { if (danger) tag = "primary" })
         })
         showOverlay("confirm", FrameLayout(this).apply { addView(card, tv.flp(900, -2, Gravity.CENTER)) })
     }
