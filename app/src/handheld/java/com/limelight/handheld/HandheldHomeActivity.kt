@@ -506,6 +506,7 @@ class HandheldHomeActivity : Activity() {
     private fun buildShell() {
         portrait = isPortrait()
         sw = Sw(this, prefs.getString("hh_theme", "dark") == "light", portrait, Sw.pick(this, portrait, prefs.getString("hh_screen_size", "auto")))
+        sw.touchFirst = !hasController()
         sw.bars = systemBarSizes()
         root = FrameLayout(this).apply { setBackgroundColor(sw.bg) }
         wash = Wash(this)
@@ -683,7 +684,7 @@ class HandheldHomeActivity : Activity() {
         } else {
             // a back button you can tap: a touch screen has no B (the same as B / the system back)
             topBar.addView(roundButton("top:back", "back", sw.ink, 84, sw.panel) { onBackPressed() }.apply { isFocusable = false; contentDescription = "Back" },
-                    sw.lp(84, 84).apply { rightMargin = sw.px(24) })
+                    LinearLayout.LayoutParams(sw.tap(84), sw.tap(84)).apply { rightMargin = sw.px(24) })
             topBar.addView(sw.text(page.title, 44, sw.ink, 800))
         }
         topBar.addView(sw.grow())
@@ -790,7 +791,10 @@ class HandheldHomeActivity : Activity() {
         } else {
             val row = sw.row().apply { clipChildren = false; setPadding(sw.px(e), 0, sw.px(e), 0) }
             tiles.forEachIndexed { i, t -> row.addView(t, sw.lp(ts, ts).apply { if (i > 0) leftMargin = sw.px(gap) }) }
+            val keepX = homeScrollX
             val scroll = RowScroll(this, sw.px(e)).apply {
+                if (keepX > 0) post { scrollTo(keepX, 0) }
+                if (Build.VERSION.SDK_INT >= 23) setOnScrollChangeListener { _, x, _, _, _ -> homeScrollX = x }
                 isHorizontalScrollBarEnabled = false; isFocusable = false; clipChildren = false; clipToPadding = false
                 isHorizontalFadingEdgeEnabled = true; setFadingEdgeLength(sw.px(90))
                 overScrollMode = View.OVER_SCROLL_NEVER
@@ -881,7 +885,9 @@ class HandheldHomeActivity : Activity() {
         f.setTag(R.id.hh_tint, if (appColor != 0) appColor else if (g != null) sw.tint(g.seed) else 0)
         f.clipToOutline = true
         f.outlineProvider = rounded(sw.tileCorner)
-        f.elevation = sw.pxf(8)   // a soft shadow lifts the tiles off the background
+        // a soft shadow lifts the tiles off the background on Home; All games' grid goes without (one shadow per tile
+        // to draw for every cover while scrolling)
+        if (page != Page.GAMES) f.elevation = sw.pxf(8)
         sw.pressable(f)
         if (g == null) {
             f.background = if (tag == "g:all") sw.allArt() else sw.art("add")   // g:add and g:devadd
@@ -1015,9 +1021,9 @@ class HandheldHomeActivity : Activity() {
                 background = sw.round(if (on) sw.ink else sw.panel, 32)
                 sw.focusable(this)
                 setOnClickListener { if (gamesTab != k) { gamesTab = k; FeelSounds.play(this@HandheldHomeActivity, FeelSounds.Cue.TAB); render(force = true) } }
-            }, sw.lp(-2, 64).apply { if (i > 0) leftMargin = sw.px(14) })
+            }, LinearLayout.LayoutParams(-2, sw.tap(64)).apply { if (i > 0) leftMargin = sw.px(14) })
         }
-        col.addView(part(tabs), sw.lp(-2, 64).apply { topMargin = sw.px(20) })
+        col.addView(part(tabs), LinearLayout.LayoutParams(-2, sw.tap(64)).apply { topMargin = sw.px(20) })
 
         val recent = Recents.list(this)
         var list = allGames().filter { g -> when (gamesTab) { "pc" -> g.pc != null; "ps" -> g.ps != null; "xb" -> g.xb != null; "dev" -> g.dev != null; else -> true } }
@@ -1049,11 +1055,16 @@ class HandheldHomeActivity : Activity() {
             })
         }
         primaryView = grid.getChildAt(0)
-        col.addView(part(ColScroll(this, sw.px(40)).apply {
+        // a redraw in the background (a poll, a game starting on the PC) kept you where you were, not back at the top
+        val keepY = if (gamesScrollTab == gamesTab) gamesScrollY else 0
+        gamesScrollTab = gamesTab
+        col.addView(part(clipped(ColScroll(this, sw.px(40)).apply {
             isVerticalScrollBarEnabled = false; isFocusable = false; clipToPadding = false; clipChildren = false
             setPadding(0, sw.px(26), 0, sw.px(26))
             addView(grid)
-        }), LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = sw.px(20) })
+            if (keepY > 0) post { scrollTo(0, keepY) }
+            if (Build.VERSION.SDK_INT >= 23) setOnScrollChangeListener { _, _, y, _, _ -> gamesScrollY = y }
+        })), LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = sw.px(20) })
         return col
     }
 
@@ -1094,12 +1105,19 @@ class HandheldHomeActivity : Activity() {
         return scrollPane(list)
     }
 
-    private fun scrollPane(list: LinearLayout): View = ColScroll(this, sw.px(40)).apply {
+    private fun scrollPane(list: LinearLayout): View = clipped(ColScroll(this, sw.px(40)).apply {
         isVerticalScrollBarEnabled = false; isFocusable = false; clipToPadding = false; clipChildren = false
         val side = sw.edge
         setPadding(sw.px(side), sw.px(30), sw.px(side), sw.px(30))
         addView(part(list))
-    }
+    })
+
+    /**
+     * A scrolling list inside a frame that clips it at its edges. A view is clipped by its parent, and the content area
+     * doesn't clip (tiles and the focus ring may spill over), so rows scrolled below the bottom drew over the hint bar
+     * (Consoles' Find my Xbox, a sliver of All games' next row). The focus ring draws on its own layer.
+     */
+    private fun clipped(v: View): FrameLayout = FrameLayout(this).apply { clipChildren = true; addView(v, FrameLayout.LayoutParams(-1, -1)) }
 
     private fun groupHeader(list: LinearLayout, title: String) =
         list.addView(sw.text(title, 26, sw.sub, 800), sw.lp(-2, -2).apply { topMargin = sw.px(40); bottomMargin = sw.px(14); leftMargin = sw.px(26) })
@@ -1111,13 +1129,13 @@ class HandheldHomeActivity : Activity() {
             setPadding(sw.px(26), sw.px(if (sw.compact) 24 else 18), sw.px(26), sw.px(if (sw.compact) 24 else 18))
             minimumHeight = sw.px(if (sw.compact) 128 else 116)
             // a symbol fills its square; a short word (PC, PS) stays the size of a badge
-            addView(sw.text(icon, if (icon.length == 1) 34 else 22, 0xFFFFFFFF.toInt(), 800).apply { gravity = Gravity.CENTER; background = sw.round(iconColor, 16) },
-                    sw.lp(68, 68).apply { rightMargin = sw.px(26) })
+            addView(sw.text(icon, if (icon.length == 1) 36 else 23, 0xFFFFFFFF.toInt(), 800).apply { gravity = Gravity.CENTER; background = sw.round(iconColor, ROW_ICON_R) },
+                    sw.lp(ROW_ICON, ROW_ICON).apply { rightMargin = sw.px(26) })
             addView(sw.col().apply {
                 addView(sw.text(title, 30, sw.ink, 700))
                 if (sub != null) addView(sw.text(sub, 23, sw.sub, 600, 2), sw.lp(-2, -2).apply { topMargin = sw.px(sw.lineGap) })
             }, LinearLayout.LayoutParams(0, -2, 1f))
-            if (right != null) addView(sw.text(right, 28, sw.ring, 700), sw.lp(-2, -2).apply { leftMargin = sw.px(24) })
+            if (right != null) addView(sw.text(right, ROW_VALUE, sw.sub, 700), sw.lp(-2, -2).apply { leftMargin = sw.px(24) })
             sw.focusable(this)
             setOnClickListener { onClick() }
         }, sw.lp(-1, -2))
@@ -1268,6 +1286,10 @@ class HandheldHomeActivity : Activity() {
                 }), listOf("Close" to {}))
     }
 
+    private var gamesScrollY = 0
+    private var gamesScrollTab: String? = null
+    private var homeScrollX = 0
+
     /** The picker's filter: "games" (what Android marks as games, the usual pick) or "all". */
     private var pickerFilter = "games"
 
@@ -1310,9 +1332,9 @@ class HandheldHomeActivity : Activity() {
                     if (pickerFilter != k) { pickerFilter = k; FeelSounds.play(this@HandheldHomeActivity, FeelSounds.Cue.TAB); showPicker()
                         this@HandheldHomeActivity.overlay.findViewWithTag<View>("chip:$k")?.requestFocus() }
                 }
-            }, sw.lp(-2, 60).apply { if (i > 0) leftMargin = sw.px(14) })
+            }, LinearLayout.LayoutParams(-2, sw.tap(60)).apply { if (i > 0) leftMargin = sw.px(14) })
         }
-        card.addView(chips, sw.lp(-2, 60).apply { leftMargin = sw.px(56); topMargin = sw.px(22) })
+        card.addView(chips, LinearLayout.LayoutParams(-2, sw.tap(60)).apply { leftMargin = sw.px(56); topMargin = sw.px(22) })
 
         // the grid: as many columns as fit cells about 210 wide in the card
         val cardW = minOf(1560f, sw.designWidth - 80)
@@ -1392,16 +1414,16 @@ class HandheldHomeActivity : Activity() {
                     render(force = true)
                     content.findViewWithTag<View>("settings:list")?.let { firstFocusable(it)?.requestFocus() }
                 }
-            }, sw.lp(-1, 92))
+            }, LinearLayout.LayoutParams(-1, sw.tap(92)))
         }
         row.addView(part(side), sw.lp(if (sw.compact) 330 else 600, -2))
         val list = sw.col().apply { tag = "settings:list" }
         settingsRows(list, settingsGroup)
-        row.addView(part(ColScroll(this, sw.px(40)).apply {
+        row.addView(part(clipped(ColScroll(this, sw.px(40)).apply {
             isVerticalScrollBarEnabled = false; isFocusable = false; clipToPadding = false; clipChildren = false
             setPadding(sw.px(if (sw.compact) 20 else 40), sw.px(20), sw.px(sw.edge), sw.px(30))
             addView(list)
-        }), LinearLayout.LayoutParams(0, -1, 1f))
+        })), LinearLayout.LayoutParams(0, -1, 1f))
         primaryView = side.findViewWithTag<View>("group:$settingsGroup")
         return row
     }
@@ -2163,13 +2185,13 @@ class HandheldHomeActivity : Activity() {
         minimumHeight = sw.px(116)
         if (!o.enabled) alpha = 0.45f
         // a symbol fills its square; a short word (PC, PS, TV) stays the size of a badge
-        if (o.icon != null) addView(sw.text(o.icon, if (o.icon.length == 1) 38 else 24, 0xFFFFFFFF.toInt(), 800).apply { gravity = Gravity.CENTER; background = sw.round(o.iconColor, 18) },
-                sw.lp(76, 76).apply { rightMargin = sw.px(26) })
+        if (o.icon != null) addView(sw.text(o.icon, if (o.icon.length == 1) 36 else 23, 0xFFFFFFFF.toInt(), 800).apply { gravity = Gravity.CENTER; background = sw.round(o.iconColor, ROW_ICON_R) },
+                sw.lp(ROW_ICON, ROW_ICON).apply { rightMargin = sw.px(26) })
         addView(sw.col().apply {
-            addView(sw.text(o.title, 30, sw.ink, 800))
-            if (o.sub != null) addView(sw.text(o.sub, 23, sw.sub, 600, 2), sw.lp(-2, -2).apply { topMargin = sw.px(6) })
+            addView(sw.text(o.title, 30, sw.ink, 700))
+            if (o.sub != null) addView(sw.text(o.sub, 23, sw.sub, 600, 2), sw.lp(-2, -2).apply { topMargin = sw.px(sw.lineGap) })
         }, LinearLayout.LayoutParams(0, -2, 1f))
-        if (o.right != null) addView(sw.text(o.right, 22, sw.sub, 700), sw.lp(-2, -2).apply { leftMargin = sw.px(20) })
+        if (o.right != null) addView(sw.text(o.right, ROW_VALUE, sw.sub, 700), sw.lp(-2, -2).apply { leftMargin = sw.px(24) })
         if (o.enabled) {
             sw.focusable(this)
             setOnClickListener { val n = FeelSounds.serial; hideOverlay(false); o.onClick(); if (n == FeelSounds.serial) FeelSounds.play(this@HandheldHomeActivity, FeelSounds.Cue.SELECT) }
@@ -2486,5 +2508,9 @@ class HandheldHomeActivity : Activity() {
         private const val REQ_PSN_REGISTER = 41
         private const val REQ_PSN = 42
         private const val REQ_PICTURE = 43
+        // one look for every list row (Consoles, Settings, dialogs): the icon square, its corner, a value on the right
+        private const val ROW_ICON = 72
+        private const val ROW_ICON_R = 18
+        private const val ROW_VALUE = 24
     }
 }

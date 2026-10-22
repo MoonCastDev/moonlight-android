@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0-test255 (2026-10-22)
+- UI review on the Odin (test254, 20 screens): Home, All games (every tab), Add apps, the game menus, Consoles and every Settings group. Measured: cold start 327 ms; janky frames 0.6% moving along Home, 0.4% scrolling All games, 0.5% moving down the Settings groups (5-12 ms frames).
+  - Fixed: lists ran on under the hint bar (Consoles' "Find my Xbox" drew over the controller name; a sliver of All games' next row showed below it). A view is clipped by its parent and the content area doesn't clip, so the All games grid, the list pages and the Settings list now sit in a frame that clips them.
+
+## 1.0-test254 (2026-10-22)
+- UI review, round 2:
+  1. **Phones** (no built-in controller): tabs, chips, Back and the settings groups are at least 48 dp tall (they were 23-35 dp on a 1080p phone), and text follows Android's Font size (up to 1.3x) on the usual layout. Handhelds with controls (the Odin) look the same.
+  2. **One row style** for Consoles, Settings and dialogs: the same icon square (72, corner 18), title weight, subtitle spacing and a value on the right in the quiet colour.
+  3. **Quick menu**: Quit game and other dangerous items are red on the handheld too, the hints read A then B on both apps, the upright sheet's list scrolls so the hints never fall off, and TV rows grow for a long label instead of being cut.
+  4. **All games**: no shadow per grid tile (smoother scrolling with many PC games), and a redraw in the background keeps your place in All games and in Home's row instead of jumping back to the start.
+  5. **TV**: lays itself out again when the display changes (HDMI mode, resolution) instead of keeping the old scale until a restart, and covers without box art use the handheld's colours (`Covers`), so a game has the same colour on both.
+
 ## 1.0-test253 (2026-10-22)
 - UI review, first round (handheld): faster and lighter, same look.
   - Settings: moving down the groups rebuilt the whole screen at every step; it now waits until focus rests on a group (160 ms).

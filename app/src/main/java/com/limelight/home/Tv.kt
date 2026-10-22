@@ -193,13 +193,13 @@ class Tv @JvmOverloads constructor(val ctx: Context, val oled: Boolean, designW:
     fun flp(w: Number, h: Number, gravity: Int = Gravity.NO_GRAVITY) = FrameLayout.LayoutParams(dim(w), dim(h), gravity)
     private fun dim(v: Number) = when (v.toInt()) { -1 -> ViewGroup.LayoutParams.MATCH_PARENT; -2 -> ViewGroup.LayoutParams.WRAP_CONTENT; else -> px(v) }
 
-    /** Two-tone cover art for things with no box art (PS5, unknown apps), as in the mockup. */
+    /**
+     * Two-tone cover art for things with no box art (PS5, unknown apps), as in the mockup. The colours are the
+     * handheld's (Covers): the same game has the same colour on the TV and the Odin.
+     */
     fun twoTone(seed: String): Drawable {
-        val pairs = intArrayOf(0xFFE5484D.toInt(), 0xFFB0232B.toInt(), 0xFF2F5DF0.toInt(), 0xFF1B37A8.toInt(),
-                0xFF12A594.toInt(), 0xFF0B6F65.toInt(), 0xFFF5A623.toInt(), 0xFFB86A12.toInt(),
-                0xFF8E5CF0.toInt(), 0xFF5A31B5.toInt(), 0xFF1E8FD6.toInt(), 0xFF12609A.toInt())
-        val i = if (seed == "ps") 2 else (Math.abs(seed.hashCode()) % (pairs.size / 2)) * 2   // PlayStation is always blue
-        return TwoTone(pairs[i], pairs[i + 1], pxf(16), if (oled) 0.9f else 1f)
+        val c = Covers.ART[Covers.index(seed)]
+        return TwoTone(c[0], c[1], pxf(16), if (oled) 0.9f else 1f)
     }
 
     private class TwoTone(val a: Int, val b: Int, val r: Float, val bright: Float) : Drawable() {
@@ -233,5 +233,25 @@ class Crescent(ctx: Context, private val color: Int) : View(ctx) {
         paint.xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.CLEAR)
         c.drawCircle(w * 0.66f, h * 0.34f, w * 0.41f, paint)
         c.restore()
+    }
+}
+
+/** Cover colours for games with no box art, shared by the TV and the handheld (a1..a8): highlight, body, shadow. */
+object Covers {
+    @JvmField val ART = arrayOf(
+            intArrayOf(0xFFF05A45.toInt(), 0xFFA01E16.toInt(), 0xFF4A0B08.toInt()),
+            intArrayOf(0xFF3D86FF.toInt(), 0xFF1035A0.toInt(), 0xFF071644.toInt()),
+            intArrayOf(0xFF3CCB63.toInt(), 0xFF0E7A2C.toInt(), 0xFF06300F.toInt()),
+            intArrayOf(0xFFF4C04E.toInt(), 0xFFB87414.toInt(), 0xFF4C2C06.toInt()),
+            intArrayOf(0xFFA06BF0.toInt(), 0xFF5223A8.toInt(), 0xFF1F0B47.toInt()),
+            intArrayOf(0xFF4FD6E3.toInt(), 0xFF127C8A.toInt(), 0xFF06323A.toInt()),
+            intArrayOf(0xFFF06BA8.toInt(), 0xFFA3205E.toInt(), 0xFF420A25.toInt()),
+            intArrayOf(0xFFB9C0CC.toInt(), 0xFF5B6372.toInt(), 0xFF22262E.toInt()))
+
+    /** PlayStation is always blue, Xbox always green, anything else picks by name. */
+    @JvmStatic fun index(seed: String): Int = when (seed) {
+        "ps" -> 1
+        "xb" -> 2
+        else -> Math.abs(seed.hashCode() % ART.size).let { if (it == 1 || it == 2) it + 4 else it }
     }
 }

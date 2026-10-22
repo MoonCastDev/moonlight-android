@@ -105,8 +105,20 @@ class HomeActivity : Activity(), PhoneLink.Listener {
 
     // ---------------------------------------------------------------- lifecycle
 
+    // The size the screen was laid out for. The manifest keeps the activity across display changes (HDMI mode,
+    // resolution, density), so without this the TV scale stayed the old one until MoonCast was restarted.
+    private var laidOut: String? = null
+
+    override fun onConfigurationChanged(c: android.content.res.Configuration) {
+        super.onConfigurationChanged(c)
+        val now = "${c.screenWidthDp}x${c.screenHeightDp}@${c.densityDpi}"
+        if (laidOut != null && laidOut != now) recreate()
+        laidOut = now
+    }
+
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        resources.configuration.let { laidOut = "${it.screenWidthDp}x${it.screenHeightDp}@${it.densityDpi}" }
         Profile.syncPcSettings(this)
         com.limelight.PhoneLink.sessionListener = com.limelight.PhoneLink.SessionListener { uuid ->
             runOnUiThread { pcs.remove(uuid); apps.remove(uuid); rawLists.remove(uuid); render(force = true) }
