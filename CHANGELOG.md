@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0-test250 (2026-10-22)
+- **Change picture** for any game tile on the handheld: a PC game, a PS5, an Xbox or an Android app. Long press the tile (or X on Home), Change picture, and pick an image with Android's photo picker. MoonCast keeps a resized copy (longest side 900 px) in its own storage and shows it filling the tile, darkened at the bottom so the name stays readable; the background wash takes its colour. **Reset picture** goes back to MoonCast's own look.
+  - `home/CustomArt.kt`. PS5 and Xbox tiles now have a menu too (Play, Change picture).
+
 ## 1.0-test249 (2026-10-22)
 - On this device, a better look:
   - **Tiles** take their colour from the app's own icon (its strongest hue, toned down so the name stays readable), with a big faded copy of the icon leaning in from the corner and the icon itself larger, above the name. The background wash follows the same colour. Grey or white icons keep the usual covers.

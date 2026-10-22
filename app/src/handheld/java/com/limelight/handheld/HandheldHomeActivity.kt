@@ -843,7 +843,9 @@ class HandheldHomeActivity : Activity() {
         val f = FrameLayout(this)
         f.tag = tag
         f.setTag(R.id.hh_title, label)
-        val appColor = g?.dev?.let { com.limelight.home.DeviceApps.color(this, it.pkg) } ?: 0
+        val custom = g?.let { com.limelight.home.CustomArt.bitmap(this, it.key) }
+        val appColor = if (custom != null) com.limelight.home.CustomArt.color(custom)
+                       else g?.dev?.let { com.limelight.home.DeviceApps.color(this, it.pkg) } ?: 0
         f.setTag(R.id.hh_tint, if (appColor != 0) appColor else if (g != null) sw.tint(g.seed) else 0)
         f.clipToOutline = true
         f.outlineProvider = rounded(sw.tileCorner)
@@ -864,7 +866,15 @@ class HandheldHomeActivity : Activity() {
                 setPadding(sw.px(26 * k.coerceAtMost(1.5f)), 0, sw.px(26 * k.coerceAtMost(1.5f)), sw.px(24 * k.coerceAtMost(1.5f)))
                 setShadowLayer(sw.pxf(10), 0f, sw.pxf(2), 0x59000000)
             }
-            if (g.pc != null && g.app != null) {
+            if (custom != null) {
+                // your own picture fills the tile, darkened at the bottom so the name stays readable
+                f.addView(ImageView(this).apply { setImageBitmap(custom); scaleType = ImageView.ScaleType.CENTER_CROP }, FrameLayout.LayoutParams(-1, -1))
+                f.addView(View(this).apply {
+                    background = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
+                            intArrayOf(0x00000000, 0x00000000, 0xB0000000.toInt()))
+                }, FrameLayout.LayoutParams(-1, -1))
+                f.addView(title, FrameLayout.LayoutParams(-1, -1))
+            } else if (g.pc != null && g.app != null) {
                 val img = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
                 f.addView(img, FrameLayout.LayoutParams(-1, -1))
                 f.addView(title, FrameLayout.LayoutParams(-1, -1))
@@ -888,7 +898,7 @@ class HandheldHomeActivity : Activity() {
             val m = if (size >= 360) 18 else 12
             f.addView(sw.badge(g.src, bs), sw.flp(-2, bs * 2).apply { leftMargin = sw.px(m); topMargin = sw.px(m) })
             if (g.running) f.addView(sw.live(bs), sw.flp(-2, bs * 2, Gravity.END).apply { rightMargin = sw.px(m); topMargin = sw.px(m) })
-            if ((g.pc != null && g.app != null) || g.dev != null) {
+            run {
                 f.setOnLongClickListener { gameMenu(g); true }
                 f.setOnKeyListener { _, code, e ->
                     if (code == KeyEvent.KEYCODE_BUTTON_X && page == Page.HOME) { if (e.action == KeyEvent.ACTION_UP) gameMenu(g); true } else false
@@ -1179,10 +1189,33 @@ class HandheldHomeActivity : Activity() {
                 listOf("Show all" to { show(hidden); toast("All hidden games are back") }, "Close" to {}))
     }
 
+    /** Change picture / Reset picture, for any tile's menu. */
+    private fun pictureOpts(g: Game): List<Opt> = listOfNotNull(
+            Opt("▣", Sw.C_BLUE, "Change picture", "Pick any image from this ${deviceShort()} for this tile") { pickPicture(g.key) },
+            if (com.limelight.home.CustomArt.has(this, g.key)) Opt("↺", sw.panel, "Reset picture", "Back to MoonCast's own look") {
+                com.limelight.home.CustomArt.clear(this, g.key); render(force = true); toast("Picture reset")
+            } else null)
+
+    /** The key of the tile whose picture is being picked (the photo picker answers in onActivityResult). */
+    private var pictureFor: String? = null
+
+    private fun pickPicture(key: String) {
+        pictureFor = key
+        val i = if (Build.VERSION.SDK_INT >= 33) Intent(android.provider.MediaStore.ACTION_PICK_IMAGES)
+                else Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("image/*")
+        try { startActivityForResult(i, REQ_PICTURE) }
+        catch (e: Exception) { toast("No photo picker on this ${deviceShort()}") }
+    }
+
     private fun gameMenu(g: Game) {
+        if (g.ps != null || g.xb != null) {
+            dialog(g.title, if (g.ps != null) "A PlayStation." else "An Xbox.", listOf(
+                    Opt("▶", Sw.LIVE, "Play") { play(g) }) + pictureOpts(g), listOf("Close" to {}))
+            return
+        }
         g.dev?.let { a ->
             dialog(a.label, "An app on this ${deviceShort()}.", listOf(
-                    Opt("▶", Sw.LIVE, "Open") { playHere(g) },
+                    Opt("▶", Sw.LIVE, "Open") { playHere(g) }) + pictureOpts(g) + listOf(
                     Opt("–", Sw.DANGER, "Remove from MoonCast", "It stays installed; add it again from All games, This ${deviceShort()}") {
                         com.limelight.home.DeviceApps.remove(this, a.pkg); Recents.forget(this, g.key)
                         render(force = true); toast("${a.label} removed from MoonCast")
@@ -1195,6 +1228,7 @@ class HandheldHomeActivity : Activity() {
                 Opt("▶", Sw.LIVE, if (running) "Resume here" else "Play here") { playHere(g) },
                 Opt("TV", sw.ring, "Play on a TV") { playWhere(g) },
                 if (running) Opt("✕", Sw.DANGER, "Quit game", "Closes it on the PC") { quit(pc, app) } else null,
+                *pictureOpts(g).toTypedArray(),
                 Opt("–", Sw.PC, "Hide from All games", "Show it again from the PC's menu in Consoles, Hidden games") {
                     val p = getSharedPreferences(AppView.HIDDEN_APPS_PREF_FILENAME, MODE_PRIVATE)
                     val set = HashSet(p.getStringSet(pc.uuid, emptySet())!!); set.add(app.appId.toString())
@@ -1992,6 +2026,13 @@ class HandheldHomeActivity : Activity() {
         when (requestCode) {
             REQ_PSN_REGISTER -> { toast("Signed in to PlayStation Network"); ui.post { registerPs() } }
             REQ_PSN -> { toast("Signed in to PlayStation Network"); render(force = true) }
+            REQ_PICTURE -> {
+                val key = pictureFor ?: return; val uri = data?.data ?: return
+                Thread {
+                    val ok = com.limelight.home.CustomArt.set(this, key, uri)
+                    runOnUiThread { if (ok) { render(force = true); toast("Picture changed") } else toast("That image couldn't be read") }
+                }.start()
+            }
         }
     }
 
@@ -2396,5 +2437,6 @@ class HandheldHomeActivity : Activity() {
         const val EXTRA_PLAY_HERE = "play_here"
         private const val REQ_PSN_REGISTER = 41
         private const val REQ_PSN = 42
+        private const val REQ_PICTURE = 43
     }
 }
