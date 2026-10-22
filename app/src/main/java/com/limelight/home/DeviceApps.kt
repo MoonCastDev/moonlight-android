@@ -20,12 +20,23 @@ object DeviceApps {
 
     private fun store(c: Context) = c.getSharedPreferences("mc_tv", Context.MODE_PRIVATE)
 
+    // Kept in memory: the home screen asks on every redraw, and each answer was a JSON parse plus a PackageManager
+    // call per app. refresh() (on resume) drops what may have changed outside MoonCast: installs, updates, removals.
+    private var pinnedCache: List<String>? = null
+    private val infoCache = java.util.Collections.synchronizedMap(HashMap<String, App?>())
+    private var installedCache: List<App>? = null
+    private val iconCache = android.util.LruCache<String, Drawable>(64)
+
+    @JvmStatic fun refresh() {
+        infoCache.clear(); installedCache = null; iconCache.evictAll(); colors.clear()
+    }
+
     /** The picked apps that are still installed, in the order they were added. */
     @JvmStatic fun pinned(c: Context): List<App> = pinnedPkgs(c).mapNotNull { info(c, it) }
 
-    private fun pinnedPkgs(c: Context): List<String> = try {
+    private fun pinnedPkgs(c: Context): List<String> = pinnedCache ?: try {
         val a = JSONArray(store(c).getString(PREF, "[]")); (0 until a.length()).map { a.getString(it) }
-    } catch (e: Exception) { emptyList() }
+    } catch (e: Exception) { emptyList<String>() }.also { pinnedCache = it }
 
     @JvmStatic fun isPinned(c: Context, pkg: String) = pkg in pinnedPkgs(c)
 
@@ -35,10 +46,12 @@ object DeviceApps {
 
     @JvmStatic fun remove(c: Context, pkg: String) = save(c, pinnedPkgs(c) - pkg)
 
-    private fun save(c: Context, l: List<String>) = store(c).edit().putString(PREF, JSONArray(l).toString()).apply()
+    private fun save(c: Context, l: List<String>) { pinnedCache = l; store(c).edit().putString(PREF, JSONArray(l).toString()).apply() }
 
     /** Every app with a launcher entry (phone or TV launcher), not MoonCast (any of its copies): games first, then A to Z. */
-    @JvmStatic fun installed(c: Context): List<App> {
+    @JvmStatic fun installed(c: Context): List<App> = installedCache ?: listInstalled(c).also { installedCache = it }
+
+    private fun listInstalled(c: Context): List<App> {
         val pm = c.packageManager
         val pkgs = LinkedHashSet<String>()
         for (cat in listOf(Intent.CATEGORY_LAUNCHER, Intent.CATEGORY_LEANBACK_LAUNCHER)) {
@@ -49,22 +62,28 @@ object DeviceApps {
         return pkgs.mapNotNull { info(c, it) }.sortedWith(compareByDescending<App> { it.isGame }.thenBy { it.label.lowercase() })
     }
 
-    @JvmStatic fun info(c: Context, pkg: String): App? = try {
-        @Suppress("DEPRECATION") val ai = c.packageManager.getApplicationInfo(pkg, 0)
-        App(pkg, c.packageManager.getApplicationLabel(ai).toString(), isGame(ai))
-    } catch (e: PackageManager.NameNotFoundException) { null }
+    @JvmStatic fun info(c: Context, pkg: String): App? = infoCache.getOrPut(pkg) {
+        try {
+            @Suppress("DEPRECATION") val ai = c.packageManager.getApplicationInfo(pkg, 0)
+            App(pkg, c.packageManager.getApplicationLabel(ai).toString(), isGame(ai))
+        } catch (e: PackageManager.NameNotFoundException) { null }
+    }
 
     @Suppress("DEPRECATION")
     private fun isGame(ai: ApplicationInfo) =
         (Build.VERSION.SDK_INT >= 26 && ai.category == ApplicationInfo.CATEGORY_GAME) || (ai.flags and ApplicationInfo.FLAG_IS_GAME) != 0
 
     /** The app's icon; on a TV its wide banner when it has one. */
-    @JvmStatic fun icon(c: Context, pkg: String, tvBanner: Boolean = false): Drawable? = try {
-        val pm = c.packageManager
-        (if (tvBanner) pm.getApplicationBanner(pkg) else null) ?: pm.getApplicationIcon(pkg)
-    } catch (e: Exception) { null }
+    @JvmStatic fun icon(c: Context, pkg: String, tvBanner: Boolean = false): Drawable? {
+        val k = if (tvBanner) "$pkg#banner" else pkg
+        iconCache.get(k)?.let { return it.constantState?.newDrawable() ?: it }
+        return try {
+            val pm = c.packageManager
+            ((if (tvBanner) pm.getApplicationBanner(pkg) else null) ?: pm.getApplicationIcon(pkg)).also { iconCache.put(k, it) }
+        } catch (e: Exception) { null }
+    }
 
-    private val colors = HashMap<String, Int>()
+    private val colors = java.util.Collections.synchronizedMap(HashMap<String, Int>())
 
     /**
      * The app's own colour, from its icon: the strongest hue among its vivid pixels, toned down so white text reads

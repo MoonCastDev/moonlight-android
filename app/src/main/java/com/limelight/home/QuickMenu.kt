@@ -267,7 +267,7 @@ class QuickMenu(private val act: Activity) {
                 if (switchStyle) {
                     val sv = short(s[i]).first
                     if (v.text.toString() != sv) { v.text = sv; v.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, st.pxf(statSize(sv))) }
-                } else v.text = s[i].first
+                } else if (v.text.toString() != s[i].first) v.text = s[i].first
             }
             ui.postDelayed(this, 1000)
         }
