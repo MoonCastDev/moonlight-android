@@ -22,7 +22,8 @@ import java.util.UUID
  * the Android version and device model, and whether PC, PS5 or Xbox was played since the last check-in. Never names,
  * addresses, games, accounts or sign-ins. The install is a random ID made on this device, sent hashed.
  *
- * Only official builds have an app ID (`-PmcTelemetryAppId` or MOONCAST_TELEMETRY_APP_ID at build time): forks and
+ * Only official builds have an app ID (`-PmcTelemetryAppId` or MOONCAST_TELEMETRY_APP_ID at build time, with the
+ * organization's namespace from `-PmcTelemetryNamespace` or MOONCAST_TELEMETRY_NAMESPACE): forks and
  * self-built copies never ask and never send. Debug builds send as test mode, which TelemetryDeck keeps out of the
  * real numbers. A failed send is simply tried again on a later day; it never affects the app.
  */
@@ -31,7 +32,9 @@ object Usage {
     private const val ID = "mc_usage_id"
     private const val LAST = "mc_usage_last"   // yyyy-MM-dd of the last check-in sent
     private const val USED = "mc_usage_used_"  // + pc / ps5 / xbox: played since the last check-in
-    private const val URL_INGEST = "https://nom.telemetrydeck.com/v2/"
+    // TelemetryDeck's ingest API v2; with the organization's namespace, its own path (as TelemetryDeck's SDKs do)
+    private val URL_INGEST get() = if (BuildConfig.TELEMETRY_NAMESPACE.isEmpty()) "https://nom.telemetrydeck.com/v2/"
+        else "https://nom.telemetrydeck.com/v2/namespace/${BuildConfig.TELEMETRY_NAMESPACE}/"
 
     /** This build can send at all (official builds only). */
     @JvmStatic val available get() = BuildConfig.TELEMETRY_APP_ID.isNotEmpty()

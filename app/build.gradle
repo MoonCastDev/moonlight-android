@@ -24,6 +24,9 @@ android {
         // environment or -PmcTelemetryAppId; without one the app never asks and never sends
         buildConfigField "String", "TELEMETRY_APP_ID",
                 "\"" + (project.findProperty("mcTelemetryAppId") ?: System.getenv("MOONCAST_TELEMETRY_APP_ID") ?: "") + "\""
+        // the TelemetryDeck organization's namespace (its dashboard shows it); signals go to /v2/namespace/<it>/
+        buildConfigField "String", "TELEMETRY_NAMESPACE",
+                "\"" + (project.findProperty("mcTelemetryNamespace") ?: System.getenv("MOONCAST_TELEMETRY_NAMESPACE") ?: "") + "\""
     }
 
     flavorDimensions.add("root")
