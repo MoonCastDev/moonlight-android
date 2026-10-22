@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0-test251 (2026-10-22)
+- Added Android apps "disappeared after a while" (Saleh on the Odin):
+  - **Home** kept the last-played games first and cut the row at ten, so after about ten games played your added apps (and the PS5 and Xbox) fell off Home. Now the row is: what's running, the last five played, then every console and every added app (they always keep a place), then PC games up to ten.
+  - **Add apps** started with the first app selected and the hints said "A OK", so an A meant to close the page took that app out (Azahar, first in the list). Focus now starts on Done, the hints say "B Done, A Add or remove", and each tap says "<app> added" or "<app> removed. Tap it again to add it back".
+
 ## 1.0-test250 (2026-10-22)
 - **Change picture** for any game tile on the handheld: a PC game, a PS5, an Xbox or an Android app. Long press the tile (or X on Home), Change picture, and pick an image with Android's photo picker. MoonCast keeps a resized copy (longest side 900 px) in its own storage and shows it filling the tile, darkened at the bottom so the name stays readable; the background wash takes its colour. **Reset picture** goes back to MoonCast's own look.
   - `home/CustomArt.kt`. PS5 and Xbox tiles now have a menu too (Play, Change picture).

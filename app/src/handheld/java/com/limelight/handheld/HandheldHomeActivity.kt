@@ -472,18 +472,24 @@ class HandheldHomeActivity : Activity() {
         return out
     }
 
-    /** Home's row: what's running, then what you played last, then the rest; at most ten before "All games". */
+    /**
+     * Home's row: what's running, the last few played, then every console and every app you added (they always keep
+     * their place: with only the last-played first, ten PC games played pushed them off Home), then PC games to fill
+     * up to ten, before "All games".
+     */
     private fun homeGames(): List<Game> {
         val all = allGames()
         val byKey = all.associateBy { it.key }
         val recent = Recents.list(this).mapNotNull { byKey[it] }
         val ordered = LinkedHashMap<String, Game>()
         all.filter { it.running }.forEach { ordered[it.key] = it }
-        recent.forEach { ordered[it.key] = it }
+        recent.take(5).forEach { ordered[it.key] = it }
         all.filter { it.ps != null || it.xb != null }.forEach { ordered[it.key] = it }
         all.filter { it.dev != null }.forEach { ordered[it.key] = it }
+        val kept = ordered.size
+        recent.forEach { ordered[it.key] = it }
         all.filter { it.pc != null }.sortedBy { it.title.lowercase() }.forEach { ordered[it.key] = it }
-        return ordered.values.take(10)
+        return ordered.values.take(maxOf(10, kept))
     }
 
     private fun gameFor(key: String?): Game? = key?.let { k -> allGames().firstOrNull { it.key == k } }
@@ -681,7 +687,8 @@ class HandheldHomeActivity : Activity() {
         foot.addView(sw.grow())
         // button hints mean nothing without buttons: touch only (no controller) shows none
         if (!hasController()) { part(foot); return }
-        val h = if (overlayKind != null) listOf("B" to "Cancel", "A" to "OK") else when (page) {
+        val h = if (overlayKind == "picker") listOf("B" to "Done", "A" to "Add or remove")
+                else if (overlayKind != null) listOf("B" to "Cancel", "A" to "OK") else when (page) {
             Page.HOME -> listOf("Y" to (if (TvFinder.target(this) != null) "Play here" else "Play on TV"), "A" to "Start")
             Page.GAMES -> listOf("L R" to "Tabs", "X" to (if (sortAz) "Recent first" else "A to Z"), "B" to "Back", "A" to "Start")
             Page.CONSOLES -> listOf("B" to "Back", "A" to "Open")
@@ -1282,7 +1289,7 @@ class HandheldHomeActivity : Activity() {
         val grid = GridLayout(this).apply { columnCount = cols; clipChildren = false }
         shown.forEachIndexed { i, a ->
             val v = FrameLayout(this).apply {
-                tag = if (i == 0) "primary" else "app:$i"
+                tag = "app:$i"
                 clipChildren = false
                 sw.focusable(this); sw.pressable(this)
             }
@@ -1303,9 +1310,10 @@ class HandheldHomeActivity : Activity() {
             v.addView(check, sw.flp(44, 44, Gravity.END).apply { topMargin = sw.px(10); rightMargin = sw.px(10) })
             paint()
             v.setOnClickListener {
-                if (com.limelight.home.DeviceApps.isPinned(this, a.pkg)) com.limelight.home.DeviceApps.remove(this, a.pkg)
-                else com.limelight.home.DeviceApps.add(this, a.pkg)
+                val was = com.limelight.home.DeviceApps.isPinned(this, a.pkg)
+                if (was) com.limelight.home.DeviceApps.remove(this, a.pkg) else com.limelight.home.DeviceApps.add(this, a.pkg)
                 FeelSounds.play(this@HandheldHomeActivity, FeelSounds.Cue.TOGGLE)
+                toast(if (was) "${a.label} removed. Tap it again to add it back" else "${a.label} added")
                 paint(); recount()
             }
             grid.addView(v, GridLayout.LayoutParams().apply {
@@ -1320,7 +1328,8 @@ class HandheldHomeActivity : Activity() {
             setPadding(0, sw.px(8), 0, sw.px(8))
             addView(grid)
         }, sw.lp(-1, gridH).apply { leftMargin = sw.px(48); rightMargin = sw.px(48); topMargin = sw.px(22) })
-        buttons(card, listOf("Done" to {}), primary = false)
+        // focus starts on Done: a habitual A closes the page instead of taking out the first app
+        buttons(card, listOf("Done" to {}))
         showOverlay("picker", card, wide = true)
     }
 
