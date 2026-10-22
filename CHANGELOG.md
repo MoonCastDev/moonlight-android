@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0-test255 (2026-10-22)
+- UI review on the Odin (test254, 20 screens): Home, All games (every tab), Add apps, the game menus, Consoles and every Settings group. Measured: cold start 327 ms; janky frames 0.6% moving along Home, 0.4% scrolling All games, 0.5% moving down the Settings groups (5-12 ms frames).
+  - Fixed: lists ran on under the hint bar (Consoles' "Find my Xbox" drew over the controller name; a sliver of All games' next row showed below it). A view is clipped by its parent and the content area doesn't clip, so the All games grid, the list pages and the Settings list now sit in a frame that clips them.
+
 ## 1.0-test254 (2026-10-22)
 - UI review, round 2:
   1. **Phones** (no built-in controller): tabs, chips, Back and the settings groups are at least 48 dp tall (they were 23-35 dp on a 1080p phone), and text follows Android's Font size (up to 1.3x) on the usual layout. Handhelds with controls (the Odin) look the same.

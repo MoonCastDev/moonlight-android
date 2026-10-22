@@ -1058,13 +1058,13 @@ class HandheldHomeActivity : Activity() {
         // a redraw in the background (a poll, a game starting on the PC) kept you where you were, not back at the top
         val keepY = if (gamesScrollTab == gamesTab) gamesScrollY else 0
         gamesScrollTab = gamesTab
-        col.addView(part(ColScroll(this, sw.px(40)).apply {
+        col.addView(part(clipped(ColScroll(this, sw.px(40)).apply {
             isVerticalScrollBarEnabled = false; isFocusable = false; clipToPadding = false; clipChildren = false
             setPadding(0, sw.px(26), 0, sw.px(26))
             addView(grid)
             if (keepY > 0) post { scrollTo(0, keepY) }
             if (Build.VERSION.SDK_INT >= 23) setOnScrollChangeListener { _, _, y, _, _ -> gamesScrollY = y }
-        }), LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = sw.px(20) })
+        })), LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = sw.px(20) })
         return col
     }
 
@@ -1105,12 +1105,19 @@ class HandheldHomeActivity : Activity() {
         return scrollPane(list)
     }
 
-    private fun scrollPane(list: LinearLayout): View = ColScroll(this, sw.px(40)).apply {
+    private fun scrollPane(list: LinearLayout): View = clipped(ColScroll(this, sw.px(40)).apply {
         isVerticalScrollBarEnabled = false; isFocusable = false; clipToPadding = false; clipChildren = false
         val side = sw.edge
         setPadding(sw.px(side), sw.px(30), sw.px(side), sw.px(30))
         addView(part(list))
-    }
+    })
+
+    /**
+     * A scrolling list inside a frame that clips it at its edges. A view is clipped by its parent, and the content area
+     * doesn't clip (tiles and the focus ring may spill over), so rows scrolled below the bottom drew over the hint bar
+     * (Consoles' Find my Xbox, a sliver of All games' next row). The focus ring draws on its own layer.
+     */
+    private fun clipped(v: View): FrameLayout = FrameLayout(this).apply { clipChildren = true; addView(v, FrameLayout.LayoutParams(-1, -1)) }
 
     private fun groupHeader(list: LinearLayout, title: String) =
         list.addView(sw.text(title, 26, sw.sub, 800), sw.lp(-2, -2).apply { topMargin = sw.px(40); bottomMargin = sw.px(14); leftMargin = sw.px(26) })
@@ -1412,11 +1419,11 @@ class HandheldHomeActivity : Activity() {
         row.addView(part(side), sw.lp(if (sw.compact) 330 else 600, -2))
         val list = sw.col().apply { tag = "settings:list" }
         settingsRows(list, settingsGroup)
-        row.addView(part(ColScroll(this, sw.px(40)).apply {
+        row.addView(part(clipped(ColScroll(this, sw.px(40)).apply {
             isVerticalScrollBarEnabled = false; isFocusable = false; clipToPadding = false; clipChildren = false
             setPadding(sw.px(if (sw.compact) 20 else 40), sw.px(20), sw.px(sw.edge), sw.px(30))
             addView(list)
-        }), LinearLayout.LayoutParams(0, -1, 1f))
+        })), LinearLayout.LayoutParams(0, -1, 1f))
         primaryView = side.findViewWithTag<View>("group:$settingsGroup")
         return row
     }
