@@ -90,7 +90,9 @@ class QuickMenu(private val act: Activity) {
                 addView(tv.text(it.label, 24, if (it.danger) Tv.DANGER else tv.p.moon, tv.ui(700)), LinearLayout.LayoutParams(0, -2, 1f))
                 if (it.detail != null) addView(tv.text(it.detail, 19, tv.p.dust, tv.ui(600)))
                 setOnClickListener { _ -> choose(i) }   // touch screens (Odin)
-                list.addView(this, tv.lp(-1, 80))
+                minimumHeight = tv.px(80)   // at least 80; a long label with its detail grows instead of being cut
+                setPadding(tv.px(20), tv.px(10), tv.px(20), tv.px(10))
+                list.addView(this, tv.lp(-1, -2))
             }
         }
         // the list takes the room between the stats and the hints, and scrolls when the items don't fit
@@ -173,7 +175,7 @@ class QuickMenu(private val act: Activity) {
                     gravity = Gravity.CENTER; background = t.round(if (it.danger) 0xFFE9605A.toInt() else 0xFF5B6170.toInt(), 12)
                 }, t.lp(52, 52).apply { rightMargin = t.px(22) })
                 addView(t.col().apply {
-                    addView(txt(it.label, 28, sInk, 800))
+                    addView(txt(it.label, 28, if (it.danger) 0xFFE9605A.toInt() else sInk, 800))   // red like the TV's
                     if (it.detail != null) addView(txt(it.detail, 21, sSub, 600), t.lp(-2, -2).apply { topMargin = t.px(4) })
                 }, LinearLayout.LayoutParams(0, -2, 1f))
                 setOnClickListener { _ -> choose(i) }
@@ -181,10 +183,11 @@ class QuickMenu(private val act: Activity) {
             }
         }
         val scroll = android.widget.ScrollView(act).apply { isVerticalScrollBarEnabled = false; addView(list) }
-        if (upright) panel.addView(scroll, t.lp(-1, -2)) else panel.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        // the list takes the room left, so the hints stay on the sheet however many items there are
+        panel.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         panel.addView(t.row().apply {
             addView(View(act), LinearLayout.LayoutParams(0, 1, 1f))
-            listOf("B" to "Back to the game", "A" to "OK").forEach { (k, l) ->
+            listOf("A" to "OK", "B" to "Back to the game").forEach { (k, l) ->   // A first, as on the TV
                 addView(txt(k, 24, sBg, 800).apply { gravity = Gravity.CENTER; background = t.round(sInk, 23) }, t.lp(46, 46).apply { leftMargin = t.px(32); rightMargin = t.px(12) })
                 addView(txt(l, 24, sInk, 700))
             }

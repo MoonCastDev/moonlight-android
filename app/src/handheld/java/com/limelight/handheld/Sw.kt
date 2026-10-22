@@ -52,6 +52,17 @@ class Sw(ctx: Context, val light: Boolean, val portrait: Boolean, val size: Size
         Size.COMPACT -> if (portrait) Tv(ctx, false, upright, 0) else Tv(ctx, false, 1240, 1080)
         Size.LARGE -> if (portrait) Tv(ctx, false, upright * 940 / 1080, 0) else Tv(ctx, false, 1080, 940)
     }
+    /**
+     * A phone with no game controller: tabs, chips, Back and the settings groups get at least Android's 48 dp touch
+     * size (on a 1080p phone the canvas made them 23-35 dp). Handhelds with built-in controls (the Odin) keep their look.
+     */
+    var touchFirst = false
+    private val dp48 = (48 * ctx.resources.displayMetrics.density).toInt()
+    /** A height in design px, at least 48 dp on a touch-first phone. */
+    fun tap(h: Number): Int = if (touchFirst) maxOf(px(h), dp48) else px(h)
+    /** Android's Font size on the usual layout (compact layouts already step up with it), up to 1.3x. */
+    private val fontScale = if (size == Size.NORMAL) ctx.resources.configuration.fontScale.coerceIn(1f, 1.3f) else 1f
+
     /** The status bar, navigation and cutout, in px: the menus are laid out inside them (set by the activity). */
     var bars = Rect()
     /** The design canvas height this screen really has for the app, inside the system bars. */
@@ -111,23 +122,11 @@ class Sw(ctx: Context, val light: Boolean, val portrait: Boolean, val size: Size
         const val C_GREEN = 0xFF2DBE5A.toInt()
         const val C_RED = 0xFFE9605A.toInt()
 
-        /** Cover colours when there's no box art (a1..a8): highlight, body, shadow. */
-        val ART = arrayOf(
-                intArrayOf(0xFFF05A45.toInt(), 0xFFA01E16.toInt(), 0xFF4A0B08.toInt()),
-                intArrayOf(0xFF3D86FF.toInt(), 0xFF1035A0.toInt(), 0xFF071644.toInt()),
-                intArrayOf(0xFF3CCB63.toInt(), 0xFF0E7A2C.toInt(), 0xFF06300F.toInt()),
-                intArrayOf(0xFFF4C04E.toInt(), 0xFFB87414.toInt(), 0xFF4C2C06.toInt()),
-                intArrayOf(0xFFA06BF0.toInt(), 0xFF5223A8.toInt(), 0xFF1F0B47.toInt()),
-                intArrayOf(0xFF4FD6E3.toInt(), 0xFF127C8A.toInt(), 0xFF06323A.toInt()),
-                intArrayOf(0xFFF06BA8.toInt(), 0xFFA3205E.toInt(), 0xFF420A25.toInt()),
-                intArrayOf(0xFFB9C0CC.toInt(), 0xFF5B6372.toInt(), 0xFF22262E.toInt()))
+        /** Cover colours when there's no box art: shared with the TV (Covers), so a game looks the same on both. */
+        val ART = com.limelight.home.Covers.ART
 
         /** PlayStation is always blue, Xbox always green, anything else picks by name. */
-        fun artIndex(seed: String): Int = when (seed) {
-            "ps" -> 1
-            "xb" -> 2
-            else -> Math.abs(seed.hashCode() % ART.size).let { if (it == 1 || it == 2) it + 4 else it }
-        }
+        fun artIndex(seed: String): Int = com.limelight.home.Covers.index(seed)
     }
 
     fun px(v: Number) = tv.px(v)
@@ -137,7 +136,7 @@ class Sw(ctx: Context, val light: Boolean, val portrait: Boolean, val size: Size
 
     fun ui(w: Int = 700) = tv.ui(w)
     fun text(s: CharSequence, size: Number, color: Int = ink, weight: Int = 700, lines: Int = 1): TextView =
-        tv.text(s, size, color, tv.ui(weight), lines)
+        tv.text(s, size.toFloat() * fontScale, color, tv.ui(weight), lines)
 
     fun round(fill: Int, radius: Number, stroke: Int = 0, strokeW: Number = 2) = tv.round(fill, radius, stroke, strokeW)
     fun row(g: Int = Gravity.CENTER_VERTICAL) = tv.row(g)
