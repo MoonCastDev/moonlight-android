@@ -1017,7 +1017,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                         if (stream.getBoolean("checkbox_stretch_video", false)) "stretch" else "fit")
                 intChoice(list, "seekbar_video_zoom", "Zoom", "Enlarge the picture if this TV cuts off the edges", listOf(100, 102, 104, 106, 108, 110), 100) {
                     if (it == 100) "Off" else "$it%" }
-                choice(list, "frame_pacing", "Frame pacing", "Trade a little delay for smoother motion",
+                choice(list, "frame_pacing", "Frame pacing", "PC and PS5: trade a little delay for smoother motion. Xbox paces itself",
                         listOf("Lowest delay" to "latency", "Balanced" to "balanced", "Smoothest" to "smoothness"), "latency")
                 toggle(list, "checkbox_ultra_low_latency", "Ultra low latency",
                         "Experimental. Snapdragon 8 Gen 2 or newer, MediaTek, NVIDIA Shield. This device: ${chipName()}", false)
@@ -1094,8 +1094,6 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                 toggle(list, "ps5_swap_cross_circle", "Swap Cross and Circle", "For the Japanese layout", false)
                 choice(list, com.limelight.Ps5StreamActivity.DECODER_PREF, "Decoder", "Low latency shows each frame sooner. Ultra pushes this TV's chip harder. Standard if the picture misbehaves",
                         listOf("Low latency" to "low", "Ultra low latency" to "ultra", "Standard" to "standard"), "low")
-                choice(list, com.limelight.Ps5StreamActivity.PACING_PREF, "Frame pacing", "Balanced and Smoothest space the frames evenly, for up to 1 or 3 frames more delay",
-                        listOf("Lowest delay" to "latency", "Balanced" to "balanced", "Smoothest" to "smoothness"), "latency")
                 val pin = prefs.getString("ps5_login_pin", "") ?: ""
                 action(list, "set:pspin", "Console PIN", "Signs in for you when the PS5 asks for its 4-digit login PIN",
                         if (pin.isEmpty()) "Not set" else "••••") { enterLoginPin() }

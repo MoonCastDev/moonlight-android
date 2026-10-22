@@ -559,6 +559,7 @@ class HandheldHomeActivity : Activity() {
                     v.getTag(R.id.hh_pill) == true -> 9999f
                     t != null && (t.startsWith("rb:") || t.startsWith("pill:") || t.startsWith("tab:") || t.startsWith("dock:") || t.startsWith("chip:")) -> 9999f
                     t != null && t.startsWith("app:") -> sw.pxf(13 + 22)
+                    t != null && t.startsWith("group:") -> sw.pxf(13 + 16)
                     t != null && t.startsWith("g:") -> sw.pxf(13 + sw.tileCorner)
                     else -> null
                 }
@@ -676,7 +677,7 @@ class HandheldHomeActivity : Activity() {
                     tv != null -> "Playing on ${tv.name}" + if (TvFinder.isHere(tv)) "" else " (not found)"
                     portrait -> "This ${deviceShort()}"
                     else -> "Playing on this ${deviceShort()}"
-                }, 26, sw.ink, 700))
+                }, 26, sw.ink, 700).apply { maxWidth = resources.displayMetrics.widthPixels / 2 })   // a long TV name ends in …
                 setOnClickListener { playWhere(null) }
                 isFocusable = false   // a tap target only; the pad starts on the games
                 isSoundEffectsEnabled = !FeelSounds.enabled(this@HandheldHomeActivity)
@@ -890,7 +891,8 @@ class HandheldHomeActivity : Activity() {
         if (page != Page.GAMES) f.elevation = sw.pxf(8)
         sw.pressable(f)
         if (g == null) {
-            f.background = if (tag == "g:all") sw.allArt() else sw.art("add")   // g:add and g:devadd
+            // All games and Add apps are quiet tiles next to the games; Add a console (nothing paired yet) stands out
+            f.background = when (tag) { "g:all" -> sw.allArt(); "g:devadd" -> sw.round(sw.tile, sw.tileCorner); else -> sw.art("add") }
             if (tag != "g:all") f.addView(sw.text("+", size * 0.3f, 0xFFFFFFFF.toInt(), 600).apply { gravity = Gravity.CENTER }, FrameLayout.LayoutParams(-1, -1))
             // All games doesn't show the name above the grid, so Add apps carries its own
             if (tag == "g:devadd") f.addView(sw.text(label, titleSize, 0xFFFFFFFF.toInt(), 800).apply {
@@ -1402,7 +1404,7 @@ class HandheldHomeActivity : Activity() {
             val on = k == settingsGroup
             side.addView(FrameLayout(this).apply {
                 tag = "group:$k"
-                if (on) background = sw.round(sw.panel, 6)
+                if (on) background = sw.round(sw.panel, 16)
                 if (on) addView(View(this@HandheldHomeActivity).apply { background = sw.round(sw.ring, 3) }, sw.flp(6, -1).apply { topMargin = sw.px(18); bottomMargin = sw.px(18) })
                 addView(sw.text(label, 30, if (on) sw.ring else sw.sub, 700).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(sw.px(28), 0, 0, 0) }, FrameLayout.LayoutParams(-1, -1))
                 sw.focusable(this)
@@ -1503,7 +1505,7 @@ class HandheldHomeActivity : Activity() {
                 toggle(list, "checkbox_full_range", "Full range colour", "Experimental: deeper blacks and brighter whites. On screens that don't handle it, dark and light detail is lost", false)
                 choice(list, stream, "list_video_scale_mode", "Picture shape", "Fit with bars, fill and crop, or stretch",
                         listOf("Fit" to "fit", "Fill" to "fill", "Stretch" to "stretch"), if (stream.getBoolean("checkbox_stretch_video", false)) "stretch" else "fit")
-                choice(list, stream, "frame_pacing", "Frame pacing", "Trade a little delay for smoother motion",
+                choice(list, stream, "frame_pacing", "Frame pacing", "PC and PS5: trade a little delay for smoother motion. Xbox paces itself",
                         listOf("Lowest delay" to "latency", "Balanced" to "balanced", "Smoothest" to "smoothness"), "latency")
                 toggle(list, "checkbox_enable_perf_overlay", "Stats while playing", "Frame rate, delay and lost frames in a corner", false)
             }
@@ -1577,8 +1579,6 @@ class HandheldHomeActivity : Activity() {
                 toggle(list, "ps5_swap_cross_circle", "Swap Cross and Circle", "For the Japanese layout", false)
                 choice(list, stream, com.limelight.Ps5StreamActivity.DECODER_PREF, "Decoder", "Low latency shows each frame sooner. Ultra pushes this device's chip harder. Standard if the picture misbehaves",
                         listOf("Low latency" to "low", "Ultra low latency" to "ultra", "Standard" to "standard"), "low")
-                choice(list, stream, com.limelight.Ps5StreamActivity.PACING_PREF, "Frame pacing", "Balanced and Smoothest space the frames evenly, for up to 1 or 3 frames more delay",
-                        listOf("Lowest delay" to "latency", "Balanced" to "balanced", "Smoothest" to "smoothness"), "latency")
                 val pin = prefs.getString("ps5_login_pin", "") ?: ""
                 action(list, "pspin", "Console PIN", "Signs in for you when the PS5 asks for its 4-digit login PIN", if (pin.isEmpty()) "Not set" else "••••") {
                     entry("Console PIN", "The 4-digit PIN your PS5 asks for when it starts. Leave empty to turn it off.", "4 digits", pin, true) { v ->
@@ -2181,8 +2181,8 @@ class HandheldHomeActivity : Activity() {
     private fun optRow(o: Opt, tag: String): View = sw.row().apply {
         this.tag = tag
         background = sw.round(sw.bg, 18)
-        setPadding(sw.px(26), sw.px(20), sw.px(28), sw.px(20))
-        minimumHeight = sw.px(116)
+        setPadding(sw.px(26), sw.px(14), sw.px(28), sw.px(14))
+        minimumHeight = sw.px(100)
         if (!o.enabled) alpha = 0.45f
         // a symbol fills its square; a short word (PC, PS, TV) stays the size of a badge
         if (o.icon != null) addView(sw.text(o.icon, if (o.icon.length == 1) 36 else 23, 0xFFFFFFFF.toInt(), 800).apply { gravity = Gravity.CENTER; background = sw.round(o.iconColor, ROW_ICON_R) },
@@ -2196,7 +2196,7 @@ class HandheldHomeActivity : Activity() {
             sw.focusable(this)
             setOnClickListener { val n = FeelSounds.serial; hideOverlay(false); o.onClick(); if (n == FeelSounds.serial) FeelSounds.play(this@HandheldHomeActivity, FeelSounds.Cue.SELECT) }
         }
-        layoutParams = sw.lp(-1, -2).apply { leftMargin = sw.px(40); rightMargin = sw.px(40); bottomMargin = sw.px(16) }
+        layoutParams = sw.lp(-1, -2).apply { leftMargin = sw.px(40); rightMargin = sw.px(40); bottomMargin = sw.px(12) }
     }
 
     /** A dialog's buttons along its bottom: rounded buttons side by side; the last is where focus starts. */
@@ -2232,9 +2232,10 @@ class HandheldHomeActivity : Activity() {
         val list = sw.col()
         opts.forEachIndexed { i, o -> list.addView(optRow(o, if (i == firstOn) "primary" else "opt:$i")) }
         // as many options as the screen has room for; past that the list scrolls, cut through the middle of a row
-        // so it's plain there's more (a row is about 132 tall with its gap)
-        val fit = ((sw.designHeight - 620) / 132f).toInt().coerceIn(3, 8)
-        if (opts.size > fit) card.addView(ColScroll(this, sw.px(30)).apply { isVerticalScrollBarEnabled = false; addView(list) }, sw.lp(-1, fit * 132 - 66))
+        // so it's plain there's more. A row is about 112 with its gap; title, text and buttons take about 440 (it was
+        // 620 and 132, so a PC game's menu showed three options and hid the rest below a scroll)
+        val fit = ((sw.designHeight - 440) / 112f).toInt().coerceIn(3, 8)
+        if (opts.size > fit) card.addView(ColScroll(this, sw.px(30)).apply { isVerticalScrollBarEnabled = false; addView(list) }, sw.lp(-1, fit * 112 - 56))
         else card.addView(list, sw.lp(-1, -2))
         buttons(card, btns, primary = firstOn < 0, primaryAt = primaryAt)
         showOverlay("dialog", card)
