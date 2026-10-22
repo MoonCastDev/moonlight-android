@@ -31,6 +31,12 @@ object BatteryCap {
         Log.i("MoonCast", "on battery: stream ${config.width}x${config.height} capped to ${w}x$cap")
         config.width = w
         config.height = cap
+        // Bitrate Auto (0) was worked out for the size before the cap (80 Mbps for 4K): work it out for the capped size
+        val kbps = android.preference.PreferenceManager.getDefaultSharedPreferences(context).getInt("seekbar_bitrate_kbps", 0)
+        if (kbps == 0) {
+            config.bitrate = PreferenceConfiguration.getDefaultBitrate("${w}x$cap", config.fps.toString())
+            Log.i("MoonCast", "on battery: Auto bitrate ${config.bitrate / 1000} Mbps")
+        }
         return true
     }
 }

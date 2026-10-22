@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0-test244 (2026-10-22)
+- **Quit prompts pick Cancel.** "Quit X and start Y?", "Quit game?", Unpair and Remove now have Cancel selected, on the handheld and the TV, so pressing A (or OK on a remote) by habit doesn't do them. On 2026-10-21 an A on the pre-selected "Quit and start" quit Ryujinx. Wake it stays selected, since it's harmless.
+  - Handheld: while a dialog is open the hints say "B Cancel, A OK" instead of the page's "A Start", and a tapped A hint presses the dialog's selected button, not the game behind it.
+  - Handheld: a PC game moves to the front of Recent only once it really starts, not when the prompt opens, so Cancel no longer reshuffles the tiles.
+- **On battery with bitrate Auto:** the bitrate was still the one for the uncapped size (80 Mbps for 4K on a 720p stream). It's now worked out for the capped size (about 15 Mbps for 720p60).
+
 ## 1.0-test243 (2026-10-22)
 - Touch screen (Quick menu, PC), found by Saleh on test242:
   - The PC's pointer stayed in the picture with touch Off. With Off, MoonCast now moves it to the middle of the right edge, where it's off the screen, when the stream starts and when you switch to Off. (Not a corner: Windows' bottom-right corner is Show desktop.)

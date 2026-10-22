@@ -670,7 +670,7 @@ class HandheldHomeActivity : Activity() {
         foot.addView(sw.grow())
         // button hints mean nothing without buttons: touch only (no controller) shows none
         if (!hasController()) { part(foot); return }
-        val h = when (page) {
+        val h = if (overlayKind != null) listOf("B" to "Cancel", "A" to "OK") else when (page) {
             Page.HOME -> listOf("Y" to (if (TvFinder.target(this) != null) "Play here" else "Play on TV"), "A" to "Start")
             Page.GAMES -> listOf("L R" to "Tabs", "X" to (if (sortAz) "Recent first" else "A to Z"), "B" to "Back", "A" to "Start")
             Page.CONSOLES -> listOf("B" to "Back", "A" to "Open")
@@ -1545,11 +1545,10 @@ class HandheldHomeActivity : Activity() {
         when {
             g.pc != null && g.app != null -> {
                 if (g.pc.state == ComputerDetails.State.OFFLINE) {   // only when a poll says so (UNKNOWN = not asked yet)
-                    confirm("${g.pc.name} is offline", "Wake it, then start ${g.app.appName} once it's online.", "Wake it") { wake(g.pc) }
+                    confirm("${g.pc.name} is offline", "Wake it, then start ${g.app.appName} once it's online.", "Wake it", yesPicked = true) { wake(g.pc) }
                     return
                 }
-                Recents.touch(this, g.key)
-                start(g.pc, g.app)
+                start(g.pc, g.app) { Recents.touch(this, g.key) }
             }
             g.ps != null -> { Recents.touch(this, g.key); playPs(g.ps) }
             g.xb != null -> { Recents.touch(this, g.key); playXbox(g.xb) }
@@ -1634,7 +1633,7 @@ class HandheldHomeActivity : Activity() {
         val t = when {
             g.pc != null && g.app != null -> {
                 if (!online(g.pc)) {
-                    confirm("${g.pc.name} is offline", "Wake it, then send ${g.app.appName} to ${tv.name} once it's online.", "Wake it") { wake(g.pc) }
+                    confirm("${g.pc.name} is offline", "Wake it, then send ${g.app.appName} to ${tv.name} once it's online.", "Wake it", yesPicked = true) { wake(g.pc) }
                     return
                 }
                 MoveToTv.Target("pc", g.app.appName, g.pc.uuid, g.pc.name, g.app.appId)
@@ -1659,16 +1658,19 @@ class HandheldHomeActivity : Activity() {
                 Opt("⚙", Sw.PC, "Controller settings") { settingsGroup = "pads"; go(Page.SETTINGS) }), listOf("Close" to {}))
     }
 
-    private fun start(pc: ComputerDetails, app: NvApp) {
+    /** Starts [app], asking first when another game runs there. [started] runs once it really starts (not on Cancel). */
+    private fun start(pc: ComputerDetails, app: NvApp, started: () -> Unit = {}) {
         val b = binder ?: return toast(getString(R.string.error_manager_not_running))
         val other = runningApp(pc)
         if (other != null && other.appId != app.appId) {
             confirm("Quit ${other.appName}?", "${pc.name} is running ${other.appName}. Quit it and start ${app.appName}?", "Quit and start") {
+                started()
                 FeelSounds.play(this, FeelSounds.Cue.LAUNCH)
                 ServerHelper.doQuit(this, pc, other, b) { runOnUiThread { ServerHelper.doStart(this, app, pc, b) } }
             }
             return
         }
+        started()
         FeelSounds.play(this, FeelSounds.Cue.LAUNCH)
         ServerHelper.doStart(this, app, pc, b)
     }
@@ -1950,13 +1952,15 @@ class HandheldHomeActivity : Activity() {
     }
 
     /** A dialog's buttons along its bottom: rounded buttons side by side; the last is where focus starts. */
-    private fun buttons(card: LinearLayout, list: List<Pair<String, () -> Unit>>, primary: Boolean = true, keepOpenLast: Boolean = false) {
+    /** A row of buttons; with [primary], the one at [primaryAt] (default the last) is the one A and the first focus pick. */
+    private fun buttons(card: LinearLayout, list: List<Pair<String, () -> Unit>>, primary: Boolean = true, keepOpenLast: Boolean = false,
+                        primaryAt: Int = list.size - 1) {
         val row = sw.row()
         list.forEachIndexed { i, (label, fn) ->
             val keep = keepOpenLast && i == list.size - 1
             row.addView(sw.text(label, 30, sw.ring, 800).apply {
                 gravity = Gravity.CENTER
-                tag = if (primary && i == list.size - 1) "primary" else "btn:$i"
+                tag = if (primary && i == primaryAt) "primary" else "btn:$i"
                 setTag(R.id.hh_pill, true)
                 background = sw.round(sw.bg, 48)
                 sw.focusable(this)
@@ -1972,7 +1976,7 @@ class HandheldHomeActivity : Activity() {
         card.addView(row, sw.lp(-1, 96).apply { leftMargin = sw.px(40); rightMargin = sw.px(40); topMargin = sw.px(28); bottomMargin = sw.px(40) })
     }
 
-    private fun dialog(title: String, body: String?, opts: List<Opt>, btns: List<Pair<String, () -> Unit>>) {
+    private fun dialog(title: String, body: String?, opts: List<Opt>, btns: List<Pair<String, () -> Unit>>, primaryAt: Int = btns.size - 1) {
         val card = card()
         card.addView(sw.text(title, 40, sw.ink, 800, 2), sw.lp(-1, -2).apply { leftMargin = sw.px(56); rightMargin = sw.px(56); topMargin = sw.px(48); bottomMargin = sw.px(10) })
         if (body != null) card.addView(sw.text(body, 26, sw.sub, 600, 8), sw.lp(-1, -2).apply { leftMargin = sw.px(56); rightMargin = sw.px(56); bottomMargin = sw.px(26) })
@@ -1984,12 +1988,16 @@ class HandheldHomeActivity : Activity() {
         val fit = ((sw.designHeight - 620) / 132f).toInt().coerceIn(3, 8)
         if (opts.size > fit) card.addView(ColScroll(this, sw.px(30)).apply { isVerticalScrollBarEnabled = false; addView(list) }, sw.lp(-1, fit * 132 - 66))
         else card.addView(list, sw.lp(-1, -2))
-        buttons(card, btns, primary = firstOn < 0)
+        buttons(card, btns, primary = firstOn < 0, primaryAt = primaryAt)
         showOverlay("dialog", card)
     }
 
-    private fun confirm(title: String, body: String, yes: String, onYes: () -> Unit) =
-        dialog(title, body, emptyList(), listOf("Cancel" to {}, yes to onYes))
+    /**
+     * A yes/Cancel question. Cancel is picked (A presses it) unless [yesPicked]: a habitual A must not quit a game,
+     * unpair or remove anything (it quit Ryujinx on 2026-10-21). Only a harmless yes, like Wake it, is picked.
+     */
+    private fun confirm(title: String, body: String, yes: String, yesPicked: Boolean = false, onYes: () -> Unit) =
+        dialog(title, body, emptyList(), listOf("Cancel" to {}, yes to onYes), primaryAt = if (yesPicked) 1 else 0)
 
     /** A one-line entry; [onSave] returns an error to show, or null when the value is good. */
     private fun entry(title: String, body: String, hint: String, v: String, numbers: Boolean, onSave: (String) -> String?) =
@@ -2047,6 +2055,7 @@ class HandheldHomeActivity : Activity() {
         overlay.isFocusable = false; card.isFocusable = false
         main.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
         (overlay.findViewWithTag<View>("primary") ?: firstFocusable(overlay))?.requestFocus()
+        buildFoot()   // the hints say what A and B do in the dialog, not on the page under it
     }
 
     private fun hideOverlay(cue: Boolean = true) {
@@ -2085,7 +2094,9 @@ class HandheldHomeActivity : Activity() {
             "Y" -> KeyEvent.KEYCODE_BUTTON_Y; "L R" -> KeyEvent.KEYCODE_BUTTON_R1; else -> return
         }
         // A starts what's selected; after a tap nothing has focus, so use what the page starts on
-        if (code == KeyEvent.KEYCODE_BUTTON_A && (currentFocus == null || currentFocus?.isInTouchMode == true)) { primaryView?.performClick(); return }
+        if (code == KeyEvent.KEYCODE_BUTTON_A && (currentFocus == null || currentFocus?.isInTouchMode == true)) {
+            (if (overlayKind != null) overlay.findViewWithTag<View>("primary") else primaryView)?.performClick(); return
+        }
         dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code)); dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code))
     }
 
