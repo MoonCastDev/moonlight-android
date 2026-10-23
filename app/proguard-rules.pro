@@ -17,6 +17,9 @@
 -keep class org.bouncycastle.jcajce.provider.asymmetric.* {*;}
 -keep class org.bouncycastle.jcajce.provider.asymmetric.util.* {*;}
 -keep class org.bouncycastle.jcajce.provider.asymmetric.rsa.* {*;}
+# MoonCast: X25519 for identity transfer (the TV's receiver key). The provider loads these by name, so R8 removed them
+# and a release-built TV could not make its key: "identityKey" went out empty and no identity could be sent to it.
+-keep class org.bouncycastle.jcajce.provider.asymmetric.edec.** {*;}
 -keep class org.bouncycastle.jcajce.provider.digest.** {*;}
 -keep class org.bouncycastle.jcajce.provider.symmetric.** {*;}
 -keep class org.bouncycastle.jcajce.spec.* {*;}
