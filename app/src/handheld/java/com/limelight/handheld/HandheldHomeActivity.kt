@@ -1241,6 +1241,63 @@ class HandheldHomeActivity : Activity() {
                 listOf("Show all" to { show(hidden); toast("All hidden games are back") }, "Close" to {}))
     }
 
+    /** "Add to home screen" for a PC game, a PS5 or an Xbox (an Android app has its own icon already). */
+    private fun shortcutOpt(g: Game): Opt? = if (g.dev != null) null else
+        Opt("⌂", Sw.C_AMBER, "Add to home screen", "An icon on this ${deviceShort()}'s home screen that starts it") { addToHomeScreen(g) }
+
+    /**
+     * Pins an icon for [g] to the launcher. It opens MoonCast with [EXTRA_PLAY_HERE], which starts the game here the
+     * usual way: it waits for the PC's state, offers to wake it, and asks first when another game runs there.
+     */
+    private fun addToHomeScreen(g: Game) {
+        if (Build.VERSION.SDK_INT < 26) { toast("Home screen icons need Android 8 or newer"); return }
+        val sm = getSystemService(android.content.pm.ShortcutManager::class.java)
+        if (sm == null || !sm.isRequestPinShortcutSupported) { toast("This ${deviceShort()}'s launcher doesn't take icons from apps"); return }
+        val intent = Intent(this, HandheldHomeActivity::class.java)
+                .setAction(Intent.ACTION_VIEW)   // a shortcut's intent needs an action
+                .putExtra(EXTRA_PLAY_HERE, g.key)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        val where = g.pc?.name ?: g.src
+        val info = android.content.pm.ShortcutInfo.Builder(this, "game:${g.key}")
+                .setShortLabel(g.title.take(25))
+                .setLongLabel("${g.title} ($where)".take(50))
+                .setIcon(android.graphics.drawable.Icon.createWithAdaptiveBitmap(shortcutIcon(g)))
+                .setIntent(intent)
+                .build()
+        if (!sm.requestPinShortcut(info, null)) toast("Couldn't add the icon")
+    }
+
+    /**
+     * The icon: your own picture, else the box art the tile shows, else its cover with the name in the middle. An
+     * adaptive icon is 108 units with the launcher's mask over the middle 72, so the name stays inside that.
+     */
+    private fun shortcutIcon(g: Game): android.graphics.Bitmap {
+        val n = 432
+        val out = android.graphics.Bitmap.createBitmap(n, n, android.graphics.Bitmap.Config.ARGB_8888)
+        val c = android.graphics.Canvas(out)
+        val picture = com.limelight.home.CustomArt.bitmap(this, g.key)
+                ?: ((content.findViewWithTag<View>("g:${g.key}") as? ViewGroup)?.let { tile ->
+                    (0 until tile.childCount).map { tile.getChildAt(it) }.filterIsInstance<ImageView>()
+                            .firstNotNullOfOrNull { (it.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap }
+                })
+        if (picture != null) {
+            val side = minOf(picture.width, picture.height)
+            val src = android.graphics.Rect((picture.width - side) / 2, (picture.height - side) / 2, (picture.width + side) / 2, (picture.height + side) / 2)
+            c.drawBitmap(picture, src, android.graphics.Rect(0, 0, n, n), android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
+            return out
+        }
+        val art = sw.art(g.seed, 0); art.setBounds(0, 0, n, n); art.draw(c)
+        val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0xFFFFFFFF.toInt(); typeface = android.graphics.Typeface.DEFAULT_BOLD; textAlign = android.graphics.Paint.Align.CENTER
+            textSize = n * 0.13f
+        }
+        val safe = n * 0.58f   // inside the launcher's mask
+        while (p.measureText(g.title) > safe && p.textSize > n * 0.06f) p.textSize -= 2f
+        val text = if (p.measureText(g.title) > safe) g.title.take(10) + "…" else g.title
+        c.drawText(text, n / 2f, n / 2f - (p.descent() + p.ascent()) / 2, p)
+        return out
+    }
+
     /** Change picture / Reset picture, for any tile's menu. */
     private fun pictureOpts(g: Game): List<Opt> = listOfNotNull(
             Opt("▣", Sw.C_BLUE, "Change picture", "Pick any image from this ${deviceShort()} for this tile") { pickPicture(g.key) },
@@ -1261,8 +1318,8 @@ class HandheldHomeActivity : Activity() {
 
     private fun gameMenu(g: Game) {
         if (g.ps != null || g.xb != null) {
-            dialog(g.title, if (g.ps != null) "A PlayStation." else "An Xbox.", listOf(
-                    Opt("▶", Sw.LIVE, "Play") { play(g) }) + pictureOpts(g), listOf("Close" to {}))
+            dialog(g.title, if (g.ps != null) "A PlayStation." else "An Xbox.", listOfNotNull(
+                    Opt("▶", Sw.LIVE, "Play") { play(g) }, shortcutOpt(g)) + pictureOpts(g), listOf("Close" to {}))
             return
         }
         g.dev?.let { a ->
@@ -1280,6 +1337,7 @@ class HandheldHomeActivity : Activity() {
                 Opt("▶", Sw.LIVE, if (running) "Resume here" else "Play here") { playHere(g) },
                 Opt("TV", sw.ring, "Play on a TV") { playWhere(g) },
                 if (running) Opt("✕", Sw.DANGER, "Quit game", "Closes it on the PC") { quit(pc, app) } else null,
+                shortcutOpt(g),
                 *pictureOpts(g).toTypedArray(),
                 Opt("–", Sw.PC, "Hide from All games", "Show it again from the PC's menu in Consoles, Hidden games") {
                     val p = getSharedPreferences(AppView.HIDDEN_APPS_PREF_FILENAME, MODE_PRIVATE)
