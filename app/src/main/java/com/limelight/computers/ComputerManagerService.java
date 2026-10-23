@@ -290,6 +290,35 @@ public class ComputerManagerService extends Service {
             return null;
         }
 
+        /**
+         * Sets (or clears, with null) the address a PC is reached at from outside its network, without needing it to
+         * answer there now: at home the internet address usually can't be tried. Saved with the PC's other addresses.
+         */
+        public boolean setManualAddress(String uuid, ComputerDetails.AddressTuple address) {
+            synchronized (pollingTuples) {
+                for (PollingTuple tuple : pollingTuples) {
+                    if (uuid.equals(tuple.computer.uuid)) {
+                        synchronized (tuple.networkLock) {
+                            tuple.computer.manualAddress = address;
+                            if (getLocalDatabaseReference()) {
+                                try {
+                                    ComputerDetails saved = dbManager.getComputerByUUID(uuid);
+                                    if (saved != null) {
+                                        saved.manualAddress = address;
+                                        dbManager.updateComputer(saved);
+                                    }
+                                } finally {
+                                    releaseLocalDatabaseReference();
+                                }
+                            }
+                        }
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
         public void invalidateStateForComputer(String uuid) {
             synchronized (pollingTuples) {
                 for (PollingTuple tuple : pollingTuples) {
@@ -713,8 +742,24 @@ public class ComputerManagerService extends Service {
         }
     }
 
+    /** The running service, so a PC added for a session (identity transfer) can join its list without a restart. */
+    private static volatile ComputerManagerService running;
+
+    /** Adds a PC to the running service's list. It is polled and can be started at once. */
+    public static void addSessionComputer(ComputerDetails pc) {
+        ComputerManagerService svc = running;
+        if (svc != null) svc.addTuple(pc);
+    }
+
+    /** Takes a session PC out of the running service's list. */
+    public static void removeSessionComputer(ComputerDetails pc) {
+        ComputerManagerService svc = running;
+        if (svc != null) svc.removeComputer(pc);
+    }
+
     @Override
     public void onCreate() {
+        running = this;
         // Bind to the discovery service
         bindService(new Intent(this, DiscoveryService.class),
                 discoveryServiceConnection, Service.BIND_AUTO_CREATE);
@@ -775,6 +820,7 @@ public class ComputerManagerService extends Service {
 
     @Override
     public void onDestroy() {
+        running = null;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             ConnectivityManager connMgr = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
             connMgr.unregisterNetworkCallback(networkCallback);

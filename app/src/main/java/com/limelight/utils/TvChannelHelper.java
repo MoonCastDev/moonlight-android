@@ -38,6 +38,13 @@ public class TvChannelHelper {
         this.context = context;
     }
 
+    /** MoonCast: put one game on this PC's row on the TV's home screen (creates the row if needed). */
+    public void addGameToHomeScreen(ComputerDetails computer, com.limelight.nvstream.http.NvApp app) {
+        createTvChannel(computer);
+        addGameToChannel(computer, app);
+        requestChannelOnHomeScreen(computer);
+    }
+
     void requestChannelOnHomeScreen(ComputerDetails computer) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             if (!isAndroidTV()) {

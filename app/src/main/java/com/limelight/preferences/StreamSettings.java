@@ -113,10 +113,12 @@ public class StreamSettings extends Activity {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
             PreferenceConfiguration newPrefs = PreferenceConfiguration.readPreferences(this);
             if (!newPrefs.language.equals(previousPrefs.language)) {
-                // Restart the PC view to apply UI changes
-                Intent intent = new Intent(this, PcView.class);
-                intent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK | Intent.FLAG_ACTIVITY_NEW_TASK);
-                startActivity(intent, null);
+                // Restart MoonCast's home to apply UI changes (not Moonlight's PC list)
+                Intent intent = getPackageManager().getLaunchIntentForPackage(getPackageName());
+                if (intent != null) {
+                    intent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK | Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(intent, null);
+                }
             }
         }
     }

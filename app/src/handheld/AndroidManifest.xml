@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MoonCast handheld: the SENDER. It plays here or sends a game to a MoonCast TV; it never receives games (its only
+     listener is the controller it serves to the TV it sent a game to, while controller mode is open). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- The handheld home (Switch style) -->
+        <activity
+            android:name=".handheld.HandheldHomeActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:theme="@style/StreamTheme"
+            android:resizeableActivity="true"
+            android:windowSoftInputMode="adjustPan"
+            android:configChanges="orientation|screenSize|keyboardHidden|keyboard|navigation|uiMode|density|smallestScreenSize|screenLayout">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <!-- Controller mode: a game plays on a MoonCast TV, this device serves its controller (ws :8099/pad) -->
+        <activity
+            android:name=".handheld.TvControllerActivity"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:theme="@style/StreamTheme"
+            android:resizeableActivity="true"
+            android:configChanges="orientation|screenSize|keyboardHidden|keyboard|navigation|uiMode|density|smallestScreenSize|screenLayout" />
+    </application>
+</manifest>

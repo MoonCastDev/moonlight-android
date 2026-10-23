@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MoonCast TV: the RECEIVER. Its own home, and the :8099 listener the handheld/phone sends games to. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- A TV app (it has the TV launcher entry); not required, so it also installs on phones and tablets -->
+    <uses-feature
+        android:name="android.software.leanback"
+        android:required="false" />
+    <!-- Already optional in the main manifest; said again here because lint checks a TV manifest on its own -->
+    <uses-feature
+        android:name="android.hardware.touchscreen"
+        android:required="false" />
+
+    <application>
+        <!-- MoonCast TV home (Big Picture style). It also listens for the phone on :8099. -->
+        <activity
+            android:name=".home.HomeActivity"
+            android:banner="@drawable/atv_banner"
+            android:exported="true"
+            android:screenOrientation="landscape"
+            android:launchMode="singleTask"
+            android:theme="@style/StreamTheme"
+            android:configChanges="orientation|screenSize|keyboardHidden|navigation|uiMode|density|smallestScreenSize|screenLayout">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <!-- Keeps :8099 open for the phone from boot, whether or not MoonCast is on screen -->
+        <service
+            android:name=".home.PhoneLinkService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Local network listener so the user's phone can start a game stream on this TV" />
+        </service>
+        <receiver
+            android:name=".home.PhoneLinkBoot"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+        <!-- The old receiver screen's name, kept so existing launch commands still open the home -->
+        <activity-alias
+            android:name=".MoonCastReceiver"
+            android:exported="true"
+            android:targetActivity=".home.HomeActivity" />
+    </application>
+</manifest>

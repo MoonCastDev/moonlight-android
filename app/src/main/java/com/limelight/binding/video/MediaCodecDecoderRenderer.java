@@ -273,6 +273,13 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         this.renderTarget = renderTarget;
     }
 
+    // MoonCast: Super resolution. The decoder renders into FSR's surface instead of the screen's
+    private android.view.Surface surfaceOverride;
+
+    public void setSurfaceOverride(android.view.Surface surface) {
+        this.surfaceOverride = surface;
+    }
+
     public MediaCodecDecoderRenderer(Activity activity, PreferenceConfiguration prefs,
                                      CrashListener crashListener, int consecutiveCrashCount,
                                      boolean meteredData, boolean requestedHdr,
@@ -405,6 +412,11 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         return false;
     }
 
+    /** The number of the last frame that arrived from the PC (0 before the first): unchanged means no video coming in. */
+    public int getLastFrameNumber() {
+        return lastFrameNumber;
+    }
+
     public int getPreferredColorSpace() {
         // Default to Rec 709 which is probably better supported on modern devices.
         //
@@ -516,7 +528,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
         LimeLog.info("Configuring with format: "+format);
 
-        videoDecoder.configure(format, renderTarget.getSurface(), null, 0);
+        videoDecoder.configure(format, surfaceOverride != null ? surfaceOverride : renderTarget.getSurface(), null, 0);
 
         configuredFormat = format;
 
@@ -643,7 +655,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
             MediaFormat mediaFormat = createBaseMediaFormat(mimeType);
 
             // This will try low latency options until we find one that works (or we give up).
-            boolean newFormat = MediaCodecHelper.setDecoderLowLatencyOptions(mediaFormat, selectedDecoderInfo, tryNumber);
+            boolean newFormat = MediaCodecHelper.setDecoderLowLatencyOptions(mediaFormat, selectedDecoderInfo, prefs.ultraLowLatency, tryNumber);
 
             // Throw the underlying codec exception on the last attempt if the caller requested it
             if (tryConfigureDecoder(selectedDecoderInfo, mediaFormat, !newFormat && throwOnCodecError)) {
@@ -1024,6 +1036,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                         if (outIndex >= 0) {
                             long presentationTimeUs = info.presentationTimeUs;
                             int lastIndex = outIndex;
+                            noteDecoded(presentationTimeUs);
 
                             numFramesOut++;
 
@@ -1037,6 +1050,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
                                     lastIndex = outIndex;
                                     presentationTimeUs = info.presentationTimeUs;
+                                    noteDecoded(presentationTimeUs);
                                 }
 
                                 if (prefs.framePacing == PreferenceConfiguration.FRAME_PACING_MAX_SMOOTHNESS ||
@@ -1280,10 +1294,29 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         }
     }
 
+    /** MoonCast Quick menu: when each frame went into the decoder, so the time to come out can be measured. */
+    private final java.util.HashMap<Long, Long> decodeStartNs = new java.util.HashMap<>();
+    private long decodeNsSum;
+    private int decodeFrames;
+
+    private void noteDecodeStart(long ts) {
+        synchronized (decodeStartNs) {
+            if (decodeStartNs.size() > 128) decodeStartNs.clear();
+            decodeStartNs.put(ts, System.nanoTime());
+        }
+    }
+
+    private void noteDecoded(long ts) {
+        Long t0;
+        synchronized (decodeStartNs) { t0 = decodeStartNs.remove(ts); }
+        if (t0 != null) { decodeNsSum += System.nanoTime() - t0; decodeFrames++; }
+    }
+
     private boolean queueNextInputBuffer(long timestampUs, int codecFlags) {
         boolean codecRecovered;
 
         try {
+            noteDecodeStart(timestampUs);
             videoDecoder.queueInputBuffer(nextInputBufferIndex,
                     0, nextInputBuffer.position(),
                     timestampUs, codecFlags);
@@ -1372,6 +1405,18 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
         // Flip stats windows roughly every second
         if (SystemClock.uptimeMillis() >= activeWindowVideoStats.measurementStartTimestamp + 1000) {
+            {
+                // MoonCast Quick menu: keep the headline numbers even when the overlay is off
+                VideoStats q = new VideoStats();
+                q.add(lastWindowVideoStats);
+                q.add(activeWindowVideoStats);
+                long rtt = MoonBridge.getEstimatedRttInfo();
+                com.limelight.home.StreamStats.update(q.getFps().renderedFps, (int)(rtt >> 32),
+                        q.totalFrames > 0 ? (float)q.framesLost / q.totalFrames * 100 : 0f, initialWidth + "x" + initialHeight,
+                        decodeFrames > 0 ? (float)decodeNsSum / decodeFrames / 1000000f : 0f);
+                decodeNsSum = 0;
+                decodeFrames = 0;
+            }
             if (prefs.enablePerfOverlay) {
                 VideoStats lastTwo = new VideoStats();
                 lastTwo.add(lastWindowVideoStats);

@@ -36,6 +36,12 @@ public abstract class VirtualControllerElement extends View {
     public static final int EID_LSB = 14;
     public static final int EID_RSB = 15;
     public static final int EID_GDB = 16;
+    // MoonCast skins
+    public static final int EID_MENU = 17;
+    public static final int EID_TOUCHPAD = 18;
+    public static final int EID_PSHOME = 19;
+    public static final int EID_SHARE = 20;
+    public static final int EID_PLATE = 100;
 
     protected VirtualController virtualController;
     protected final int elementId;
@@ -286,6 +292,10 @@ public abstract class VirtualControllerElement extends View {
         return true;
     }
 
+    protected PadSkin skin() {
+        return virtualController.skin;
+    }
+
     abstract protected void onElementDraw(Canvas canvas);
 
     abstract public boolean onElementTouchEvent(MotionEvent event);
@@ -305,6 +315,11 @@ public abstract class VirtualControllerElement extends View {
 
 
     public void setOpacity(int opacity) {
+        if (virtualController.skin != null) {
+            // a drawn skin fades as a whole, so the game shows through it evenly
+            setAlpha(opacity / 100f);
+            return;
+        }
         int hexOpacity = opacity * 255 / 100;
         this.normalColor = (hexOpacity << 24) | (normalColor & 0x00FFFFFF);
         this.pressedColor = (hexOpacity << 24) | (pressedColor & 0x00FFFFFF);

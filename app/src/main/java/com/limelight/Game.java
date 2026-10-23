@@ -91,8 +91,10 @@ import java.util.Locale;
 public class Game extends Activity implements SurfaceHolder.Callback,
         OnGenericMotionListener, OnTouchListener, NvConnectionListener, EvdevListener,
         OnSystemUiVisibilityChangeListener, GameGestures, StreamView.InputCallbacks,
-        PerfOverlayListener, UsbDriverService.UsbDriverStateListener, View.OnKeyListener {
+        PerfOverlayListener, UsbDriverService.UsbDriverStateListener, View.OnKeyListener,
+        com.limelight.home.MoveToTv.LocalSession {
     private int lastButtonState = 0;
+    private int playGen = -1;   // the /play this stream came from (PhoneGamepad), for clearing "pad direct" when it ends
 
     // Only 2 touches are supported
     private final TouchContext[] touchContextMap = new TouchContext[2];
@@ -123,6 +125,10 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     private boolean connected = false;
     private boolean autoEnterPip = false;
     private boolean surfaceCreated = false;
+    // MoonCast: Super resolution (FSR 1.0)
+    private boolean fsrPlanned = false;
+    private float fsrSharpness = 0.6f;
+    private volatile com.limelight.binding.video.FsrRenderer fsr;
     private boolean attemptedConnection = false;
     private int suppressPipRefCount = 0;
     private String pcName;
@@ -184,6 +190,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        com.limelight.home.Usage.used(this, "pc");   // for the next anonymous check-in, if the user said yes
 
         UiHelper.setLocale(this);
 
@@ -217,12 +224,16 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
         // Read the stream preferences
         prefConfig = PreferenceConfiguration.readPreferences(this);
+        trace(foldLabel(getResources().getConfiguration()) + ": stream " + prefConfig.width + "x" + prefConfig.height
+                + ", Native " + PreferenceConfiguration.nativeWholeScreen(this));
         tombstonePrefs = Game.this.getSharedPreferences("DecoderTombstone", 0);
 
         // Enter landscape unless we're on a square screen
         setPreferredOrientationForCurrentDisplay();
 
-        if (prefConfig.stretchVideo || shouldIgnoreInsetsForResolution(prefConfig.width, prefConfig.height)) {
+        // MoonCast "Whole screen": the stream is the screen's own shape, so it goes under the camera cutout too
+        if (prefConfig.stretchVideo || shouldIgnoreInsetsForResolution(prefConfig.width, prefConfig.height)
+                || PreferenceConfiguration.nativeWholeScreen(this)) {
             // Allow the activity to layout under notches if the fill-screen option
             // was turned on by the user or it's a full-screen native resolution
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -292,12 +303,12 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         // Make sure Wi-Fi is fully powered up
         WifiManager wifiMgr = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
         try {
-            highPerfWifiLock = wifiMgr.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "Moonlight High Perf Lock");
+            highPerfWifiLock = wifiMgr.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "MoonCast High Perf Lock");
             highPerfWifiLock.setReferenceCounted(false);
             highPerfWifiLock.acquire();
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                lowLatencyWifiLock = wifiMgr.createWifiLock(WifiManager.WIFI_MODE_FULL_LOW_LATENCY, "Moonlight Low Latency Lock");
+                lowLatencyWifiLock = wifiMgr.createWifiLock(WifiManager.WIFI_MODE_FULL_LOW_LATENCY, "MoonCast Low Latency Lock");
                 lowLatencyWifiLock.setReferenceCounted(false);
                 lowLatencyWifiLock.acquire();
             }
@@ -399,6 +410,21 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             Toast.makeText(this, "Decoder does not support HDR10 profile", Toast.LENGTH_LONG).show();
         }
 
+        // MoonCast: Super resolution (FSR 1.0) when it's on, the stream isn't HDR (FSR's passes are 8-bit) and the
+        // stream is clearly smaller than this screen. The surface then keeps the screen's size (no setFixedSize)
+        // so FSR has room to upscale into.
+        {
+            android.content.SharedPreferences sp = android.preference.PreferenceManager.getDefaultSharedPreferences(this);
+            android.graphics.Point real = new android.graphics.Point();
+            getWindowManager().getDefaultDisplay().getRealSize(real);
+            fsrPlanned = com.limelight.binding.video.FsrRenderer.Companion.enabled(sp) && !willStreamHdr
+                    && com.limelight.binding.video.FsrRenderer.Companion.worthIt(prefConfig.height, Math.min(real.x, real.y));
+            fsrSharpness = com.limelight.binding.video.FsrRenderer.Companion.sharpness(sp);
+            if (com.limelight.binding.video.FsrRenderer.Companion.enabled(sp))
+                LimeLog.info("FSR " + (fsrPlanned ? "on" : "not needed") + ": stream " + prefConfig.width + "x" + prefConfig.height
+                        + ", screen " + real.x + "x" + real.y + (willStreamHdr ? ", HDR" : ""));
+        }
+
         // Display a message to the user if HEVC was forced on but we still didn't find a decoder
         if (prefConfig.videoFormat == PreferenceConfiguration.FormatOption.FORCE_HEVC && !decoderRenderer.isHevcSupported()) {
             Toast.makeText(this, "No HEVC decoder found", Toast.LENGTH_LONG).show();
@@ -435,6 +461,11 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             // If we're using OSC, always set at least gamepad 1.
             gamepadMask |= 1;
         }
+        // A handheld sent this game with "pad":"direct": its own controller-only session on the PC is player 1, so this
+        // stream registers no gamepad at all (not even the TV remote), or it would take pad 0 from the handheld.
+        final boolean padsElsewhere = PhoneGamepad.isDirect();
+        playGen = PhoneGamepad.playGen();
+        if (padsElsewhere) gamepadMask = 0;
 
         // Set to the optimal mode for streaming
         float displayRefreshRate = prepareDisplayForRendering();
@@ -486,23 +517,16 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                 new ComputerDetails.AddressTuple(host, port),
                 httpsPort, uniqueId, config,
                 PlatformBinding.getCryptoProvider(this), serverCert);
+        conn.setControllersBlocked(padsElsewhere);
         controllerHandler = new ControllerHandler(this, conn, this, prefConfig);
         keyboardTranslator = new KeyboardTranslator();
 
         InputManager inputManager = (InputManager) getSystemService(Context.INPUT_SERVICE);
         inputManager.registerInputDeviceListener(keyboardTranslator, null);
 
-        // Initialize touch contexts
-        for (int i = 0; i < touchContextMap.length; i++) {
-            if (!prefConfig.touchscreenTrackpad) {
-                touchContextMap[i] = new AbsoluteTouchContext(conn, i, streamView);
-            }
-            else {
-                touchContextMap[i] = new RelativeTouchContext(conn, i,
-                        REFERENCE_HORIZ_RES, REFERENCE_VERT_RES,
-                        streamView, prefConfig);
-            }
-        }
+        // Touch screen starts as Settings, Handheld, Touch screen say (Off unless changed there); the Quick menu
+        // switches it for this stream
+        setTouchMode(defaultTouchMode());
 
         if (prefConfig.onscreenController) {
             // create virtual onscreen controller
@@ -580,6 +604,16 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
         // Set requested orientation for possible new screen size
         setPreferredOrientationForCurrentDisplay();
+
+        // Folded or unfolded mid-game: once the screen settles (a fold sends a few changes), reconnect at its size
+        // so Native fills it; the game keeps running on the PC
+        // (always check after it settles: right at the change the screen's new size may not be known yet)
+        if (streamView != null) {
+            trace(foldLabel(newConfig) + ": size changed " + newConfig.screenWidthDp + "x" + newConfig.screenHeightDp + " dp, screen "
+                    + PreferenceConfiguration.nativeResolution(this));
+            streamView.removeCallbacks(fitScreen);
+            streamView.postDelayed(fitScreen, 1500);
+        }
 
         if (virtualController != null) {
             // Refresh layout of OSC for possible new screen size
@@ -950,13 +984,22 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             }
         }
 
-        if (prefConfig.stretchVideo || aspectRatioMatch) {
+        if (!fsrPlanned && (prefConfig.stretchVideo || aspectRatioMatch)) {
             // Set the surface to the size of the video
             streamView.getHolder().setFixedSize(prefConfig.width, prefConfig.height);
         }
-        else {
+        else if (!(fsrPlanned && prefConfig.stretchVideo)) {
             // Set the surface to scale based on the aspect ratio of the stream
             streamView.setDesiredAspectRatio((double)prefConfig.width / (double)prefConfig.height);
+            streamView.setFill(prefConfig.fillVideo);
+        }
+        // (FSR with Stretch: the view fills the screen and FSR stretches the picture into it)
+
+        // MoonCast: Settings, Video, Zoom. Enlarges the picture for TVs that crop the edges (overscan).
+        if (prefConfig.videoZoomPercent > 100) {
+            float z = prefConfig.videoZoomPercent / 100f;
+            streamView.setScaleX(z);
+            streamView.setScaleY(z);
         }
 
         // Set the desired refresh rate that will get passed into setFrameRate() later
@@ -1036,6 +1079,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     protected void onDestroy() {
         super.onDestroy();
 
+        PhoneGamepad.stopFor(conn);
+        PhoneGamepad.streamEnded(playGen);   // a later stream from the TV's own home has its controllers again
         if (controllerHandler != null) {
             controllerHandler.destroy();
         }
@@ -1144,7 +1189,31 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             }
         }
 
-        finish();
+        // Being rebuilt (Fit to the screen, recreate): the new one reconnects; finishing here would end it.
+        if (isChangingConfigurations()) return;
+        if (isFinishing() || streamView == null) { finish(); return; }
+        // A foldable switching screens hides this for a moment: stopped, then started again on the other screen.
+        // Close only if it doesn't come back; if it does, reconnect, at the new screen's size with Native.
+        stoppedAwhile = true;
+        trace("hidden: closing in 2 s unless shown again");
+        streamView.removeCallbacks(closeIfGone);
+        streamView.postDelayed(closeIfGone, 2000);
+    }
+
+    /** Stopped, and waiting to see whether it comes back (a fold or unfold) before closing. */
+    private boolean stoppedAwhile;
+    private final Runnable closeIfGone = () -> { if (stoppedAwhile && !isFinishing()) finish(); };
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        if (stoppedAwhile) trace("shown again");
+        if (stoppedAwhile) {
+            // back within a moment (folded or unfolded): the stream ended when it was hidden, so start it again
+            stoppedAwhile = false;
+            streamView.removeCallbacks(closeIfGone);
+            if (!isFinishing()) reconnectHere("shown again");
+        }
     }
 
     private void setInputGrabState(boolean grab) {
@@ -1326,6 +1395,10 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
     @Override
     public boolean handleKeyDown(KeyEvent event) {
+        // MoonCast Quick menu first: the stream view hands us keys before the IME and before the activity
+        Boolean menuKey = quickMenuKey(event);
+        if (menuKey != null) return menuKey;
+
         // Pass-through virtual navigation keys
         if ((event.getFlags() & KeyEvent.FLAG_VIRTUAL_HARD_KEY) != 0) {
             return false;
@@ -1408,6 +1481,10 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
     @Override
     public boolean handleKeyUp(KeyEvent event) {
+        // MoonCast Quick menu first: the stream view hands us keys before the IME and before the activity
+        Boolean menuKey = quickMenuKey(event);
+        if (menuKey != null) return menuKey;
+
         // Pass-through virtual navigation keys
         if ((event.getFlags() & KeyEvent.FLAG_VIRTUAL_HARD_KEY) != 0) {
             return false;
@@ -1502,6 +1579,261 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         LimeLog.info("Toggling keyboard overlay");
         InputMethodManager inputManager = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
         inputManager.toggleSoftInput(0, 0);
+    }
+
+    // ---- MoonCast Quick menu: Select + Start + LB + RB on a pad, or Back on the TV remote ----
+    private com.limelight.home.QuickMenu quickMenu;
+
+    @Override
+    public void openQuickMenu() {
+        runOnUiThread(() -> {
+            if (isFinishing()) return;
+            if (quickMenu == null) quickMenu = new com.limelight.home.QuickMenu(Game.this);
+            java.util.List<com.limelight.home.QuickMenu.Item> items = new java.util.ArrayList<>();
+            items.add(new com.limelight.home.QuickMenu.Item("⌨", "Keyboard", "On-screen", false, this::toggleKeyboard).asToggle());
+            items.add(new com.limelight.home.QuickMenu.Item("ⓘ", "Streaming status", prefConfig.enablePerfOverlay ? "On" : "Off", false, this::toggleStatus).asToggle());
+            items.add(new com.limelight.home.QuickMenu.Item("☝", "Touch screen", TOUCH_LABELS[touchMode], false,
+                    () -> setTouchMode((touchMode + 1) % TOUCH_LABELS.length)).asToggle());
+            items.add(new com.limelight.home.QuickMenu.Item("✚", "Controllers", com.limelight.home.QuickMenu.pads().size() + " connected", false, this::showControllers));
+            items.add(new com.limelight.home.QuickMenu.Item("▤", "Task Manager", "Windows: Ctrl + Shift + Esc", false, this::openTaskManager));
+            // handheld only: send the game to the last MoonCast TV (it ends this stream, the game keeps running)
+            com.limelight.home.QuickMenu.Item move = com.limelight.home.MoveToTv.item(Game.this, new com.limelight.home.MoveToTv.Target(
+                    "pc", appName != null ? appName : "Your game", getIntent().getStringExtra(EXTRA_PC_UUID), pcName,
+                    getIntent().getIntExtra(EXTRA_APP_ID, 0), null, null, null, true, null));
+            if (move != null) items.add(move);
+            items.add(new com.limelight.home.QuickMenu.Item("←", "Disconnect", "The game keeps running", false, this::finish));
+            items.add(new com.limelight.home.QuickMenu.Item("✕", "Quit game", null, true, this::quitOnHostAndFinish));
+            items.add(new com.limelight.home.QuickMenu.Item("Zz", "Hibernate PC", "Windows: runs shutdown /h", true, this::confirmHibernate));
+            quickMenu.show(appName != null ? appName : "Your game",
+                    (pcName != null ? "On " + pcName + ". " : "") + com.limelight.home.QuickMenu.COMBO_LABEL + " opens this menu",
+                    () -> java.util.Arrays.asList(
+                            com.limelight.home.QuickMenu.stat(String.format(java.util.Locale.US, "%.0f", com.limelight.home.StreamStats.INSTANCE.getFps()), "Frames per second"),
+                            com.limelight.home.QuickMenu.stat(com.limelight.home.StreamStats.INSTANCE.getRttMs() + " ms", "Network delay"),
+                            com.limelight.home.QuickMenu.stat((prefConfig.bitrate / 1000) + " Mbps", "Picture quality"),
+                            com.limelight.home.QuickMenu.stat(String.format(java.util.Locale.US, "%.1f%%", com.limelight.home.StreamStats.INSTANCE.getLossPct()), "Lost frames"),
+                            com.limelight.home.QuickMenu.stat(String.format(java.util.Locale.US, "%.1f ms", com.limelight.home.StreamStats.INSTANCE.getDecodeMs()), "Decode delay")),
+                    items);
+        });
+    }
+
+    // Quick menu, Touch screen: what a finger on the picture does, for this stream only (every stream starts Off,
+    // so a hand on a handheld's screen can't click on the PC). Mouse is Moonlight's trackpad, Touch puts the pointer
+    // where the finger is. A stylus and a real mouse work in every mode.
+    private static final int TOUCH_OFF = 0, TOUCH_MOUSE = 1, TOUCH_DIRECT = 2;
+    private static final String[] TOUCH_LABELS = {"Off", "Mouse", "Touch"};
+    /** Settings, Handheld, Touch screen: how each stream starts ("off", "mouse" or "touch"). */
+    public static final String TOUCH_DEFAULT_PREF = "mc_touch_default";
+    private int touchMode = TOUCH_OFF;
+
+    private int defaultTouchMode() {
+        String v = android.preference.PreferenceManager.getDefaultSharedPreferences(this).getString(TOUCH_DEFAULT_PREF, "off");
+        return "mouse".equals(v) ? TOUCH_MOUSE : "touch".equals(v) ? TOUCH_DIRECT : TOUCH_OFF;
+    }
+
+    /**
+     * Touch screen Off: the PC's pointer is drawn into the picture, so move it to the middle of the right edge, where
+     * the arrow (drawn right and down from its tip) is off the screen. Not a corner: Windows' bottom-right corner is
+     * Show desktop.
+     */
+    private void parkPointer() {
+        if (conn == null || !connected) return;
+        conn.sendMousePosition((short) (REFERENCE_HORIZ_RES - 1), (short) (REFERENCE_VERT_RES / 2),
+                (short) REFERENCE_HORIZ_RES, (short) REFERENCE_VERT_RES);
+    }
+
+    private void setTouchMode(int mode) {
+        for (TouchContext c : touchContextMap) {
+            if (c != null) c.cancelTouch();
+        }
+        touchMode = mode;
+        for (int i = 0; i < touchContextMap.length; i++) {
+            touchContextMap[i] = mode == TOUCH_DIRECT ? new AbsoluteTouchContext(conn, i, streamView)
+                    : new RelativeTouchContext(conn, i, REFERENCE_HORIZ_RES, REFERENCE_VERT_RES, streamView, prefConfig);
+        }
+        LimeLog.info("Touch screen: " + TOUCH_LABELS[mode]);
+        if (mode == TOUCH_OFF) parkPointer();
+    }
+
+    // Quick menu, Streaming status: Moonlight's stats corner on or off right away, saved like Settings' "Stats while playing"
+    private void toggleStatus() {
+        prefConfig.enablePerfOverlay = !prefConfig.enablePerfOverlay;
+        android.preference.PreferenceManager.getDefaultSharedPreferences(this).edit()
+                .putBoolean("checkbox_enable_perf_overlay", prefConfig.enablePerfOverlay).apply();
+        performanceOverlayView.setVisibility(prefConfig.enablePerfOverlay && !isHidingOverlays ? View.VISIBLE : View.GONE);
+    }
+
+    // Quick menu, Task Manager: the keys Windows opens it with (stock Sunshine has no other way in)
+    private void openTaskManager() {
+        sendKeys(new short[] {VK_LCONTROL, VK_LSHIFT, VK_ESCAPE});
+    }
+
+    // Quick menu, Hibernate PC: asks first, with Cancel picked, since the game and the stream both stop
+    private void confirmHibernate() {
+        String pc = pcName != null ? pcName : "the PC";
+        java.util.List<com.limelight.home.QuickMenu.Item> items = new java.util.ArrayList<>();
+        items.add(new com.limelight.home.QuickMenu.Item("↩", "Cancel", "Keep playing", false, () -> { }));
+        items.add(new com.limelight.home.QuickMenu.Item("Zz", "Hibernate", "Unsaved progress may be lost", true, this::hibernate));
+        quickMenu.show("Hibernate " + pc + "?",
+                "MoonCast opens Start on the PC (Ctrl + Esc), types shutdown /h and presses Enter. It works on Windows " +
+                        "with hibernation on (most PCs). Wake the PC again from MoonCast's home.",
+                java.util.Collections::emptyList, items);
+    }
+
+    /** When Hibernate PC was sent: the PC going away soon after is the end the user asked for, not an error. */
+    private volatile long hibernateAt;
+
+    private void hibernate() {
+        hibernateAt = android.os.SystemClock.uptimeMillis();
+        LimeLog.info("Quick menu: Hibernate PC");
+        // Start's search runs the command. Not Win + R: games turn the Windows key off while they play (test239), and
+        // Ctrl + Esc opens Start without it. Not the Win + X power menu either: its U and H don't match on other
+        // keyboard layouts or Windows languages (test238). The command goes as text, which Sunshine types the same
+        // on any layout; search needs a moment to find it before Enter.
+        sendKeys(new short[] {VK_LCONTROL, VK_ESCAPE});
+        Handler h = new Handler(getMainLooper());
+        h.postDelayed(() -> { if (conn != null) conn.sendUtf8Text("shutdown /h"); }, 1500);
+        h.postDelayed(() -> sendKeys(new short[] {VK_RETURN}), 3500);
+        // A PC going into hibernation just stops sending video: Moonlight would only notice after a long timeout,
+        // with the last picture frozen (test241). Watch for it and end the stream ourselves.
+        h.postDelayed(() -> watchHibernate(60, -1, 0), 4500);
+    }
+
+    /** Once a second for up to [checksLeft] s: after 3 s without a new frame, end the stream if the PC stopped answering. */
+    private void watchHibernate(final int checksLeft, final int lastFrame, final int still) {
+        if (isFinishing() || decoderRenderer == null || displayedFailureDialog) return;
+        final int frame = decoderRenderer.getLastFrameNumber();
+        final int quiet = frame == lastFrame ? still + 1 : 0;
+        if (quiet < 3) {
+            if (checksLeft > 0) new Handler(getMainLooper()).postDelayed(() -> watchHibernate(checksLeft - 1, frame, quiet), 1000);
+            return;
+        }
+        // no video for 3 s: a still screen does that too, so ask whether the PC is still there (its http port, 47989)
+        new Thread(() -> {
+            boolean up;
+            try (java.net.Socket sock = new java.net.Socket()) {
+                sock.connect(new java.net.InetSocketAddress(getIntent().getStringExtra(EXTRA_HOST),
+                        getIntent().getIntExtra(EXTRA_PORT, NvHTTP.DEFAULT_HTTP_PORT)), 1500);
+                up = true;
+            } catch (Exception e) {
+                up = false;
+            }
+            final boolean answers = up;
+            runOnUiThread(() -> {
+                if (!answers) finishHibernated();
+                else if (checksLeft > 0) new Handler(getMainLooper()).postDelayed(() -> watchHibernate(checksLeft - 1, frame, 0), 1000);
+            });
+        }, "mc-hibernate-watch").start();
+    }
+
+    /** The PC went down after Hibernate PC: leave the stream without an error (and without quitting the game). */
+    private void finishHibernated() {
+        if (displayedFailureDialog) return;
+        displayedFailureDialog = true;
+        endedByUser = true;
+        LimeLog.info("Stream ended after Hibernate PC");
+        stopConnection();
+        android.widget.Toast.makeText(this, (pcName != null ? pcName : "The PC") + " is hibernating", android.widget.Toast.LENGTH_LONG).show();
+        finish();
+    }
+
+    // Windows virtual-key codes, with Moonlight's 0x80 prefix (KeyboardTranslator)
+    private static final short VK_LCONTROL = (short) 0x80A2, VK_LSHIFT = (short) 0x80A0,
+            VK_ESCAPE = (short) 0x801B, VK_RETURN = (short) 0x800D;
+
+    /** Press [keys] in order, holding each, then let them go in reverse, like a person pressing a shortcut. */
+    private void sendKeys(short[] keys) {
+        if (conn == null) return;
+        byte mod = 0;
+        for (short k : keys) {
+            conn.sendKeyboardInput(k, KeyboardPacket.KEY_DOWN, mod, (byte) 0);
+            mod |= keyModifier(k);
+        }
+        final byte held = mod;
+        new Handler(getMainLooper()).postDelayed(() -> {
+            if (conn == null) return;
+            byte m = held;
+            for (int i = keys.length - 1; i >= 0; i--) {
+                m &= (byte) ~keyModifier(keys[i]);
+                conn.sendKeyboardInput(keys[i], KeyboardPacket.KEY_UP, m, (byte) 0);
+            }
+        }, 100);
+    }
+
+    private static byte keyModifier(short k) {
+        switch (k) {
+            case VK_LCONTROL: return KeyboardPacket.MODIFIER_CTRL;
+            case VK_LSHIFT: return KeyboardPacket.MODIFIER_SHIFT;
+            default: return 0;
+        }
+    }
+
+    // Quick menu, Controllers: on a PC every pad is its own player (in the order they were first used).
+    private void showControllers() {
+        java.util.List<com.limelight.home.QuickMenu.Item> items = new java.util.ArrayList<>();
+        int n = 1;
+        for (android.view.InputDevice d : com.limelight.home.QuickMenu.pads()) {
+            String b = com.limelight.home.QuickMenu.battery(d);
+            items.add(new com.limelight.home.QuickMenu.Item(String.valueOf(n++), d.getName(), b, false, this::showControllers));
+        }
+        items.add(new com.limelight.home.QuickMenu.Item("+", "Pair a controller", "Bluetooth settings", false,
+                () -> com.limelight.home.QuickMenu.pairController(Game.this)));
+        quickMenu.show("Controllers", prefConfig.multiController ? "Each pad is its own player on the PC." : "All pads control player 1 (Settings, Controllers).",
+                java.util.Collections::emptyList, items);
+    }
+
+    /** The user ended this stream (Quit game, Disconnect, Back): its end is not a failure to report (#41). */
+    private volatile boolean endedByUser;
+
+    // Quit the game on the PC (not just this stream), then leave. Public for the TV's /stop {"quit":true}.
+    public void quitOnHostAndFinish() {
+        endedByUser = true;   // the PC closing the game ends the stream with an error code; that's this quit
+        new Thread(this::quitAppOnHost, "mc-quit").start();
+        finish();
+    }
+
+    /** Close the running game on the PC (blocks: call it off the main thread). */
+    private void quitAppOnHost() {
+        final Intent i = getIntent();
+        try {
+            X509Certificate cert = null;
+            byte[] der = i.getByteArrayExtra(EXTRA_SERVER_CERT);
+            if (der != null) cert = (X509Certificate) CertificateFactory.getInstance("X.509").generateCertificate(new ByteArrayInputStream(der));
+            new NvHTTP(new ComputerDetails.AddressTuple(i.getStringExtra(EXTRA_HOST), i.getIntExtra(EXTRA_PORT, NvHTTP.DEFAULT_HTTP_PORT)),
+                    i.getIntExtra(EXTRA_HTTPS_PORT, 0), i.getStringExtra(EXTRA_UNIQUEID), cert,
+                    PlatformBinding.getCryptoProvider(Game.this)).quitApp();
+        } catch (Exception e) {
+            LimeLog.warning("Quick menu quit: " + e);
+        }
+    }
+
+
+
+    // The open menu takes every key; the TV remote's Back opens it (Moonlight would send it to the PC as Select).
+    // #57: the menu closes on Back's press; its release then came here with the menu gone and opened it again.
+    // Open only on a release whose press came while the menu was closed.
+    private boolean backPressedClosed;
+
+    private Boolean quickMenuKey(KeyEvent event) {
+        if (quickMenu != null && quickMenu.isShowing()) { backPressedClosed = false; return quickMenu.onKey(event); }
+        if (com.limelight.home.QuickMenu.isRemoteBack(event)) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) backPressedClosed = true;
+            else if (event.getAction() == KeyEvent.ACTION_UP) { if (backPressedClosed) openQuickMenu(); backPressedClosed = false; }
+            return true;
+        }
+        return null;
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        Boolean menuKey = quickMenuKey(event);
+        if (menuKey != null) return menuKey;
+        return super.dispatchKeyEvent(event);
+    }
+
+    @Override
+    public boolean dispatchGenericMotionEvent(MotionEvent event) {
+        if (quickMenu != null && quickMenu.isShowing()) return quickMenu.onMotion(event);
+        return super.dispatchGenericMotionEvent(event);
     }
 
     private byte getLiTouchTypeFromEvent(MotionEvent event) {
@@ -2000,10 +2332,15 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                     return true;
                 }
 
+                // Touch screen Off (the Quick menu's default): a finger on the picture does nothing on the PC
+                if (touchMode == TOUCH_OFF) {
+                    return true;
+                }
+
                 // If this is the parent view, we'll offset our coordinates to appear as if they
                 // are relative to the StreamView like our StreamView touch events are.
                 float xOffset, yOffset;
-                if (view != streamView && !prefConfig.touchscreenTrackpad) {
+                if (view != streamView && touchMode == TOUCH_DIRECT) {
                     xOffset = -streamView.getX();
                     yOffset = -streamView.getY();
                 }
@@ -2035,7 +2372,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                 // TODO: Re-enable native touch when have a better solution for handling
                 // cancelled touches from Android gestures and 3 finger taps to activate
                 // the software keyboard.
-                /*if (!prefConfig.touchscreenTrackpad && trySendTouchEvent(view, event)) {
+                /*if (touchMode == TOUCH_DIRECT && trySendTouchEvent(view, event)) {
                     // If this host supports touch events and absolute touch is enabled,
                     // send it directly as a touch event.
                     return true;
@@ -2225,7 +2562,12 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     public void stageComplete(String stage) {
     }
 
-    private void stopConnection() {
+    private void stopConnection() { stopConnection(null); }
+
+    /** Stop the stream; [done] runs on the main thread once the PC was told (null: don't wait). */
+    private void stopConnection(final Runnable done) {
+        endedByUser = true;   // we stop it ourselves; a termination after this isn't a failure
+        PhoneGamepad.stopFor(conn);
         if (connecting || connected) {
             connecting = connected = false;
             updatePipAutoEnter();
@@ -2243,13 +2585,42 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             new Thread() {
                 public void run() {
                     conn.stop();
+                    // the decoder is gone: FSR's surface can go too
+                    com.limelight.binding.video.FsrRenderer f = fsr;
+                    fsr = null;
+                    if (f != null) f.release();
+                    if (done != null) runOnUiThread(done);
                 }
             }.start();
         }
+        else if (done != null) runOnUiThread(done);
+    }
+
+    private final Runnable fitScreen = () -> {
+        trace("check: screen " + PreferenceConfiguration.nativeResolution(Game.this) + ", stream "
+                + (prefConfig != null ? prefConfig.width + "x" + prefConfig.height : "?") + ", connected " + connected
+                + ", Native " + PreferenceConfiguration.nativeWholeScreen(Game.this) + " -> " + (needsRefit() ? "RECONNECT" : "no"));
+        if (needsRefit()) {
+            reconnectHere("size changed");
+        }
+    };
+
+    /** A foldable folded or unfolded mid-game with Native on: the stream is still the size of the other screen. */
+    private boolean needsRefit() {
+        if (!connected || isFinishing()) return false;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && isInPictureInPictureMode()) return false;
+        return sizeChanged();
+    }
+
+    // "Move to TV" (handheld): end this stream (disconnect, the game keeps running) before the TV joins it.
+    @Override
+    public void endLocalSession(Runnable done) {
+        stopConnection(done);
     }
 
     @Override
     public void stageFailed(final String stage, final int portFlags, final int errorCode) {
+        com.limelight.home.StreamReport.failed("Couldn't start the game on the PC (" + stage + ", error " + errorCode + ").");
         // Perform a connection test if the failure could be due to a blocked port
         // This does network I/O, so don't do it on the main thread.
         final int portTestResult = MoonBridge.testClientConnectivity(ServerHelper.CONNECTION_TEST_SERVER, 443, portFlags);
@@ -2290,6 +2661,16 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
     @Override
     public void connectionTerminated(final int errorCode) {
+        PhoneGamepad.stopFor(conn);   // the stream is over: stop pulling the sender's controller
+        if (hibernateAt != 0 && android.os.SystemClock.uptimeMillis() - hibernateAt < 60_000) {
+            // the PC went down after Hibernate PC: that's what the user asked for, so no error
+            endedByUser = true;
+            runOnUiThread(this::finishHibernated);
+            return;
+        }
+        // A stream the user ended (Quit game makes the PC close it, error -1) isn't a failure (#41)
+        if (errorCode != MoonBridge.ML_ERROR_GRACEFUL_TERMINATION && !endedByUser && !isFinishing())
+            com.limelight.home.StreamReport.failed("The stream from the PC stopped (error " + errorCode + ").");
         // Perform a connection test if the failure could be due to a blocked port
         // This does network I/O, so don't do it on the main thread.
         final int portFlags = MoonBridge.getPortFlagsFromTerminationErrorCode(errorCode);
@@ -2403,6 +2784,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
     @Override
     public void connectionStarted() {
+        com.limelight.home.StreamReport.playing();
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
@@ -2414,6 +2796,11 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                 connected = true;
                 connecting = false;
                 updatePipAutoEnter();
+                // Touch screen Off: the PC's pointer out of the way once the picture is up
+                if (touchMode == TOUCH_OFF) new Handler(getMainLooper()).postDelayed(Game.this::parkPointer, 1500);
+
+                // The phone drives this stream as the controller (native receiver flow): feed its pad into our conn.
+                PhoneGamepad.start(conn, null);
 
                 // Hide the mouse cursor now after a short delay.
                 // Doing it before dismissing the spinner seems to be undone
@@ -2508,6 +2895,13 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             throw new IllegalStateException("Surface changed before creation!");
         }
 
+        trace("surface " + width + "x" + height);
+        if (surfaceLostMidStream && !isFinishing()) {
+            surfaceLostMidStream = false;
+            streamView.post(() -> { if (!isFinishing()) reconnectHere("new surface " + width + "x" + height); });
+            return;
+        }
+
         if (!attemptedConnection) {
             attemptedConnection = true;
 
@@ -2515,6 +2909,17 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             UiHelper.notifyStreamConnecting(Game.this);
 
             decoderRenderer.setRenderTarget(holder);
+            if (fsrPlanned && fsr == null) {
+                try {
+                    fsr = new com.limelight.binding.video.FsrRenderer(prefConfig.width, prefConfig.height, fsrSharpness);
+                    fsr.attachOutput(holder.getSurface());
+                    decoderRenderer.setSurfaceOverride(fsr.getInputSurface());
+                    LimeLog.info("FSR on: " + prefConfig.width + "x" + prefConfig.height + " to " + width + "x" + height);
+                } catch (RuntimeException e) {
+                    LimeLog.warning("FSR unavailable, showing the stream directly: " + e);
+                    fsr = null;
+                }
+            }
             conn.start(new AndroidAudioRenderer(Game.this, prefConfig.enableAudioFx),
                     decoderRenderer, Game.this);
         }
@@ -2567,14 +2972,62 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             throw new IllegalStateException("Surface destroyed before creation!");
         }
 
+        // FSR stops drawing to the screen surface before it goes
+        if (fsr != null) fsr.detachOutput();
+
         if (attemptedConnection) {
             // Let the decoder know immediately that the surface is gone
             decoderRenderer.prepareForStop();
 
             if (connected) {
+                // a foldable switching screens takes the surface away and gives a new one: reconnect then
+                surfaceLostMidStream = true;
+                trace("surface lost, stream stopped");
                 stopConnection();
             }
         }
+    }
+
+    /** A line in the log about folding and refitting (what the stream saw, and what it did). */
+    private void trace(String line) {
+        LimeLog.info("MoonCast fold: " + line);
+    }
+
+    /** Folded or open, from the screen this is on: an open foldable is a big screen (600 dp and more across). */
+    private String foldLabel(Configuration c) {
+        return c.smallestScreenWidthDp >= 600 ? "UNFOLDED" : "FOLDED";
+    }
+
+    /** The stream ended because its surface went away (a fold or unfold); a new surface reconnects. */
+    private boolean surfaceLostMidStream;
+    private boolean reconnecting;
+
+    /**
+     * Folded or unfolded mid-game (Native): quit the game on the PC and start it again on this screen. A PC sets its
+     * resolution when a game launches, so only a fresh launch fills the new screen; a reconnect alone kept the other
+     * screen's size inside the new frame. Unsaved progress in the game is lost.
+     */
+    private void reconnectHere(String why) {
+        if (reconnecting) return;   // a fold can bring a new surface, onStart and a size change: act once
+        reconnecting = true;
+        surfaceLostMidStream = false;
+        stoppedAwhile = false;
+        endedByUser = true;
+        // Only a new size needs the game restarted. A foldable whose two screens are known streams one shape for both
+        // (the picture just re-fits), so a stream that ended there only reconnects; the game keeps running.
+        final boolean restart = sizeChanged();
+        trace((restart ? "restarting the game for this screen (" : "reconnecting (") + why + ")");
+        Toast.makeText(this, restart ? "Restarting the game for this screen…" : "Reconnecting…", Toast.LENGTH_SHORT).show();
+        stopConnection(() -> new Thread(() -> {
+            if (restart) quitAppOnHost();
+            runOnUiThread(() -> { if (!isFinishing()) recreate(); });
+        }, "mc-refit").start());
+    }
+
+    /** With Native on, the size this screen streams at now differs from this stream's. */
+    private boolean sizeChanged() {
+        return prefConfig != null && PreferenceConfiguration.nativeWholeScreen(this)
+                && !PreferenceConfiguration.nativeResolution(this).equals(prefConfig.width + "x" + prefConfig.height);
     }
 
     @Override

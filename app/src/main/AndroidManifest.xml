@@ -5,6 +5,7 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CAPTURE_KEYBOARD" />
     <uses-permission android:name="com.android.providers.tv.permission.READ_EPG_DATA"/>
@@ -28,9 +29,6 @@
         android:name="android.hardware.usb.host"
         android:required="false" />
     <uses-feature
-        android:name="android.software.leanback"
-        android:required="false" />
-    <uses-feature
         android:name="android.hardware.sensor.accelerometer"
         android:required="false" />
     <uses-feature
@@ -41,6 +39,19 @@
     <uses-feature
         android:name="android.hardware.type.pc"
         android:required="false"/>
+
+    <!-- "On this device" (home/DeviceApps.kt): see the apps a launcher shows, so the user can pick some.
+         Only launcher entries, not QUERY_ALL_PACKAGES. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+        </intent>
+    </queries>
 
     <application
         android:allowBackup="true"
@@ -86,6 +97,13 @@
         <!-- Samsung DeX support requires explicit placement of android:resizeableActivity="true"
              in each activity even though it is implied by targeting API 24+ -->
 
+        <!-- Sony's PSN sign-in, once, so this TV can register a PS5 and reach it away from home -->
+        <activity
+            android:name=".home.PsnSignInActivity"
+            android:exported="false"
+            android:theme="@style/StreamTheme"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|keyboardHidden|keyboard|navigation|uiMode|density|smallestScreenSize|screenLayout" />
         <activity
             android:name=".PcView"
             android:exported="true"
@@ -96,14 +114,6 @@
             <meta-data android:name="WindowManagerPreference:FreeformWindowSize" android:value="system-default" />
             <meta-data android:name="WindowManagerPreference:FreeformWindowOrientation" android:value="landscape" />
 
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-
-                <category android:name="android.intent.category.LAUNCHER" />
-                <category android:name="android.intent.category.MULTIWINDOW_LAUNCHER" />
-                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
-                <category android:name="tv.ouya.intent.category.APP" />
-            </intent-filter>
         </activity>
         <!-- Small hack to support launcher shortcuts without relaunching over and over again when the back button is pressed -->
         <activity
@@ -186,6 +196,30 @@
             <meta-data android:name="WindowManagerPreference:FreeformWindowSize" android:value="system-default" />
             <meta-data android:name="WindowManagerPreference:FreeformWindowOrientation" android:value="landscape" />
         </activity>
+        <activity
+            android:name=".Ps5StreamActivity"
+            android:exported="true"
+            android:theme="@style/StreamTheme"
+            android:launchMode="singleTop"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="mcc|mnc|touchscreen|keyboard|keyboardHidden|navigation|screenLayout|fontScale|uiMode|orientation|screenSize|smallestScreenSize|layoutDirection" />
+        <activity
+            android:name=".home.PadTestActivity"
+            android:exported="false"
+            android:theme="@style/StreamTheme"
+            android:screenOrientation="sensorLandscape" />
+        <activity
+            android:name=".XboxStreamActivity"
+            android:exported="false"
+            android:theme="@style/StreamTheme"
+            android:launchMode="singleTop"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="mcc|mnc|touchscreen|keyboard|keyboardHidden|navigation|screenLayout|fontScale|uiMode|orientation|screenSize|smallestScreenSize|layoutDirection" />
+        <!-- About, Open-source licences: one licence's full text (both apps) -->
+        <activity
+            android:name=".home.LicenceActivity"
+            android:exported="false"
+            android:theme="@style/StreamTheme" />
     </application>
 
 </manifest>

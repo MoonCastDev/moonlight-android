@@ -42,3 +42,7 @@ app/.externalNativeBuild/
 
 # NDK stuff
 .cxx/
+# MoonCast release signing: never commit the key or its passwords
+keystore.properties
+*.jks
+*.keystore

@@ -11,14 +11,29 @@ android {
         minSdk 21
         targetSdk 36
 
-        versionName "12.2"
-        versionCode = 315
+        // MoonCast's own numbering (Moonlight's was 12.2 / 315). versionCode only ever goes up: 1.0 = 1000, 1.0.1 = 1001, 1.1 = 1100
+        // A beta overrides both, below the release it leads to: -PmcVersionName=1.0-beta1 -PmcVersionCode=991
+        versionName (project.findProperty("mcVersionName") ?: "1.0")
+        versionCode = (project.findProperty("mcVersionCode") ?: "1000").toString().toInteger()
 
-        // Generate native debug symbols to allow Google Play to symbolicate our native crashes
-        ndk.debugSymbolLevel = 'FULL'
+        // MoonCast TV dev build: arm64 only (the stick + JAL TV are arm64) to keep the native compile within memory,
+        // and limit parallel native jobs so Gradle + ndk-build don't OOM the 4 GB builder.
+        ndk { abiFilters "arm64-v8a", "armeabi-v7a" }
+
+        // Anonymous usage check-in (home/Usage.kt): only official builds get an app ID, from the release build's
+        // environment or -PmcTelemetryAppId; without one the app never asks and never sends
+        buildConfigField "String", "TELEMETRY_APP_ID",
+                "\"" + (project.findProperty("mcTelemetryAppId") ?: System.getenv("MOONCAST_TELEMETRY_APP_ID") ?: "") + "\""
+        // the TelemetryDeck organization's namespace (its dashboard shows it); signals go to /v2/namespace/<it>/
+        buildConfigField "String", "TELEMETRY_NAMESPACE",
+                "\"" + (project.findProperty("mcTelemetryNamespace") ?: System.getenv("MOONCAST_TELEMETRY_NAMESPACE") ?: "") + "\""
     }
 
     flavorDimensions.add("root")
+    // Which app this is. tv = MoonCast TV, always the RECEIVER (its home + the :8099 listener, src/tv).
+    // handheld = MoonCast for Odin-style handhelds and phones, always the SENDER (src/handheld).
+    // Everything else (Moonlight, PS5, Xbox, sign-ins, settings, Quick menu) is shared in src/main.
+    flavorDimensions.add("role")
 
     buildFeatures {
         buildConfig = true
@@ -45,13 +60,24 @@ android {
         nonRoot {
             externalNativeBuild {
                 ndkBuild {
-                    arguments "PRODUCT_FLAVOR=nonRoot"
+                    arguments "PRODUCT_FLAVOR=nonRoot", "-j2"
                 }
             }
 
-            applicationId "com.limelight"
+            applicationId "me.mooncast.tv"
             dimension "root"
             buildConfigField "boolean", "ROOT_BUILD", "false"
+        }
+    }
+
+    productFlavors {
+        tv {
+            dimension "role"
+            buildConfigField "boolean", "TV_APP", "true"
+        }
+        handheld {
+            dimension "role"
+            buildConfigField "boolean", "TV_APP", "false"
         }
     }
 
@@ -81,13 +107,31 @@ android {
         }
     }
 
+    // Release signing: MoonCast's own key, never in git. keystore.properties (storeFile, storePassword, keyAlias,
+    // keyPassword) sits next to settings.gradle, or MOONCAST_KEYSTORE names it. Without it, release builds come out
+    // unsigned, as before.
+    def keystoreFile = System.getenv("MOONCAST_KEYSTORE") ? new File(System.getenv("MOONCAST_KEYSTORE")) : rootProject.file("keystore.properties")
+    if (keystoreFile.exists()) {
+        def ks = new Properties()
+        keystoreFile.withInputStream { ks.load(it) }
+        signingConfigs {
+            release {
+                storeFile file(ks.getProperty("storeFile"))
+                storePassword ks.getProperty("storePassword")
+                keyAlias ks.getProperty("keyAlias")
+                keyPassword ks.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         debug {
             applicationIdSuffix ".debug"
-            resValue "string", "app_label", "Moonlight (Debug)"
-            resValue "string", "app_label_root", "Moonlight (Root Debug)"
+            // test builds: BUILD=testN ./gradlew ... puts the build name in the version (shown in Settings, About)
+            versionNameSuffix "-" + (System.getenv("BUILD") ?: "dev")
         }
         release {
+            if (keystoreFile.exists()) signingConfig signingConfigs.release
             // To whomever is releasing/using an APK in release mode with
             // Moonlight's official application ID, please stop. I see every
             // single one of your crashes in my Play Console and it makes
@@ -118,9 +162,7 @@ android {
             // is to please change the applicationId before you publish.
             //
             // TL;DR: Leave the following line alone!
-            applicationIdSuffix ".unofficial"
-            resValue "string", "app_label", "Moonlight"
-            resValue "string", "app_label_root", "Moonlight (Root)"
+            // MoonCast TV: our own application id (as the upstream author asks forks to do)
 
             minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
@@ -148,6 +190,47 @@ dependencies {
     implementation 'com.squareup.okhttp3:okhttp:5.5.0'
     implementation 'org.jmdns:jmdns:3.6.3'
     implementation 'com.github.cgutman:ShieldControllerExtensions:1.0.1'
+    // Google's WebRTC (libwebrtc) for Xbox Remote Play, the build XStreaming's player uses (react-native-webrtc 124)
+    implementation 'org.jitsi:webrtc:124.0.0'
 
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.5'
 }
+
+// Per app: its own application id (both can be installed side by side) and its own name.
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        def handheld = variant.productFlavors.any { it.second == "handheld" }
+        if (handheld) variant.applicationId.set(variant.applicationId.get().replace("me.mooncast.tv", "me.mooncast.handheld"))
+        def name = handheld ? "MoonCast" : "MoonCast TV"
+        def debug = variant.buildType == "debug"
+        variant.resValues.put(variant.makeResValueKey("string", "app_label"),
+            new com.android.build.api.variant.ResValue(name + (debug ? " (Debug)" : ""), null))
+        variant.resValues.put(variant.makeResValueKey("string", "app_label_root"),
+            new com.android.build.api.variant.ResValue(name + (debug ? " (Root Debug)" : " (Root)"), null))
+    }
+}
+
+// PS5 Remote Play: libchiaki-jni.so (with liboboe.so and libc++_shared.so) is built from source, from the
+// third-party/chiaki-ng submodule (MoonCastDev/chiaki-ng-mooncast, chiaki-ng with MoonCast's changes, AGPL-3.0).
+// It runs again only when chiaki's sources change. The libraries land in src/main/jniLibs, which git ignores.
+// Needs CMake 3.22.1 in the SDK and protoc on the PATH (see third-party/chiaki-ng/mooncast/README.md).
+def chiakiDir = rootProject.file('third-party/chiaki-ng')
+def chiakiLibs = ['arm64-v8a', 'armeabi-v7a'].collectMany { abi ->
+    ['libchiaki-jni.so', 'liboboe.so', 'libc++_shared.so'].collect { file("src/main/jniLibs/$abi/$it") }
+}
+tasks.register('buildChiaki', Exec) {
+    description = 'Builds the PS5 Remote Play libraries from third-party/chiaki-ng'
+    inputs.files(fileTree(chiakiDir) {
+        include 'CMakeLists.txt', 'cmake/**', 'lib/**', 'android/app/CMakeLists.txt', 'android/app/build.gradle', 'android/app/src/main/cpp/**', 'mooncast/build-jni.sh'
+        exclude 'android/app/src/main/cpp/oboe/**'
+    })
+    outputs.files(chiakiLibs)
+    // the script finds the SDK from ANDROID_HOME or local.properties
+    commandLine 'sh', new File(chiakiDir, 'mooncast/build-jni.sh').path, rootProject.projectDir.path
+    doFirst {
+        if (!new File(chiakiDir, 'mooncast/build-jni.sh').exists()) {
+            throw new GradleException("third-party/chiaki-ng is empty: run git submodule update --init --recursive")
+        }
+    }
+}
+tasks.named('preBuild') { dependsOn 'buildChiaki' }

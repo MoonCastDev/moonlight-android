@@ -24,6 +24,14 @@
         android:layout_below="@id/grid_overlay"
         android:layout_margin="5dp"
         android:gravity="center"
-        android:textSize="18sp">
+        android:textSize="17sp"
+        android:textColor="@color/mc_silver"
+        android:fontFamily="sans-serif-medium">
     </TextView>
+    <View
+        android:id="@+id/grid_focus"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:duplicateParentState="true"
+        android:background="@drawable/mc_tile_focus"/>
 </RelativeLayout>

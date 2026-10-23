@@ -6,6 +6,7 @@ import android.content.pm.PackageManager;
 import android.os.Build;
 import android.preference.PreferenceManager;
 import android.view.Display;
+import android.view.WindowManager;
 
 import com.limelight.nvstream.jni.MoonBridge;
 
@@ -31,6 +32,10 @@ public class PreferenceConfiguration {
     static final String BITRATE_PREF_STRING = "seekbar_bitrate_kbps";
     private static final String BITRATE_PREF_OLD_STRING = "seekbar_bitrate";
     private static final String STRETCH_PREF_STRING = "checkbox_stretch_video";
+    // MoonCast, from Artemis: ultra low latency decoding, picture scale mode (fit / fill / stretch) and zoom
+    private static final String ULTRA_LOW_LATENCY_PREF_STRING = "checkbox_ultra_low_latency";
+    private static final String SCALE_MODE_PREF_STRING = "list_video_scale_mode";
+    private static final String ZOOM_PREF_STRING = "seekbar_video_zoom";
     private static final String SOPS_PREF_STRING = "checkbox_enable_sops";
     private static final String DISABLE_TOASTS_PREF_STRING = "checkbox_disable_warnings";
     private static final String HOST_AUDIO_PREF_STRING = "checkbox_host_audio";
@@ -128,6 +133,8 @@ public class PreferenceConfiguration {
     public int deadzonePercentage;
     public int oscOpacity;
     public boolean stretchVideo, enableSops, playHostAudio, disableWarnings;
+    public boolean ultraLowLatency, fillVideo;
+    public int videoZoomPercent;
     public String language;
     public boolean smallIconMode, multiController, usbDriver, flipFaceButtons;
     public boolean onscreenController;
@@ -443,6 +450,90 @@ public class PreferenceConfiguration {
                 Build.FINGERPRINT.contains("PPR1.180610.011/4079208_2235.1395");
     }
 
+    /** MoonCast: when true, the stream resolution is [nativeResolution] of the screen it starts on. */
+    public static final String NATIVE_RES_PREF_STRING = "mc_native_res";
+    /** True when the stream is Native: the whole screen in its own shape, so no bars (a near-square foldable too). */
+    public static boolean nativeWholeScreen(Context context) {
+        return PreferenceManager.getDefaultSharedPreferences(context).getBoolean(NATIVE_RES_PREF_STRING, false);
+    }
+
+    /**
+     * Native for the screen [context] is on: the screen's own size, rounded down to multiples of 8 for the PC's
+     * display modes (the Fold: 2448x1848 open, 1968x1248 folded). The PC draws its desktop and menus in that shape.
+     */
+    public static String nativeResolution(Context context) {
+        rememberScreen(context);
+        String shared = foldableResolution(context);
+        if (shared != null) return shared;
+        int[] wh = screenSize(context);
+        return (wh[0] & ~7) + "x" + (wh[1] & ~7);
+    }
+
+    /** MoonCast: the screen sizes this device has run on ("2448x1848;1968x1248"): a foldable has two shapes. */
+    public static final String SCREENS_PREF_STRING = "mc_screens";
+
+    /** Note the screen [context] is on, so a foldable's two screens are known (a few at most). */
+    public static void rememberScreen(Context context) {
+        int[] wh = screenSize(context);
+        if (wh[0] < 640 || wh[1] < 360) return;
+        String me = wh[0] + "x" + wh[1];
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+        String all = prefs.getString(SCREENS_PREF_STRING, "");
+        java.util.List<String> list = new java.util.ArrayList<>();
+        for (String x : all.split(";")) if (!x.isEmpty()) list.add(x);
+        if (list.contains(me)) return;
+        list.add(0, me);
+        while (list.size() > 4) list.remove(list.size() - 1);
+        prefs.edit().putString(SCREENS_PREF_STRING, android.text.TextUtils.join(";", list)).apply();
+    }
+
+    /**
+     * A foldable (two screens of clearly different shapes, both seen here): one stream shape between the two, so a
+     * fold or unfold only re-fits the picture (Picture shape: Fill trims a little, Stretch bends a little, Fit leaves
+     * thin bars) instead of reconnecting or restarting the game. Its width is the biggest screen's long side, its
+     * shape the geometric mean of the widest and the squarest (the Fold: 1.58 and 1.32 make 1.45, 2448x1696).
+     * Null on a device with one screen shape.
+     */
+    public static String foldableResolution(Context context) {
+        String all = PreferenceManager.getDefaultSharedPreferences(context).getString(SCREENS_PREF_STRING, "");
+        double lo = 0, hi = 0; int wmax = 0;
+        for (String x : all.split(";")) {
+            int w, h;
+            try { w = getWidthFromResolutionString(x); h = getHeightFromResolutionString(x); } catch (RuntimeException e) { continue; }
+            if (w <= 0 || h <= 0) continue;
+            double r = (double) w / h;
+            if (lo == 0 || r < lo) lo = r;
+            if (r > hi) hi = r;
+            wmax = Math.max(wmax, w);
+        }
+        if (lo == 0 || hi / lo < 1.08) return null;
+        double shape = Math.sqrt(lo * hi);
+        int w = wmax & ~7;
+        int h = (int) Math.round(w / shape / 8.0) * 8;
+        return w + "x" + h;
+    }
+
+    /** The physical size of the screen [context] is on, the long side first. */
+    private static int[] screenSize(Context context) {
+        // An activity's own window, full screen, follows a foldable's switch together with its configuration
+        // (the display's mode can still report the other panel for a moment)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && context instanceof android.app.Activity) {
+            android.graphics.Rect b = ((android.app.Activity) context).getWindowManager().getMaximumWindowMetrics().getBounds();
+            int w = b.width(), h = b.height();
+            if (w > 0 && h > 0) return new int[] { Math.max(w, h), Math.min(w, h) };
+        }
+        Display d = null;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            try { d = context.getDisplay(); } catch (UnsupportedOperationException ignored) { }
+        }
+        if (d == null) d = ((WindowManager) context.getSystemService(Context.WINDOW_SERVICE)).getDefaultDisplay();
+        int w, h;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) { w = d.getMode().getPhysicalWidth(); h = d.getMode().getPhysicalHeight(); }
+        else { android.graphics.Point p = new android.graphics.Point(); d.getRealSize(p); w = p.x; h = p.y; }
+        if (h > w) { int t = w; w = h; h = t; }
+        return new int[] { w, h };
+    }
+
     public static PreferenceConfiguration readPreferences(Context context) {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
         PreferenceConfiguration config = new PreferenceConfiguration();
@@ -527,6 +618,14 @@ public class PreferenceConfiguration {
             config.fps = Integer.parseInt(prefs.getString(FPS_PREF_STRING, PreferenceConfiguration.DEFAULT_FPS));
         }
 
+        // MoonCast: "Native" follows the screen the stream starts on (a foldable's cover or its inner screen),
+        // instead of the size of whichever screen it was first set on.
+        if (prefs.getBoolean(NATIVE_RES_PREF_STRING, false)) {
+            String n = nativeResolution(context);
+            config.width = getWidthFromResolutionString(n);
+            config.height = getHeightFromResolutionString(n);
+        }
+
         if (!prefs.contains(SMALL_ICONS_PREF_STRING)) {
             // We need to write small icon mode's default to disk for the settings page to display
             // the current state of the option properly
@@ -574,6 +673,11 @@ public class PreferenceConfiguration {
         config.disableWarnings = prefs.getBoolean(DISABLE_TOASTS_PREF_STRING, DEFAULT_DISABLE_TOASTS);
         config.enableSops = prefs.getBoolean(SOPS_PREF_STRING, DEFAULT_SOPS);
         config.stretchVideo = prefs.getBoolean(STRETCH_PREF_STRING, DEFAULT_STRETCH);
+        config.ultraLowLatency = prefs.getBoolean(ULTRA_LOW_LATENCY_PREF_STRING, false);
+        String scaleMode = prefs.getString(SCALE_MODE_PREF_STRING, config.stretchVideo ? "stretch" : "fit");
+        config.stretchVideo = "stretch".equals(scaleMode);
+        config.fillVideo = "fill".equals(scaleMode);
+        config.videoZoomPercent = prefs.getInt(ZOOM_PREF_STRING, 100);
         config.playHostAudio = prefs.getBoolean(HOST_AUDIO_PREF_STRING, DEFAULT_HOST_AUDIO);
         config.smallIconMode = prefs.getBoolean(SMALL_ICONS_PREF_STRING, getDefaultSmallMode(context));
         config.multiController = prefs.getBoolean(MULTI_CONTROLLER_PREF_STRING, DEFAULT_MULTI_CONTROLLER);

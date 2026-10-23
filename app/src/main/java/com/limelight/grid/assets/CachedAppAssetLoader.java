@@ -220,7 +220,10 @@ public class CachedAppAssetLoader {
                 // Fade in the box art
                 if (bitmap != null) {
                     // Show the text if it's a placeholder
-                    textView.setVisibility(isBitmapPlaceholder(bitmap) ? View.VISIBLE : View.GONE);
+                    // MoonCast: the label is held weakly and may be gone (a caller with no label of its own)
+                    if (textView != null) {
+                        textView.setVisibility(isBitmapPlaceholder(bitmap) ? View.VISIBLE : View.GONE);
+                    }
 
                     if (imageView.getVisibility() == View.VISIBLE) {
                         // Fade out the placeholder first

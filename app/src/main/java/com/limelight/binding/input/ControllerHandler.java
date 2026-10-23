@@ -2552,8 +2552,9 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
         sendControllerInputPacket(context);
 
         if (context.pendingExit && context.inputMap == 0) {
-            // All buttons from the quit combo are lifted. Finish the activity now.
-            activityContext.finish();
+            // All buttons from the combo are lifted. MoonCast: open the Quick menu (it has Disconnect and Quit).
+            context.pendingExit = false;
+            gestures.openQuickMenu();
         }
 
         return true;
@@ -2784,10 +2785,29 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
         return true;
     }
 
+    // MoonCast: a skin tells the PC which pad it is (PlayStation or Xbox), so games show its symbols
+    // and its extra buttons work (touchpad click, Share). Only while no real controller is attached (they own their type).
+    private byte oscType = MoonBridge.LI_CTYPE_UNKNOWN;
+    private boolean oscArrived;
+
+    public void setOscType(byte type) {
+        oscType = type;
+    }
+
     public void reportOscState(int buttonFlags,
                                short leftStickX, short leftStickY,
                                short rightStickX, short rightStickY,
                                byte leftTrigger, byte rightTrigger) {
+        if (oscType != MoonBridge.LI_CTYPE_UNKNOWN && !oscArrived && currentControllers == 0 && initialControllers == 0) {
+            oscArrived = true;
+            conn.sendControllerArrivalEvent((byte) 0, getActiveControllerMask(), oscType,
+                    ControllerPacket.A_FLAG | ControllerPacket.B_FLAG | ControllerPacket.X_FLAG | ControllerPacket.Y_FLAG |
+                    ControllerPacket.UP_FLAG | ControllerPacket.DOWN_FLAG | ControllerPacket.LEFT_FLAG | ControllerPacket.RIGHT_FLAG |
+                    ControllerPacket.LB_FLAG | ControllerPacket.RB_FLAG | ControllerPacket.PLAY_FLAG | ControllerPacket.BACK_FLAG |
+                    ControllerPacket.LS_CLK_FLAG | ControllerPacket.RS_CLK_FLAG | ControllerPacket.SPECIAL_BUTTON_FLAG |
+                    (oscType == MoonBridge.LI_CTYPE_PS ? ControllerPacket.TOUCHPAD_FLAG : ControllerPacket.MISC_FLAG),
+                    MoonBridge.LI_CCAP_RUMBLE);
+        }
         defaultContext.leftStickX = leftStickX;
         defaultContext.leftStickY = leftStickY;
 

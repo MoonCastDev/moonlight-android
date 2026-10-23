@@ -1,6 +1,7 @@
 package com.limelight.utils;
 
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
 import android.widget.Toast;
 
@@ -83,6 +84,20 @@ public class ServerHelper {
         parent.startActivity(createStartIntent(parent, app, computer, managerBinder));
     }
 
+    /** Runs the network test (blocking: call it off the UI thread) and returns what to tell the user. */
+    public static String networkTestSummary(Context context) {
+        int ret = MoonBridge.testClientConnectivity(CONNECTION_TEST_SERVER, 443, MoonBridge.ML_PORT_FLAG_ALL);
+        if (ret == MoonBridge.ML_TEST_RESULT_INCONCLUSIVE) {
+            return context.getResources().getString(R.string.nettest_text_inconclusive);
+        }
+        else if (ret == 0) {
+            return context.getResources().getString(R.string.nettest_text_success);
+        }
+        else {
+            return context.getResources().getString(R.string.nettest_text_failure) + MoonBridge.stringifyPortFlags(ret, "\n");
+        }
+    }
+
     public static void doNetworkTest(final Activity parent) {
         new Thread(new Runnable() {
             @Override
@@ -92,20 +107,8 @@ public class ServerHelper {
                         parent.getResources().getString(R.string.nettest_text_waiting),
                         false);
 
-                int ret = MoonBridge.testClientConnectivity(CONNECTION_TEST_SERVER, 443, MoonBridge.ML_PORT_FLAG_ALL);
+                String dialogSummary = networkTestSummary(parent);
                 spinnerDialog.dismiss();
-
-                String dialogSummary;
-                if (ret == MoonBridge.ML_TEST_RESULT_INCONCLUSIVE) {
-                    dialogSummary = parent.getResources().getString(R.string.nettest_text_inconclusive);
-                }
-                else if (ret == 0) {
-                    dialogSummary = parent.getResources().getString(R.string.nettest_text_success);
-                }
-                else {
-                    dialogSummary = parent.getResources().getString(R.string.nettest_text_failure);
-                    dialogSummary += MoonBridge.stringifyPortFlags(ret, "\n");
-                }
 
                 Dialog.displayDialog(parent,
                         parent.getResources().getString(R.string.nettest_title_done),

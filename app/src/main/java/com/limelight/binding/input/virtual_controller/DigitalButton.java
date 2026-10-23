@@ -56,6 +56,7 @@ public class DigitalButton extends VirtualControllerElement {
     private final RectF rect = new RectF();
 
     private int layer;
+    private int skinShape;
     private DigitalButton movingButton = null;
 
     boolean inRange(float x, float y) {
@@ -128,6 +129,11 @@ public class DigitalButton extends VirtualControllerElement {
         invalidate();
     }
 
+    public void setSkinShape(int shape) {
+        this.skinShape = shape;
+        invalidate();
+    }
+
     public void setIcon(int id) {
         this.icon = id;
         invalidate();
@@ -135,6 +141,11 @@ public class DigitalButton extends VirtualControllerElement {
 
     @Override
     protected void onElementDraw(Canvas canvas) {
+        if (skin() != null && skinShape != 0) {
+            skin().button(canvas, skinShape, getWidth(), getHeight(), isPressed(), text);
+            return;
+        }
+
         // set transparent background
         canvas.drawColor(Color.TRANSPARENT);
 
@@ -164,6 +175,7 @@ public class DigitalButton extends VirtualControllerElement {
 
     private void onClickCallback() {
         _DBG("clicked");
+        if (skin() != null) skin().tick();
         // notify listeners
         for (DigitalButtonListener listener : listeners) {
             listener.onClick();
