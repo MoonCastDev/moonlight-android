@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- **Identity transfer on release builds (TV):** a release-built MoonCast TV (1.0-beta2, for one) answered with an empty `identityKey`, so a phone or iPad could never send it its identity and a TV with no pairing of its own couldn't play PC games from it. R8 had removed BouncyCastle's X25519 classes, which the provider only loads by name; a keep rule brings them back. Debug builds were never affected.
 - **Store icon:** `ic_launcher-web.png` (the 512 px icon stores and some tools pick up) was still Moonlight's wheel, left from the fork. It's now the MoonCast moon on #1A1630, the same picture the launcher icon shows. Nothing on the device changes.
 
 ## 1.0-test257 (2026-10-23)
