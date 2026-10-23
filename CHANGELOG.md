@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased
+- **Store icon:** `ic_launcher-web.png` (the 512 px icon stores and some tools pick up) was still Moonlight's wheel, left from the fork. It's now the MoonCast moon on #1A1630, the same picture the launcher icon shows. Nothing on the device changes.
+
 ## 1.0-test257 (2026-10-23)
 - **Add to home screen** (handheld): a PC game (ES-DE on xserv Gaming, for one), a PS5 or an Xbox gets an icon on the device's own home screen. Long press the tile (or X on Home), Add to home screen, and confirm in the launcher's box. The icon is your own picture, else the box art the tile shows, else its cover with the name. Tapping it opens MoonCast and starts the game here the usual way (it waits for the PC, offers to wake it, and asks first when another game runs). Android 8 and newer. (A box art held as a hardware bitmap crashed the icon drawing on the Odin; it's copied first.)
 
