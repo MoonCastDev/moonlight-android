@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.0-test257 (2026-10-23)
+- **Add to home screen** (handheld): a PC game (ES-DE on xserv Gaming, for one), a PS5 or an Xbox gets an icon on the device's own home screen. Long press the tile (or X on Home), Add to home screen, and confirm in the launcher's box. The icon is your own picture, else the box art the tile shows, else its cover with the name. Tapping it opens MoonCast and starts the game here the usual way (it waits for the PC, offers to wake it, and asks first when another game runs). Android 8 and newer. (A box art held as a hardware bitmap crashed the icon drawing on the Odin; it's copied first.)
+
 ## 1.0-test256 (2026-10-22)
 - Fixes from the UI review:
   - **Menus show all their options:** dialog rows are a little tighter and the room is worked out more truly, so a PC game's menu (Play here, Play on a TV, Change picture, Hide…) no longer hides options below a scroll.
