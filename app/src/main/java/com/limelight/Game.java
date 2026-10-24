@@ -1609,7 +1609,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             items.add(new com.limelight.home.QuickMenu.Item("✚", "Controllers", com.limelight.home.QuickMenu.pads().size() + " connected", false, this::showControllers).staysOpen(null));
             items.add(new com.limelight.home.QuickMenu.Item("▤", "Task Manager", "Windows: Ctrl + Shift + Esc", false, this::openTaskManager).staysOpen("Opened on the PC"));
             // handheld only: send the game to the last MoonCast TV (it ends this stream, the game keeps running)
-            items.add(new com.limelight.home.QuickMenu.Item("⏻", "Power", "Hibernate, restart or shut down the PC", false, this::showPower).staysOpen(null));
+            items.add(new com.limelight.home.QuickMenu.Item("◉", "Power", "Hibernate, restart or shut down the PC", false, this::showPower).staysOpen(null));
             com.limelight.home.QuickMenu.Item move = com.limelight.home.MoveToTv.item(Game.this, new com.limelight.home.MoveToTv.Target(
                     "pc", appName != null ? appName : "Your game", getIntent().getStringExtra(EXTRA_PC_UUID), pcName,
                     getIntent().getIntExtra(EXTRA_APP_ID, 0), null, null, null, true, null));
@@ -1688,7 +1688,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         items.add(new com.limelight.home.QuickMenu.Item("↩", "Back", "To the menu", false, this::openQuickMenu).staysOpen(null));
         items.add(new com.limelight.home.QuickMenu.Item("Zz", "Hibernate", "The game waits in the PC; wake it from MoonCast", true, () -> confirmPower(POWER_HIBERNATE)).staysOpen(null));
         items.add(new com.limelight.home.QuickMenu.Item("↻", "Restart", "The game closes; unsaved progress is lost", true, () -> confirmPower(POWER_RESTART)).staysOpen(null));
-        items.add(new com.limelight.home.QuickMenu.Item("⏻", "Shut down", "The game closes; unsaved progress is lost", true, () -> confirmPower(POWER_SHUTDOWN)).staysOpen(null));
+        items.add(new com.limelight.home.QuickMenu.Item("◉", "Shut down", "The game closes; unsaved progress is lost", true, () -> confirmPower(POWER_SHUTDOWN)).staysOpen(null));
         quickMenu.show("Power", (pcName != null ? pcName + ". " : "") + "Windows PCs", java.util.Collections::emptyList, items);
     }
 
