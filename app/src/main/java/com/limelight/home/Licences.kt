@@ -43,6 +43,7 @@ object Licences {
         Part("More", "JmDNS", "Finding PCs on the network", "Apache-2.0", "apache-2.0.txt", "https://github.com/jmdns/jmdns"),
         Part("More", "JCodec", "Reading video stream settings", "BSD-2-Clause", "jcodec.txt", "https://github.com/jcodec/jcodec"),
         Part("More", "Shield Controller Extensions", "Rumble and battery on NVIDIA Shield controllers", "MIT", "shield-controller-extensions.txt", "https://github.com/cgutman/ShieldControllerExtensions"),
+        Part("More", "QR Code generator (Project Nayuki)", "The QR code on the TV's Xbox sign-in", "MIT", "qrcodegen.txt", "https://www.nayuki.io/page/qr-code-generator-library"),
         Part("More", "Figtree", "The menus' font", "OFL-1.1", "figtree.txt", "https://github.com/erikdkennedy/figtree"),
         Part("More", "Unbounded", "The headings' font", "OFL-1.1", "unbounded.txt", "https://github.com/googlefonts/unbounded"),
     )
