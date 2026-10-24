@@ -40,6 +40,8 @@ object TvSender : MoveToTv.Handler {
             // relay the pad too. padKey still goes along: it authorizes /stop and /pad (the relay, if direct fails).
             "pc" -> {
                 j.put("appId", t.appId.toString()).put("appName", t.title); if (direct) j.put("pad", "direct")
+                // which PC: a TV can know more than one (it picks by name otherwise)
+                t.pcUuid?.let { j.put("pcUuid", it) }; t.pcName?.let { j.put("pcName", it) }
                 // A TV with no pairing gets this device's identity, sealed to the TV's key (identity transfer). Ask the
                 // TV again first: its key changes each time its app starts, so a remembered one can be stale (#44).
                 val live = TvFinder.ask(tv.ip) ?: tv
