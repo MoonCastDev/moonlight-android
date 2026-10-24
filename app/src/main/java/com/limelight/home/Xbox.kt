@@ -29,7 +29,26 @@ object Xbox {
     private fun prefs(ctx: Context) = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     fun signedIn(ctx: Context) = prefs(ctx).getString("refresh", null) != null
     fun gamertag(ctx: Context): String? = prefs(ctx).getString("gamertag", null)
-    fun signOut(ctx: Context) = prefs(ctx).edit().clear().apply()
+    /** Signed in to Microsoft, but the account has no working Xbox profile (no gamertag came back). */
+    fun noProfile(ctx: Context) = signedIn(ctx) && gamertag(ctx) == null && !unverified(ctx)
+    /** Also forgets the Microsoft account in MoonCast's sign-in page, so the next sign-in can pick another one. */
+    fun signOut(ctx: Context) {
+        prefs(ctx).edit().clear().apply()
+        XboxSignInActivity.clearCookies()
+    }
+
+    /** The Microsoft account works but can't use Xbox network (Xbox's XErr, in plain words). The tokens aren't kept. */
+    class ProfileError(message: String) : Exception(message)
+
+    private fun profileMessage(xerr: Long): String? = when (xerr) {
+        2148916233L -> "This Microsoft account has no Xbox profile. Sign in with the account you use on your Xbox."
+        2148916238L -> "This is a child account. An adult needs to add it to a Microsoft family before it can use Xbox network."
+        2148916235L -> "Xbox network isn't available in this account's country or region."
+        2148916236L, 2148916237L -> "This account needs adult verification on xbox.com before it can use Xbox network."
+        2148916227L -> "This account is banned from Xbox network."
+        2148916229L -> "Parental settings on this account don't allow Xbox network sign-in here."
+        else -> null
+    }
 
     // ---------------------------------------------------------------- HTTP
 
@@ -70,13 +89,32 @@ object Xbox {
             val j = JSONObject(request(MS_TOKEN, "POST", form("grant_type" to "urn:ietf:params:oauth:grant-type:device_code",
                     "client_id" to CLIENT_ID, "device_code" to dc.deviceCode), formHeaders))
             saveUserToken(ctx, j)
-            try { webAuth(ctx) } catch (e: Exception) { }   // fetches the gamertag
+            // Does this account have an Xbox profile? (It also fetches the gamertag.) An account without one used to end
+            // "Signed in" with no gamertag, and signing in again reused it (test266, Saleh).
+            try {
+                webAuth(ctx)
+                prefs(ctx).edit().remove("unverified").apply()
+            } catch (e: HttpError) {
+                val xerr = try { JSONObject(e.body).optLong("XErr", 0) } catch (x: Exception) { 0L }
+                val msg = profileMessage(xerr)
+                    ?: if (e.code == 401 || e.code == 403) "This Microsoft account can't sign in to Xbox network (error ${if (xerr != 0L) xerr else e.code})." else null
+                if (msg != null) { signOut(ctx); throw ProfileError(msg) }
+                prefs(ctx).edit().putBoolean("unverified", true).apply()
+            } catch (e: Exception) {
+                prefs(ctx).edit().putBoolean("unverified", true).apply()   // network: kept, checked again later
+            }
             true
         } catch (e: HttpError) {
             val err = try { JSONObject(e.body).optString("error") } catch (x: Exception) { "" }
             if (err == "authorization_pending" || err == "slow_down") false else throw e
         }
     }
+
+    /** Signed in but Xbox network couldn't be reached to check the profile (kept; checked again on the next use). */
+    fun unverified(ctx: Context) = prefs(ctx).getBoolean("unverified", false)
+
+    /** The device-code page with the code filled in (microsoft.com/link takes ?otc=). */
+    fun linkUrl(dc: DeviceCode): String = "https://www.microsoft.com/link?otc=" + URLEncoder.encode(dc.userCode, "UTF-8")
 
     private fun saveUserToken(ctx: Context, j: JSONObject) {
         prefs(ctx).edit().putString("access", j.getString("access_token"))

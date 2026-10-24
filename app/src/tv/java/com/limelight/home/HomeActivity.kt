@@ -911,16 +911,32 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         val sub = tv.text("Getting a code…", 24, tv.p.dust, tv.ui(500), 3)
         card.addView(sub, tv.lp(-1, -2).apply { topMargin = tv.px(12) })
         val code = tv.text("", 88, tv.p.moon, tv.display(700)).apply { letterSpacing = 0.12f }
-        card.addView(code, tv.lp(-2, -2).apply { topMargin = tv.px(28); bottomMargin = tv.px(28) })
+        // the code, and a QR code a phone camera opens with the code already filled in (made here, no QR service)
+        val qr = android.widget.ImageView(this).apply { visibility = View.GONE; scaleType = android.widget.ImageView.ScaleType.FIT_CENTER }
+        val qrNote = tv.text("Or scan with your phone's camera", 20, tv.p.dust, tv.ui(600)).apply { visibility = View.GONE }
+        card.addView(tv.row().apply {
+            gravity = Gravity.CENTER_VERTICAL
+            addView(code, LinearLayout.LayoutParams(0, -2, 1f))
+            addView(tv.col().apply {
+                gravity = Gravity.CENTER_HORIZONTAL
+                addView(qr, tv.lp(300, 300))
+                addView(qrNote, tv.lp(-2, -2).apply { topMargin = tv.px(8) })
+            })
+        }, tv.lp(-1, -2).apply { topMargin = tv.px(24); bottomMargin = tv.px(20) })
+        val privateNote = tv.text("To use a different Microsoft account, open the page in a private browser window.", 22, tv.p.dust, tv.ui(500), 2)
+            .apply { visibility = View.GONE }
+        card.addView(privateNote, tv.lp(-1, -2).apply { bottomMargin = tv.px(24) })
         card.addView(tv.row().apply { addView(tv.pill("Cancel", "B", false) { hideOverlay() }.apply { tag = "primary" }) })
-        showOverlay("xbox", FrameLayout(this).apply { addView(card, tv.flp(1000, -2, Gravity.CENTER)) })
+        showOverlay("xbox", FrameLayout(this).apply { addView(card, tv.flp(1200, -2, Gravity.CENTER)) })
         Thread {
             try {
                 val dc = Xbox.startSignIn()
                 runOnUiThread {
                     sub.text = "On your phone, open ${dc.url.removePrefix("https://").removePrefix("www.")} and enter this code. " +
-                            "Then sign in with your Xbox account."
+                            "Then sign in with the account you use on your Xbox."
                     code.text = dc.userCode
+                    Qr.encode(Xbox.linkUrl(dc))?.let { m -> qr.setImageBitmap(Qr.bitmap(m, 8)); qr.visibility = View.VISIBLE; qrNote.visibility = View.VISIBLE }
+                    privateNote.visibility = View.VISIBLE
                 }
                 val end = System.currentTimeMillis() + dc.expiresIn * 1000L
                 while (System.currentTimeMillis() < end && overlayKind == "xbox") {
@@ -938,6 +954,11 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                     }
                 }
                 runOnUiThread { if (overlayKind == "xbox") { sub.text = "The code expired. Press B and try again."; code.text = "" } }
+            } catch (e: Xbox.ProfileError) {
+                runOnUiThread {
+                    if (overlayKind == "xbox") { sub.text = e.message; code.text = ""; qr.visibility = View.GONE; qrNote.visibility = View.GONE }
+                    render(force = true)
+                }
             } catch (e: Exception) {
                 runOnUiThread { if (overlayKind == "xbox") sub.text = "Sign-in didn't work: ${e.message?.take(120) ?: e.javaClass.simpleName}" }
             }
@@ -1103,8 +1124,11 @@ class HomeActivity : Activity(), PhoneLink.Listener {
             }
             "xbox" -> {
                 if (Xbox.signedIn(this)) action(list, "set:xbox", "Xbox network",
-                        "Signed in" + (Xbox.gamertag(this)?.let { " as $it" } ?: "") + ". Your consoles show under Consoles", "Sign out") {
-                    confirm("Sign out of Xbox?", "Your Xbox consoles leave this TV until you sign in again.", "Sign out") {
+                        if (Xbox.noProfile(this)) "Signed in, no Xbox profile. Sign out, then sign in with the account you use on your Xbox"
+                        else "Signed in" + (Xbox.gamertag(this)?.let { " as $it" } ?: "") + ". Your consoles show under Consoles", "Sign out") {
+                    if (Xbox.noProfile(this)) confirm("Sign out of Xbox?", "This Microsoft account has no Xbox profile. Sign out to start fresh with another account.",
+                            "Sign out", noPicked = false) { Xbox.signOut(this); xboxes = emptyList(); render(force = true) }
+                    else confirm("Sign out of Xbox?", "Your Xbox consoles leave this TV until you sign in again.", "Sign out") {
                         Xbox.signOut(this); xboxes = emptyList(); render(force = true) } }
                 else action(list, "set:xbox", "Xbox network", "Sign in once to play your Xbox on this TV, at home or away", "Sign in") { xboxSignIn() }
                 if (Xbox.signedIn(this)) {
