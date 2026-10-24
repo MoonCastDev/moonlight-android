@@ -13,9 +13,11 @@ import android.widget.TextView
  * (the PC player has Moonlight's own). It follows Settings' "Stats while playing", and the Quick menu flips it.
  * [stats] gives the Quick menu's (value, label) tiles; the line shows them once the stream has its first numbers.
  */
-class StatusCorner(private val act: Activity, private val stats: () -> List<Pair<String, String>>) {
+class StatusCorner(private val act: Activity, private val info: () -> String = { "" },
+                   private val stats: () -> List<Pair<String, String>>) {
     private val ui = Handler(Looper.getMainLooper())
     private var view: TextView? = null
+    private var level = StatsLevel.OFF
     private val tick = object : Runnable {
         override fun run() {
             val v = view ?: return
@@ -27,19 +29,22 @@ class StatusCorner(private val act: Activity, private val stats: () -> List<Pair
         }
     }
 
-    /** Show or hide it as Settings say (call once the player's screen is up). */
-    fun apply() = set(enabled(act))
+    /** Show it as Settings say (call once the player's screen is up). */
+    fun apply() = set(StatsLevel.get(act))
 
-    /** The Quick menu's toggle: flips it now and saves the choice. */
+    /** The Quick menu's Streaming status: Off, Lite, Detailed, Off… now, and saves the choice. */
     fun toggle() {
-        val on = !enabled(act)
-        android.preference.PreferenceManager.getDefaultSharedPreferences(act).edit().putBoolean(PREF, on).apply()
-        set(on)
+        val next = StatsLevel.next(StatsLevel.get(act))
+        StatsLevel.set(act, next)
+        set(next)
     }
 
     fun stop() { ui.removeCallbacks(tick) }
 
-    private fun set(on: Boolean) {
+    private fun set(lv: String) {
+        level = lv
+        val on = lv != StatsLevel.OFF
+        view?.let { if (on) { it.text = ""; StatsPill.place(it, lv); return } }
         if (on == (view != null)) return
         if (!on) {
             ui.removeCallbacks(tick)
@@ -54,6 +59,7 @@ class StatusCorner(private val act: Activity, private val stats: () -> List<Pair
             leftMargin = (12 * d).toInt(); topMargin = (12 * d).toInt()
         })
         StatsPill.style(view!!)
+        StatsPill.place(view!!, lv)
         ui.post(tick)
     }
 
@@ -61,7 +67,32 @@ class StatusCorner(private val act: Activity, private val stats: () -> List<Pair
         val s = stats()
         if (s.firstOrNull()?.second != "Frames per second") return ""   // still connecting
         var rtt = 0.0; var loss = 0.0
-        val chips = s.filter { it.first != "…" }.map { (v, label) ->
+        val known = s.filter { it.first != "…" }
+        known.forEach { (v, label) -> if (label == "Network delay") rtt = StatsPill.num(v); if (label == "Lost packets") loss = StatsPill.num(v) }
+        if (level == StatsLevel.LITE) {
+            val lite = known.mapNotNull { (v, label) ->
+                when (label) {
+                    "Frames per second" -> StatsPill.Chip(v, "fps")
+                    "Network delay" -> StatsPill.Chip(v.removeSuffix(" ms"), "ms")
+                    else -> null
+                }
+            }
+            return StatsPill.text(lite, StatsPill.health(rtt, loss))
+        }
+        if (level == StatsLevel.DETAILED) {
+            val rows = known.map { (v, label) ->
+                when (label) {
+                    "Frames per second" -> StatsPill.Chip("$v fps", "shown")
+                    "Network delay" -> StatsPill.Chip(v, "network delay")
+                    "Picture quality" -> StatsPill.Chip(v, "bitrate")
+                    "Lost packets" -> StatsPill.Chip(v, "packets lost on the network")
+                    "Decode time" -> StatsPill.Chip(v, "decode")
+                    else -> StatsPill.Chip(v, label.lowercase())
+                }
+            }
+            return StatsPill.detailed(info().ifEmpty { "Streaming" }, rows, StatsPill.health(rtt, loss))
+        }
+        val chips = known.map { (v, label) ->
             when (label) {
                 "Frames per second" -> StatsPill.Chip(v, "fps")
                 "Network delay" -> { rtt = StatsPill.num(v); StatsPill.Chip(v.removeSuffix(" ms"), "ms delay") }
@@ -75,8 +106,7 @@ class StatusCorner(private val act: Activity, private val stats: () -> List<Pair
     }
 
     companion object {
-        /** Moonlight's own "Stats while playing" key, so one switch covers PC, PS5 and Xbox. */
-        const val PREF = "checkbox_enable_perf_overlay"
-        fun enabled(c: Context) = android.preference.PreferenceManager.getDefaultSharedPreferences(c).getBoolean(PREF, false)
+        /** Settings' "Stats while playing" is Lite or Detailed (one setting for PC, PS5 and Xbox). */
+        fun enabled(c: Context) = StatsLevel.get(c) != StatsLevel.OFF
     }
 }

@@ -410,4 +410,17 @@ object StreamStats {
     @JvmStatic fun update(fps: Float, rttMs: Int, lossPct: Float, size: String, decodeMs: Float) {
         this.fps = fps; this.rttMs = rttMs; this.lossPct = lossPct; this.size = size; this.decodeMs = decodeMs
     }
+
+    // For "Stats while playing", Detailed (only measured while the stats are on)
+    @Volatile var receivedFps = 0f
+    @Volatile var shownFps = 0f
+    @Volatile var rttVarMs = 0
+    @Volatile var hostMinMs = -1f
+    @Volatile var hostAvgMs = -1f
+    @Volatile var hostMaxMs = -1f
+    @Volatile var decoder = ""
+    @JvmStatic fun detail(receivedFps: Float, shownFps: Float, rttVarMs: Int, hostMin: Float, hostAvg: Float, hostMax: Float, decoder: String) {
+        this.receivedFps = receivedFps; this.shownFps = shownFps; this.rttVarMs = rttVarMs
+        hostMinMs = hostMin; hostAvgMs = hostAvg; hostMaxMs = hostMax; this.decoder = decoder
+    }
 }
