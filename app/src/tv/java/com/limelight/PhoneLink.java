@@ -66,7 +66,10 @@ public class PhoneLink {
                     streams.remove(a);
                     // #41: the last stream screen closed, so nothing is playing any more. A failure stays reported
                     // (with its words) until the next /play, so the sender can still read why.
-                    if (isStream(a) && streams.isEmpty() && !"failed".equals(playState)) playState = "idle";
+                    // Not while a /play from the last 10 s is on its way: the screen it replaced closes after it, and
+                    // the sender read "idle" for seconds before the new stream started (test265).
+                    if (isStream(a) && streams.isEmpty() && !"failed".equals(playState)
+                            && System.currentTimeMillis() - lastPlayAt > 10_000) playState = "idle";
                     // #40: forget the sender, unless a new /play just came in (a game switch: the old screen can
                     // close after the next game's /play has already set the sender)
                     if (isStream(a) && streams.isEmpty() && System.currentTimeMillis() - lastPlayAt > 10_000) PhoneGamepad.forgetPhone();
@@ -115,17 +118,51 @@ public class PhoneLink {
 
     // Prefer a PAIRED PC (it has a stored server certificate - set only after a successful pairing), so a stray
     // auto-discovered PC that was never paired can't win. Fall back to the first PC if none is paired yet.
-    private ComputerDetails firstComputer() {
+    private ComputerDetails firstComputer() { return tvComputer(null, null, null); }
+
+    /**
+     * The PC a sent game plays on. A TV can know several paired PCs (the Streamer had xserv Gaming and Ahmeds-PC), and
+     * the database's order changes as polls rewrite it, so "the first one" flipped between requests: a /play went to
+     * the other PC, which was running something else, and the TV sat on a "quit the running game?" box (test265).
+     * In order: the PC the sender names (pcUuid, pcName); the one PC whose game list has the game; the PC this TV
+     * played last; the first by name. Paired PCs (with a certificate) only, when there are any.
+     */
+    private ComputerDetails tvComputer(String pcUuid, String pcName, String appName) {
         ComputerDatabaseManager db = new ComputerDatabaseManager(ctx);
-        try {
-            List<ComputerDetails> all = db.getAllComputers();
-            if (all.isEmpty()) return null;
-            for (ComputerDetails c : all) {
-                if (c.serverCert != null) return c;
-            }
-            return all.get(0);
-        } finally {
-            db.close();
+        List<ComputerDetails> all;
+        try { all = db.getAllComputers(); } finally { db.close(); }
+        if (all.isEmpty()) return null;
+        List<ComputerDetails> paired = new java.util.ArrayList<>();
+        for (ComputerDetails c : all) if (c.serverCert != null) paired.add(c);
+        List<ComputerDetails> pool = paired.isEmpty() ? all : paired;
+        java.util.Collections.sort(pool, (a, b) -> String.valueOf(a.name).compareToIgnoreCase(String.valueOf(b.name)));
+        for (ComputerDetails c : pool) if (pcUuid != null && pcUuid.equalsIgnoreCase(c.uuid)) return c;
+        for (ComputerDetails c : pool) if (pcName != null && pcName.equalsIgnoreCase(c.name)) return c;
+        String last = ctx.getSharedPreferences("mc_tv", Context.MODE_PRIVATE).getString("mc_tv_pc", null);
+        if (appName != null) {
+            List<ComputerDetails> has = new java.util.ArrayList<>();
+            for (ComputerDetails c : pool) if (localAppId(c.uuid, appName) != null) has.add(c);
+            if (has.size() == 1) return has.get(0);
+            if (!has.isEmpty()) pool = has;
+        }
+        if (pool.size() > 1 && appName != null) {   // for a /play: a PC that answers beats one that's off
+            List<ComputerDetails> up = new java.util.ArrayList<>();
+            for (ComputerDetails c : pool) if (answers(c)) up.add(c);
+            if (!up.isEmpty()) pool = up;
+        }
+        for (ComputerDetails c : pool) if (c.uuid != null && c.uuid.equals(last)) return c;
+        return pool.get(0);
+    }
+
+    /** The PC's http port takes a connection within 0.8 s. */
+    private static boolean answers(ComputerDetails c) {
+        ComputerDetails.AddressTuple a = c.localAddress != null ? c.localAddress : c.activeAddress;
+        if (a == null) return false;
+        try (java.net.Socket sock = new java.net.Socket()) {
+            sock.connect(new InetSocketAddress(a.address, a.port), 800);
+            return true;
+        } catch (Exception e) {
+            return false;
         }
     }
 
@@ -206,7 +243,7 @@ public class PhoneLink {
                     String err = playXbox(field(json, "xboxId"), field(json, "xboxName"), from);
                     if (err == null) send(s, 200, "{\"ok\":1}");
                     else send(s, 400, "{\"error\":" + quote(err) + "}");
-                } else if ((appId != null || appName != null) && play(appId, appName, from)) send(s, 200, "{\"ok\":1}");
+                } else if ((appId != null || appName != null) && play(appId, appName, from, field(json, "pcUuid"), field(json, "pcName"))) send(s, 200, "{\"ok\":1}");
                 else send(s, 400, "{\"error\":\"no app id, or no paired PC\"}");
             } else if ("POST".equals(method) && path.startsWith("/stop")) {
                 // The sender takes its game back (Play here instead) or stops: end the stream it started here and go
@@ -377,13 +414,15 @@ public class PhoneLink {
         }
     }
 
-    private boolean play(String appId, String appName, String from) {
+    private boolean play(String appId, String appName, String from, String pcUuid, String pcName) {
         final ComputerDetails pc;
         if (sessionPcUuid != null) {
             ComputerDatabaseManager db = new ComputerDatabaseManager(ctx);
             try { pc = db.getComputerByUUID(sessionPcUuid); } finally { db.close(); }
-        } else pc = firstComputer();
+        } else pc = tvComputer(pcUuid, pcName, appName);
         if (pc == null) return false;
+        com.limelight.LimeLog.info("/play " + appName + " on " + pc.name);
+        if (sessionPcUuid == null) ctx.getSharedPreferences("mc_tv", Context.MODE_PRIVATE).edit().putString("mc_tv_pc", pc.uuid).apply();
         // Any sender (phone, tablet, Odin) names the game, and the game ID is looked up on THIS TV's PC. A sender's own
         // ID is only the fallback: its PC list may number the games differently.
         final String localId = appName == null ? null : localAppId(pc.uuid, appName);
@@ -425,8 +464,9 @@ public class PhoneLink {
         main.post(() -> {
             java.util.List<android.app.Activity> list;
             synchronized (streams) { list = new java.util.ArrayList<>(streams); }
+            com.limelight.LimeLog.info("/stop" + (quit ? " with quit" : "") + ": " + list.size() + " stream screen(s)");
             for (android.app.Activity a : list) {
-                if (a.isFinishing()) continue;
+                if (a.isFinishing()) { com.limelight.LimeLog.info("/stop: " + a.getClass().getSimpleName() + " already closing"); continue; }
                 if (quit && a instanceof Game) ((Game) a).quitOnHostAndFinish();
                 else a.finish();   // disconnect: the game keeps running (a PS5 stays on)
             }

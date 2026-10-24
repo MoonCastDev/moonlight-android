@@ -140,6 +140,9 @@ public class ShortcutTrampoline extends Activity {
                                                     // Create the start intent immediately, so we can safely unbind the managerBinder
                                                     // below before we return.
                                                     final Intent startIntent = ServerHelper.createStartIntent(ShortcutTrampoline.this, app, details, managerBinder);
+                                                    // MoonCast: a game sent from another device can't be confirmed here by
+                                                    // the sender; tell it why nothing starts (TV: GET /status)
+                                                    com.limelight.home.StreamReport.failed(details.name + " is running another game. Quit it first, then send this one again.");
 
                                                     UiHelper.displayQuitConfirmationDialog(ShortcutTrampoline.this, new Runnable() {
                                                         @Override
