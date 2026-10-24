@@ -1563,6 +1563,9 @@ class HandheldHomeActivity : Activity() {
                 choice(list, stream, "video_format", "Video codec", "H.265 and AV1 look better at the same bitrate",
                         listOf("Auto" to "auto", "H.264" to "neverh265", "H.265" to "forceh265", "AV1" to "forceav1"), "auto")
                 toggle(list, "checkbox_enable_hdr", "HDR", "Only when the PC, the game and this screen support it", false)
+                toggle(list, com.limelight.home.Yuv444.PREF, "YUV 4:4:4 (HEVC)",
+                        if (com.limelight.home.Yuv444.deviceCan()) "Sharper text and colour edges. Needs Sunshine with 4:4:4 on the PC; otherwise it stays 4:2:0"
+                        else "This device's decoder can't show 4:4:4, so streams stay 4:2:0", false)
                 toggle(list, "checkbox_full_range", "Full range colour", "Experimental: deeper blacks and brighter whites. On screens that don't handle it, dark and light detail is lost", false)
                 choice(list, stream, "list_video_scale_mode", "Picture shape", "Fit with bars, fill and crop, or stretch",
                         listOf("Fit" to "fit", "Fill" to "fill", "Stretch" to "stretch"), if (stream.getBoolean("checkbox_stretch_video", false)) "stretch" else "fit")
