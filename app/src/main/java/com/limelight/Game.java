@@ -1694,7 +1694,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         items.add(new com.limelight.home.QuickMenu.Item(kind == POWER_HIBERNATE ? "Zz" : kind == POWER_RESTART ? "↻" : "⏻",
                 POWER_VERB[kind], kind == POWER_HIBERNATE ? "Unsaved progress may be lost" : "Unsaved progress is lost", true, () -> power(kind)));
         quickMenu.show(POWER_VERB[kind] + " " + pc + "?",
-                "MoonCast opens Start on the PC (Ctrl + Esc), types " + POWER_COMMAND[kind] + " and presses Enter. It works on Windows"
+                "MoonCast opens Run through Start on the PC (Ctrl + Esc, run), types " + POWER_COMMAND[kind] + " and presses Enter. It works on Windows in English"
                         + (kind == POWER_HIBERNATE ? " with hibernation on (most PCs). Wake the PC again from MoonCast's home." : "."),
                 java.util.Collections::emptyList, items);
     }
@@ -1712,17 +1712,21 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         String uuid = getIntent().getStringExtra(EXTRA_PC_UUID);
         if (kind == POWER_HIBERNATE) com.limelight.home.PowerResume.mark(this, uuid, appName);
         else com.limelight.home.PowerResume.clear(this, uuid);
-        // Start's search runs the command. Not Win + R: games turn the Windows key off while they play (test239), and
-        // Ctrl + Esc opens Start without it. Not the Win + X power menu either: its letters don't match on other
-        // keyboard layouts or Windows languages (test238). The command goes as text, which Sunshine types the same
-        // on any layout; search needs a moment to find it before Enter.
+        // Through Start to the Run box, then the command in Run. Not Win + R: games turn the Windows key off while they
+        // play (test239), and Ctrl + Esc opens Start without it. Not the command straight into Start's search: Enter
+        // there opens search's best match, which wasn't the command (test259, Saleh: typed but not run). "run" in
+        // Start finds the Run app on English Windows; other display languages may name it differently. Text goes as
+        // text, which Sunshine types the same on any keyboard layout.
         sendKeys(new short[] {VK_LCONTROL, VK_ESCAPE});
         Handler h = new Handler(getMainLooper());
-        h.postDelayed(() -> { if (conn != null) conn.sendUtf8Text(POWER_COMMAND[kind]); }, 1500);
-        h.postDelayed(() -> sendKeys(new short[] {VK_RETURN}), 3500);
+        h.postDelayed(() -> { if (conn != null) conn.sendUtf8Text("run"); }, 1500);
+        h.postDelayed(() -> sendKeys(new short[] {VK_RETURN}), 3000);
+        h.postDelayed(() -> sendKeys(new short[] {VK_LCONTROL, VK_A}), 4500);
+        h.postDelayed(() -> { if (conn != null) conn.sendUtf8Text(POWER_COMMAND[kind]); }, 4800);
+        h.postDelayed(() -> sendKeys(new short[] {VK_RETURN}), 5300);
         // A PC going down just stops sending video: Moonlight would only notice after a long timeout, with the last
         // picture frozen (test241). Watch for it and end the stream ourselves.
-        h.postDelayed(() -> watchHibernate(60, -1, 0), 4500);
+        h.postDelayed(() -> watchHibernate(60, -1, 0), 6300);
     }
 
     /** Once a second for up to [checksLeft] s: after 3 s without a new frame, end the stream if the PC stopped answering. */
@@ -1765,7 +1769,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
     // Windows virtual-key codes, with Moonlight's 0x80 prefix (KeyboardTranslator)
     private static final short VK_LCONTROL = (short) 0x80A2, VK_LSHIFT = (short) 0x80A0,
-            VK_ESCAPE = (short) 0x801B, VK_RETURN = (short) 0x800D;
+            VK_ESCAPE = (short) 0x801B, VK_RETURN = (short) 0x800D, VK_A = (short) 0x8041;
 
     /** Press [keys] in order, holding each, then let them go in reverse, like a person pressing a shortcut. */
     private void sendKeys(short[] keys) {
