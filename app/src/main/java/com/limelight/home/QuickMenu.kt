@@ -30,7 +30,18 @@ class QuickMenu(private val act: Activity) {
         /** The item flips something on or off (it plays the toggle sound instead of select). */
         var toggle = false
         fun asToggle(): Item = apply { toggle = true }
+
+        /** The menu stays open after the action (it doesn't leave the stream or need the screen). */
+        var stays = false
+        /** Shown in place of the detail for a moment after the action, so it's clear something happened. */
+        var flash: String? = null
+        /** The detail after the action (a setting it changed), read again once it has run. */
+        var live: Detail? = null
+        fun staysOpen(flash: String?): Item = apply { stays = true; this.flash = flash }
+        fun liveDetail(d: Detail): Item = apply { stays = true; live = d }
     }
+
+    fun interface Detail { fun get(): String }
 
     /** (value, label) pairs for the stat tiles, read every second while the menu is open. */
     fun interface Stats { fun get(): List<Pair<String, String>> }
@@ -39,6 +50,7 @@ class QuickMenu(private val act: Activity) {
     private val ui = Handler(Looper.getMainLooper())
     private var root: FrameLayout? = null
     private var rows = listOf<View>()
+    private var details = listOf<TextView>()
     private var items = listOf<Item>()
     private var sel = 0
     private var lastMove = 0L
@@ -81,6 +93,7 @@ class QuickMenu(private val act: Activity) {
         if (statsViews.isNotEmpty()) panel.addView(grid, tv.lp(-1, -2).apply { topMargin = tv.px(28) })
 
         val list = tv.col()
+        val dv = ArrayList<TextView>()
         rows = items.mapIndexed { i, it ->
             tv.row().apply {
                 setPadding(tv.px(20), 0, tv.px(20), 0)
@@ -88,7 +101,8 @@ class QuickMenu(private val act: Activity) {
                     gravity = Gravity.CENTER; background = tv.round(tv.p.raise, 10, tv.p.line, 1)
                 }, tv.lp(44, 44).apply { rightMargin = tv.px(18) })
                 addView(tv.text(it.label, 24, if (it.danger) Tv.DANGER else tv.p.moon, tv.ui(700)), LinearLayout.LayoutParams(0, -2, 1f))
-                if (it.detail != null) addView(tv.text(it.detail, 19, tv.p.dust, tv.ui(600)))
+                addView(tv.text(it.detail ?: "", 19, tv.p.dust, tv.ui(600)).also { d ->
+                    dv.add(d); if (it.detail == null) d.visibility = View.GONE })
                 setOnClickListener { _ -> choose(i) }   // touch screens (Odin)
                 minimumHeight = tv.px(80)   // at least 80; a long label with its detail grows instead of being cut
                 setPadding(tv.px(20), tv.px(10), tv.px(20), tv.px(10))
@@ -96,6 +110,7 @@ class QuickMenu(private val act: Activity) {
             }
         }
         // the list takes the room between the stats and the hints, and scrolls when the items don't fit
+        details = dv
         val scroll = android.widget.ScrollView(act).apply { isVerticalScrollBarEnabled = false; addView(list) }
         panel.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = tv.px(16) })
         panel.addView(tv.row().apply {
@@ -168,6 +183,7 @@ class QuickMenu(private val act: Activity) {
         if (statsViews.isNotEmpty()) panel.addView(statRow, t.lp(-1, -2).apply { topMargin = t.px(30); bottomMargin = t.px(20) })
 
         val list = t.col()
+        val dv = ArrayList<TextView>()
         rows = items.mapIndexed { i, it ->
             t.row().apply {
                 setPadding(t.px(24), t.px(14), t.px(24), t.px(14))
@@ -177,12 +193,14 @@ class QuickMenu(private val act: Activity) {
                 }, t.lp(52, 52).apply { rightMargin = t.px(22) })
                 addView(t.col().apply {
                     addView(txt(it.label, 28, if (it.danger) 0xFFE9605A.toInt() else sInk, 800))   // red like the TV's
-                    if (it.detail != null) addView(txt(it.detail, 21, sSub, 600), t.lp(-2, -2).apply { topMargin = t.px(4) })
+                    addView(txt(it.detail ?: "", 21, sSub, 600).also { d -> dv.add(d); if (it.detail == null) d.visibility = View.GONE },
+                            t.lp(-2, -2).apply { topMargin = t.px(4) })
                 }, LinearLayout.LayoutParams(0, -2, 1f))
                 setOnClickListener { _ -> choose(i) }
                 list.addView(this, t.lp(-1, -2).apply { topMargin = t.px(10) })
             }
         }
+        details = dv
         val scroll = android.widget.ScrollView(act).apply { isVerticalScrollBarEnabled = false; addView(list) }
         // the list takes the room left, so the hints stay on the sheet however many items there are
         panel.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -302,8 +320,22 @@ class QuickMenu(private val act: Activity) {
         val it = items.getOrNull(i) ?: return
         FeelSounds.play(act, if (it.toggle) FeelSounds.Cue.TOGGLE else FeelSounds.Cue.SELECT, PAN)
         chosenAt = SystemClock.uptimeMillis()
-        close()
+        if (!it.stays) {
+            close()
+            it.action.run()
+            return
+        }
+        // the menu stays: run it, then show what happened in the item's detail (unless it opened another list)
+        val before = items
         it.action.run()
+        if (items !== before || !isShowing) return
+        val d = details.getOrNull(i) ?: return
+        val now = it.live?.get() ?: it.flash ?: return
+        d.text = now
+        d.visibility = View.VISIBLE
+        if (it.live == null) ui.postDelayed({
+            if (d.text.toString() == now) { d.text = it.detail ?: ""; if (it.detail == null) d.visibility = View.GONE }
+        }, 1800)
     }
 
     /** Key events while the menu is open. Always consumes them. */
