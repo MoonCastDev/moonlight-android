@@ -188,7 +188,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
             else -> awaySel.toIntOrNull()?.times(1000)
         }
         val profile = if (away) preset.copy(bitrate = awayKbps ?: minOf(preset.bitrate, linkCap)) else preset.copy(bitrate = homeKbps)
-        streamInfo = Triple(when (resPreset) { VideoResolutionPreset.RES_540P -> "540p"; VideoResolutionPreset.RES_720P -> "720p"; else -> "1080p" }, if (h264) "H.264" else "H.265", profile.bitrate / 1000)
+        streamInfo = Triple(when (resPreset) { VideoResolutionPreset.RES_540P -> "540p"; VideoResolutionPreset.RES_720P -> "720p"; else -> "1080p" }, if (h264) "H.264" else "HEVC", profile.bitrate / 1000)
         streamRemote = remote
         videoW = profile.width; videoH = profile.height
         Log.i(TAG, "stream ${streamInfo.first}${profile.maxFPS} at ${profile.bitrate / 1000} Mbps (${if (remote) "PSN" else "home"}, ${if (away) "away" else "home"} profile, link ${if (link > 0) "$link Mbps" else "cable/unknown"})")
@@ -749,7 +749,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
     // ---- Quick menu ----
     private val menu by lazy { com.limelight.home.QuickMenu(this) }
     private var comboPending = false
-    @Volatile private var streamInfo = Triple("1080p", "H.265", 0)
+    @Volatile private var streamInfo = Triple("1080p", "HEVC", 0)
 
     // ---- Super resolution (FSR 1.0): the decoder renders into FSR's surface, FSR upscales to the screen's
     @Volatile private var fsr: com.limelight.binding.video.FsrRenderer? = null
