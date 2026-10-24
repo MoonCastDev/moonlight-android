@@ -1572,7 +1572,10 @@ class HandheldHomeActivity : Activity() {
                         listOf("Fit" to "fit", "Fill" to "fill", "Stretch" to "stretch"), if (stream.getBoolean("checkbox_stretch_video", false)) "stretch" else "fit")
                 choice(list, stream, "frame_pacing", "Frame pacing", "PC and PS5: trade a little delay for smoother motion. Xbox paces itself",
                         listOf("Lowest delay" to "latency", "Balanced" to "balanced", "Smoothest" to "smoothness"), "latency")
-                toggle(list, "checkbox_enable_perf_overlay", "Stats while playing", "Frame rate, delay and lost frames in a corner", false)
+                com.limelight.home.StatsLevel.get(this)   // an old on/off answer becomes Off or Detailed first
+                choice(list, stream, com.limelight.home.StatsLevel.PREF, "Stats while playing",
+                        "Lite: frame rate and delay, small at the top. Detailed: every number, in a corner",
+                        listOf("Off" to "off", "Lite" to "lite", "Detailed" to "detailed"), "off") { com.limelight.home.StatsLevel.set(this, it) }
             }
             "sound" -> {
                 choice(list, stream, "list_audio_config", "Speakers", "Stereo for the built-in speakers and headphones",

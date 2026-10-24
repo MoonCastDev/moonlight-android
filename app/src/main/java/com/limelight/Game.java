@@ -283,6 +283,10 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
         performanceOverlayView = findViewById(R.id.performanceOverlay);
         com.limelight.home.StatsPill.style(performanceOverlayView);
+        // Stats while playing: Off, Lite or Detailed (Moonlight's on/off follows it, so the decoder measures)
+        statsLevel = com.limelight.home.StatsLevel.get(this);
+        prefConfig.enablePerfOverlay = !com.limelight.home.StatsLevel.OFF.equals(statsLevel);
+        com.limelight.home.StatsPill.place(performanceOverlayView, statsLevel);
 
         inputCaptureProvider = InputCaptureManager.getInputCaptureProvider(this, this);
 
@@ -1600,8 +1604,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             java.util.List<com.limelight.home.QuickMenu.Item> items = new java.util.ArrayList<>();
             // Keyboard closes the menu: the on-screen keyboard needs the screen
             items.add(new com.limelight.home.QuickMenu.Item("⌨", "Keyboard", "On-screen", false, this::toggleKeyboard).asToggle());
-            items.add(new com.limelight.home.QuickMenu.Item("ⓘ", "Streaming status", prefConfig.enablePerfOverlay ? "On" : "Off", false, this::toggleStatus)
-                    .asToggle().liveDetail(() -> prefConfig.enablePerfOverlay ? "On" : "Off"));
+            items.add(new com.limelight.home.QuickMenu.Item("ⓘ", "Streaming status", com.limelight.home.StatsLevel.label(statsLevel), false, this::toggleStatus)
+                    .asToggle().liveDetail(() -> com.limelight.home.StatsLevel.label(statsLevel)));
             items.add(new com.limelight.home.QuickMenu.Item("✚", "Controllers", com.limelight.home.QuickMenu.pads().size() + " connected", false, this::showControllers).staysOpen(null));
             items.add(new com.limelight.home.QuickMenu.Item("▤", "Task Manager", "Windows: Ctrl + Shift + Esc", false, this::openTaskManager).staysOpen("Opened on the PC"));
             // handheld only: send the game to the last MoonCast TV (it ends this stream, the game keeps running)
@@ -1661,11 +1665,15 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         if (mode == TOUCH_OFF) parkPointer();
     }
 
-    // Quick menu, Streaming status: Moonlight's stats corner on or off right away, saved like Settings' "Stats while playing"
+    private String statsLevel = com.limelight.home.StatsLevel.OFF;
+
+    // Quick menu, Streaming status: Off, Lite, Detailed, Off… right away, saved like Settings' "Stats while playing"
     private void toggleStatus() {
-        prefConfig.enablePerfOverlay = !prefConfig.enablePerfOverlay;
-        android.preference.PreferenceManager.getDefaultSharedPreferences(this).edit()
-                .putBoolean("checkbox_enable_perf_overlay", prefConfig.enablePerfOverlay).apply();
+        statsLevel = com.limelight.home.StatsLevel.next(statsLevel);
+        com.limelight.home.StatsLevel.set(this, statsLevel);
+        prefConfig.enablePerfOverlay = !com.limelight.home.StatsLevel.OFF.equals(statsLevel);
+        performanceOverlayView.setText("");
+        com.limelight.home.StatsPill.place(performanceOverlayView, statsLevel);
         performanceOverlayView.setVisibility(prefConfig.enablePerfOverlay && !isHidingOverlays ? View.VISIBLE : View.GONE);
     }
 
@@ -3151,15 +3159,29 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     public void onPerfUpdate(final String text) {
         // MoonCast: the stats card (StatsPill) instead of Moonlight's lines of text, from the same once-a-second numbers
         final com.limelight.home.StreamStats st = com.limelight.home.StreamStats.INSTANCE;
+        java.util.Locale us = java.util.Locale.US;
+        int health = com.limelight.home.StatsPill.health(st.getRttMs(), st.getLossPct());
         java.util.List<com.limelight.home.StatsPill.Chip> chips = new java.util.ArrayList<>();
-        chips.add(new com.limelight.home.StatsPill.Chip(String.format(java.util.Locale.US, "%.0f", st.getFps()), "fps"));
-        chips.add(new com.limelight.home.StatsPill.Chip(String.valueOf(st.getRttMs()), "ms delay"));
-        chips.add(new com.limelight.home.StatsPill.Chip(String.valueOf(prefConfig.bitrate / 1000), "Mbps"));
-        chips.add(new com.limelight.home.StatsPill.Chip(String.format(java.util.Locale.US, "%.1f%%", st.getLossPct()), "lost"));
-        chips.add(new com.limelight.home.StatsPill.Chip(String.format(java.util.Locale.US, "%.1f", st.getDecodeMs()), "ms decode"));
-        String codec = codecName();
-        if (!codec.isEmpty()) chips.add(new com.limelight.home.StatsPill.Chip(codec, ""));
-        final CharSequence card = com.limelight.home.StatsPill.text(chips, com.limelight.home.StatsPill.health(st.getRttMs(), st.getLossPct()));
+        final CharSequence card;
+        if (com.limelight.home.StatsLevel.LITE.equals(statsLevel)) {
+            // Lite: the two numbers that matter, small, at the top
+            chips.add(new com.limelight.home.StatsPill.Chip(String.format(us, "%.0f", st.getFps()), "fps"));
+            chips.add(new com.limelight.home.StatsPill.Chip(String.valueOf(st.getRttMs()), "ms"));
+            card = com.limelight.home.StatsPill.text(chips, health);
+        } else {
+            String codec = codecName();
+            chips.add(new com.limelight.home.StatsPill.Chip(String.format(us, "%.0f fps", st.getShownFps()),
+                    String.format(us, "shown, %.0f received", st.getReceivedFps())));
+            chips.add(new com.limelight.home.StatsPill.Chip((prefConfig.bitrate / 1000) + " Mbps", "bitrate"));
+            chips.add(new com.limelight.home.StatsPill.Chip(st.getRttMs() + " ms", "network delay ± " + st.getRttVarMs() + " ms"));
+            chips.add(new com.limelight.home.StatsPill.Chip(String.format(us, "%.1f ms", st.getDecodeMs()), "decode"));
+            if (st.getHostAvgMs() >= 0) chips.add(new com.limelight.home.StatsPill.Chip(String.format(us, "%.1f ms", st.getHostAvgMs()),
+                    String.format(us, "PC encode (%.1f min, %.1f max)", st.getHostMinMs(), st.getHostMaxMs())));
+            chips.add(new com.limelight.home.StatsPill.Chip(String.format(us, "%.1f%%", st.getLossPct()), "frames lost on the network"));
+            chips.add(new com.limelight.home.StatsPill.Chip(String.format(us, "%.0f fps", Math.max(0f, st.getReceivedFps() - st.getShownFps())), "dropped by the decoder"));
+            if (!st.getDecoder().isEmpty()) chips.add(new com.limelight.home.StatsPill.Chip(st.getDecoder(), ""));
+            card = com.limelight.home.StatsPill.detailed(st.getSize() + (codec.isEmpty() ? "" : "  ·  " + codec), chips, health);
+        }
         runOnUiThread(() -> {
             if (!performanceOverlayView.getText().toString().equals(card.toString())) performanceOverlayView.setText(card);
         });

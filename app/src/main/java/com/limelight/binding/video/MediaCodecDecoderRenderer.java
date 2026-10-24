@@ -1452,6 +1452,11 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                             (float)lastTwo.totalHostProcessingLatency / 10 / lastTwo.framesWithHostProcessingLatency)).append('\n');
                 }
                 sb.append(context.getString(R.string.perf_overlay_dectime, decodeTimeMs));
+                boolean host = lastTwo.framesWithHostProcessingLatency > 0;
+                com.limelight.home.StreamStats.detail(fps.receivedFps, fps.renderedFps, (int)rttInfo,
+                        host ? (float)lastTwo.minHostProcessingLatency / 10 : -1f,
+                        host ? (float)lastTwo.totalHostProcessingLatency / 10 / lastTwo.framesWithHostProcessingLatency : -1f,
+                        host ? (float)lastTwo.maxHostProcessingLatency / 10 : -1f, decoder);
                 perfListener.onPerfUpdate(sb.toString());
             }
 

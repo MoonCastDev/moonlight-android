@@ -8,9 +8,47 @@ import android.text.Spanned
 import android.text.style.ForegroundColorSpan
 import android.text.style.RelativeSizeSpan
 import android.text.style.StyleSpan
+import android.content.Context
+import android.preference.PreferenceManager
 import android.util.TypedValue
+import android.view.Gravity
 import android.view.ViewGroup
+import android.widget.FrameLayout
 import android.widget.TextView
+
+/**
+ * Settings, Picture, "Stats while playing": Off, Lite or Detailed (the Quick menu's Streaming status cycles them).
+ * Moonlight's own on/off switch stays in step (on = Lite or Detailed), since the PC player only measures while it's on;
+ * someone who had it on before gets Detailed.
+ */
+object StatsLevel {
+    const val PREF = "mc_stats_level"
+    const val OLD = "checkbox_enable_perf_overlay"
+    const val OFF = "off"
+    const val LITE = "lite"
+    const val DETAILED = "detailed"
+
+    @JvmStatic
+    fun get(c: Context): String {
+        val p = PreferenceManager.getDefaultSharedPreferences(c)
+        p.getString(PREF, null)?.let { return it }
+        val v = if (p.getBoolean(OLD, false)) DETAILED else OFF
+        p.edit().putString(PREF, v).apply()
+        return v
+    }
+
+    @JvmStatic
+    fun set(c: Context, v: String) {
+        PreferenceManager.getDefaultSharedPreferences(c).edit().putString(PREF, v).putBoolean(OLD, v != OFF).apply()
+    }
+
+    /** Off, Lite, Detailed, Off… */
+    @JvmStatic
+    fun next(v: String): String = when (v) { OFF -> LITE; LITE -> DETAILED; else -> OFF }
+
+    @JvmStatic
+    fun label(v: String): String = when (v) { LITE -> "Lite"; DETAILED -> "Detailed"; else -> "Off" }
+}
 
 /**
  * "Stats while playing", the same compact card on PC, PS5 and Xbox: a rounded dark pill in the top-left corner with
@@ -23,6 +61,21 @@ object StatsPill {
     private const val AMBER = 0xFFFFB020.toInt()
     private const val RED = 0xFFFF5A5F.toInt()
     private const val DIM = 0xFF9AA3B2.toInt()
+
+    /** Lays [v] out for [level]: Lite is a small pill centred at the top, Detailed a panel in the top-left corner. */
+    @JvmStatic
+    fun place(v: TextView, level: String) {
+        val detailed = level == StatsLevel.DETAILED
+        v.maxLines = if (detailed) 12 else 1
+        v.isSingleLine = !detailed
+        v.setTextSize(TypedValue.COMPLEX_UNIT_SP, if (detailed) 12.5f else 13f)
+        v.setLineSpacing(0f, if (detailed) 1.25f else 1f)
+        (v.layoutParams as? FrameLayout.LayoutParams)?.let { lp ->
+            val g = Gravity.TOP or if (detailed) Gravity.START else Gravity.CENTER_HORIZONTAL
+            if (lp.gravity != g) { lp.gravity = g; v.layoutParams = lp }
+        }
+        v.requestApplyInsets()
+    }
 
     /** Makes [v] the card: background, type, padding, and clear of a camera cutout. */
     @JvmStatic
@@ -40,8 +93,11 @@ object StatsPill {
             var left = 0; var top = 0
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) ins.displayCutout?.let { left = it.safeInsetLeft; top = it.safeInsetTop }
             (view.layoutParams as? ViewGroup.MarginLayoutParams)?.let { lp ->
-                if (lp.leftMargin != base + left || lp.topMargin != base + top) {
-                    lp.leftMargin = base + left; lp.marginStart = base + left; lp.topMargin = base + top
+                // centred at the top (Lite): no side margin, so it sits in the middle
+                val centred = (lp as? FrameLayout.LayoutParams)?.gravity?.and(Gravity.HORIZONTAL_GRAVITY_MASK) == Gravity.CENTER_HORIZONTAL
+                val l = if (centred) 0 else base + left
+                if (lp.leftMargin != l || lp.topMargin != base + top) {
+                    lp.leftMargin = l; lp.marginStart = l; lp.topMargin = base + top
                     view.layoutParams = lp
                 }
             }
@@ -76,6 +132,31 @@ object StatsPill {
                 sb.append(" ").append(c.label)
                 sb.setSpan(ForegroundColorSpan(DIM), b, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                 sb.setSpan(RelativeSizeSpan(0.85f), b, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+        }
+        return sb
+    }
+
+    /** The Detailed panel: a [title] line with the health dot, then one line per (value, label) row. */
+    @JvmStatic
+    fun detailed(title: String, rows: List<Chip>, health: Int): CharSequence {
+        val sb = SpannableStringBuilder()
+        sb.append("●  ")
+        sb.setSpan(ForegroundColorSpan(when (health) { 0 -> GREEN; 1 -> AMBER; else -> RED }), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        val t = sb.length
+        sb.append(title)
+        sb.setSpan(StyleSpan(Typeface.BOLD), t, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        sb.setSpan(RelativeSizeSpan(1.1f), t, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        for (r in rows) {
+            sb.append('\n')
+            val a = sb.length
+            sb.append(r.value)
+            sb.setSpan(StyleSpan(Typeface.BOLD), a, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            if (r.label.isNotEmpty()) {
+                val b = sb.length
+                sb.append("  ").append(r.label)
+                sb.setSpan(ForegroundColorSpan(DIM), b, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                sb.setSpan(RelativeSizeSpan(0.9f), b, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
         }
         return sb

@@ -461,7 +461,7 @@ class XboxStreamActivity : Activity(), com.limelight.home.MoveToTv.LocalSession 
     // ---- Quick menu ----
     private val menu by lazy { QuickMenu(this) }
     // Streaming status: the stats line in the corner while playing (Settings' "Stats while playing", or the Quick menu)
-    private val corner by lazy { com.limelight.home.StatusCorner(this) { liveStats() } }
+    private val corner by lazy { com.limelight.home.StatusCorner(this, { "Xbox  ·  H.264" }) { liveStats() } }
 
     // Live numbers from WebRTC's own stats, refreshed every second (and logged every 5 s for diagnosis)
     @Volatile private var last: XboxRtc.Stats? = null
@@ -503,8 +503,8 @@ class XboxStreamActivity : Activity(), com.limelight.home.MoveToTv.LocalSession 
         val move = com.limelight.home.MoveToTv.item(this, com.limelight.home.MoveToTv.Target("xb", consoleName, xboxId = consoleId))
         menu.show(consoleName, "Xbox Remote Play. " + QuickMenu.COMBO_LABEL + " opens this menu", { liveStats() }, listOfNotNull(
             QuickMenu.Item("⊗", "Xbox button", "Opens the guide", false) { tapGuide() }.staysOpen("Sent to the Xbox"),
-            QuickMenu.Item("ⓘ", "Streaming status", if (com.limelight.home.StatusCorner.enabled(this)) "On" else "Off", false) { corner.toggle() }
-                    .asToggle().liveDetail { if (com.limelight.home.StatusCorner.enabled(this)) "On" else "Off" },
+            QuickMenu.Item("ⓘ", "Streaming status", com.limelight.home.StatsLevel.label(com.limelight.home.StatsLevel.get(this)), false) { corner.toggle() }
+                    .asToggle().liveDetail { com.limelight.home.StatsLevel.label(com.limelight.home.StatsLevel.get(this)) },
             move,
             QuickMenu.Item("←", "Disconnect", "The game keeps running", false) { finish() },
             QuickMenu.Item("⏻", "Turn off the Xbox", "Ends the game", true) { turnOff() }))
