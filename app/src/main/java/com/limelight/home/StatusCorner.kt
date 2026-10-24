@@ -4,7 +4,6 @@ import android.app.Activity
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
-import android.util.TypedValue
 import android.view.Gravity
 import android.widget.FrameLayout
 import android.widget.TextView
@@ -21,7 +20,7 @@ class StatusCorner(private val act: Activity, private val stats: () -> List<Pair
         override fun run() {
             val v = view ?: return
             val line = line()
-            if (v.text.toString() != line) v.text = line   // a new text lays the player out again: only when it changed
+            if (v.text.toString() != line.toString()) v.text = line   // a new text lays the player out again: only when it changed
             val vis = if (line.isEmpty()) android.view.View.GONE else android.view.View.VISIBLE
             if (v.visibility != vis) v.visibility = vis
             ui.postDelayed(this, 1000)
@@ -50,31 +49,29 @@ class StatusCorner(private val act: Activity, private val stats: () -> List<Pair
         }
         val root = act.findViewById<FrameLayout>(android.R.id.content) ?: return
         val d = act.resources.displayMetrics.density
-        view = TextView(act).apply {
-            setTextColor(0xFFE8ECFF.toInt())
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-            setBackgroundColor(0x99000000.toInt())
-            setPadding((10 * d).toInt(), (5 * d).toInt(), (10 * d).toInt(), (5 * d).toInt())
-            visibility = android.view.View.GONE
-        }
+        view = TextView(act).apply { visibility = android.view.View.GONE }
         root.addView(view, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply {
             leftMargin = (12 * d).toInt(); topMargin = (12 * d).toInt()
         })
+        StatsPill.style(view!!)
         ui.post(tick)
     }
 
-    private fun line(): String {
+    private fun line(): CharSequence {
         val s = stats()
         if (s.firstOrNull()?.second != "Frames per second") return ""   // still connecting
-        return s.filter { it.first != "…" }.joinToString("   ") { (v, label) ->
+        var rtt = 0.0; var loss = 0.0
+        val chips = s.filter { it.first != "…" }.map { (v, label) ->
             when (label) {
-                "Frames per second" -> "$v fps"
-                "Network delay" -> "$v delay"
-                "Lost packets" -> "$v lost"
-                "Decode time" -> "$v decode"
-                else -> v
+                "Frames per second" -> StatsPill.Chip(v, "fps")
+                "Network delay" -> { rtt = StatsPill.num(v); StatsPill.Chip(v.removeSuffix(" ms"), "ms delay") }
+                "Lost packets" -> { loss = StatsPill.num(v); StatsPill.Chip(v, "lost") }
+                "Decode time" -> StatsPill.Chip(v.removeSuffix(" ms"), "ms decode")
+                "Picture quality" -> StatsPill.Chip(v.removeSuffix(" Mbps"), "Mbps")
+                else -> StatsPill.Chip(v, "")
             }
         }
+        return StatsPill.text(chips, StatsPill.health(rtt, loss))
     }
 
     companion object {
