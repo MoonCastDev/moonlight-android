@@ -1,6 +1,7 @@
 # Changelog
 
-## Unreleased
+## 1.0-beta5 (2026-10-24)
+- Beta 5: beta 4 plus the Xbox sign-in fix below (release-signed, version code 995), confirmed by Saleh with test267. Also includes the Xbox player fix from beta 4.
 - **Xbox sign-in with an account that has no Xbox profile (test266, Saleh: "you can't sign out to start fresh"):** the sign-in kept the Microsoft account even when Xbox network refused it, so it ended "Signed in" with no gamertag, and signing in again went straight back to the same account because the phone's browser was still signed in to it. Now:
   - **Handheld:** "Open the page" opens Microsoft's page inside MoonCast, with the code already filled in and no Microsoft account remembered (a fresh start every time). It closes by itself once you're signed in; Close goes back to the code. Sign out forgets that page's account too.
   - Right after the sign-in MoonCast asks Xbox network about the account. If it has no Xbox profile, is a child account not yet in a family, or can't use Xbox network in its country, nothing is kept and the card says so in plain words ("This Microsoft account has no Xbox profile. Sign in with the account you use on your Xbox."). If Xbox network can't be reached, the sign-in is kept and it says it couldn't check.
