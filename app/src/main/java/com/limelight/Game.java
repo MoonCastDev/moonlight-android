@@ -1772,6 +1772,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         displayedFailureDialog = true;
         endedByUser = true;
         LimeLog.info("Stream ended after Power, " + POWER_VERB[powerKind]);
+        com.limelight.home.PowerResume.wentDown(getIntent().getStringExtra(EXTRA_PC_UUID),
+                powerKind == POWER_HIBERNATE ? "hibernate" : powerKind == POWER_RESTART ? "restart" : "shutdown");
         stopConnection();
         android.widget.Toast.makeText(this, (pcName != null ? pcName : "The PC") + " " + POWER_DOING[powerKind], android.widget.Toast.LENGTH_LONG).show();
         finish();

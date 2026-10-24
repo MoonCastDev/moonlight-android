@@ -237,6 +237,13 @@ class HandheldHomeActivity : Activity() {
         holdMulticast(true)
         render(force = true)
         runPending()
+        // back from a stream that ended with the PC going down (Quick menu, Power): drop its old state at once, and
+        // after Restart wait for it to come back
+        com.limelight.home.PowerResume.takeWentDown()?.let { (uuid, kind) ->
+            val d = pcs[uuid] ?: binder?.getComputer(uuid)
+            binder?.invalidateStateForComputer(uuid)
+            if (d != null && kind == "restart") ui.postDelayed({ watch(d, sendWol = false, forMs = 240_000) }, 1500)
+        }
         // back from a stream: put the ring back on the focused item once it's laid out
         ui.postDelayed({ currentFocus?.let { glide.moveTo(it) } }, 120)
     }
@@ -1091,6 +1098,7 @@ class HandheldHomeActivity : Activity() {
         pcs.values.forEach { d ->
             val n = apps[d.uuid]?.size ?: 0
             listRow(list, "con:pc:${d.uuid}", "PC", Sw.PC, d.name, when {
+                !online(d) && isWaking(d) -> "Waking up… it shows as online as soon as it answers"
                 !online(d) -> "Offline. Wake it to play"
                 !paired(d) -> "Found on your network. Pair it to play"
                 d.runningGameId != 0 -> "Playing ${runningApp(d)?.appName}"
@@ -1858,8 +1866,15 @@ class HandheldHomeActivity : Activity() {
     private fun playHere(g: Game) {
         when {
             g.pc != null && g.app != null -> {
+                val uuid = g.pc.uuid
+                if (!online(g.pc) && isWaking(g.pc)) {   // waking: start it once the PC answers
+                    afterWake = (uuid ?: "") to { pcs[uuid]?.let { start(it, g.app) { Recents.touch(this, g.key) } } }
+                    toast("${g.app.appName} starts once ${g.pc.name} is awake")
+                    return
+                }
                 if (g.pc.state == ComputerDetails.State.OFFLINE) {   // only when a poll says so (UNKNOWN = not asked yet)
-                    confirm("${g.pc.name} is offline", "Wake it, then start ${g.app.appName} once it's online.", "Wake it", yesPicked = true) { wake(g.pc) }
+                    confirm("${g.pc.name} is offline", "Wake it, then start ${g.app.appName} once it's online.", "Wake it", yesPicked = true) {
+                        wake(g.pc) { pcs[uuid]?.let { start(it, g.app) { Recents.touch(this, g.key) } } } }
                     return
                 }
                 start(g.pc, g.app) { Recents.touch(this, g.key) }
@@ -1951,7 +1966,8 @@ class HandheldHomeActivity : Activity() {
         val t = when {
             g.pc != null && g.app != null -> {
                 if (!online(g.pc)) {
-                    confirm("${g.pc.name} is offline", "Wake it, then send ${g.app.appName} to ${tv.name} once it's online.", "Wake it", yesPicked = true) { wake(g.pc) }
+                    confirm("${g.pc.name} is offline", "Wake it, then send ${g.app.appName} to ${tv.name} once it's online.", "Wake it", yesPicked = true) {
+                        wake(g.pc) { sendToTv(gameFor(g.key) ?: g, tv) } }
                     return
                 }
                 MoveToTv.Target("pc", g.app.appName, g.pc.uuid, g.pc.name, g.app.appId)
@@ -2000,14 +2016,55 @@ class HandheldHomeActivity : Activity() {
         }
     }
 
-    private fun wake(d: ComputerDetails) {
+    /**
+     * PCs MoonCast is waiting for (uuid -> until when, elapsed ms): woken, or just restarted from the Quick menu.
+     * One Wake-on-LAN packet wasn't enough after Hibernate (test263, Saleh): pressed right away, it reached the PC while
+     * Windows was still writing its memory to disk, before the network card listens for the packet, and nothing sent
+     * another. So the packet now goes again every 3 s until the PC answers (up to 2 min); the service polls it every
+     * 1.5 s meanwhile, the row says "Waking up…", and a game pressed meanwhile starts once the PC is up.
+     */
+    private val waking = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private var afterWake: Pair<String, () -> Unit>? = null
+
+    private fun wake(d: ComputerDetails, then: (() -> Unit)? = null) {
         if (d.macAddress == null || d.macAddress == "00:00:00:00:00:00") return toast(getString(R.string.wol_no_mac))
+        watch(d, sendWol = true, then = then)
+    }
+
+    /** Waits up to [forMs] for [d] to answer, sending Wake-on-LAN every 3 s if [sendWol]; then runs [then]. */
+    private fun watch(d: ComputerDetails, sendWol: Boolean, forMs: Long = 120_000, then: (() -> Unit)? = null) {
+        val uuid = d.uuid ?: return
+        if (then != null) afterWake = uuid to then
+        val already = waking.containsKey(uuid)
+        waking[uuid] = android.os.SystemClock.elapsedRealtime() + forMs
+        binder?.invalidateStateForComputer(uuid)   // forget the old answer: it's asked again within 1.5 s
+        if (already) { toast("Still waiting for ${d.name}…"); return }
+        toast(if (sendWol) "Waking ${d.name}. It can take a minute; MoonCast keeps trying" else "Waiting for ${d.name} to come back…")
+        render(force = true)
         Thread {
-            val msg = try { WakeOnLanSender.sendWolPacket(d); "Waking ${d.name}. It shows as online when it's ready." }
-                      catch (e: Exception) { getString(R.string.wol_fail) }
-            runOnUiThread { toast(msg) }
+            var failed = false
+            while (true) {
+                val until = waking[uuid] ?: break
+                if (binder?.getComputer(uuid)?.state == ComputerDetails.State.ONLINE) break
+                if (android.os.SystemClock.elapsedRealtime() > until) break
+                if (sendWol) try { WakeOnLanSender.sendWolPacket(binder?.getComputer(uuid) ?: d) } catch (e: Exception) { failed = true }
+                try { Thread.sleep(3000) } catch (e: InterruptedException) { break }
+            }
+            runOnUiThread {
+                waking.remove(uuid)
+                val pc = pcs[uuid] ?: binder?.getComputer(uuid)
+                val up = pc != null && (online(pc) || binder?.getComputer(uuid)?.state == ComputerDetails.State.ONLINE)
+                val next = afterWake?.takeIf { it.first == uuid }?.second
+                if (afterWake?.first == uuid) afterWake = null
+                if (up) { toast("${d.name} is awake"); next?.invoke() }
+                else toast(if (failed) getString(R.string.wol_fail) else "${d.name} didn't answer. Check it's on and Wake-on-LAN is on in its network card settings")
+                render(force = true)
+            }
         }.start()
     }
+
+    /** True while MoonCast waits for this PC to wake or come back. */
+    private fun isWaking(d: ComputerDetails) = d.uuid?.let { waking.containsKey(it) } == true
 
     private fun pair(d: ComputerDetails) {
         val b = binder ?: return toast(getString(R.string.error_manager_not_running))
