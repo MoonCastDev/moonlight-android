@@ -1,6 +1,7 @@
 # Changelog
 
-## Unreleased
+## 1.0-beta4 (2026-10-24)
+- Beta 4: beta 3 plus the Xbox fix below (release-signed, version code 994). The Xbox player no longer closes as soon as the Xbox connects; confirmed on the Odin 2 Portal (1080p60, Ultra low latency on).
 - **Xbox closed as soon as it connected (Odin, beta 3, Saleh):** libwebrtc hands MoonCast's low-latency H.264 decoder wrapper a null `DecodeInfo` with a frame; the Kotlin override declared it non-null, so the first frame threw (`NullPointerException … LowLatencyDecoder.decode, parameter info`) and the player closed. The parameter is nullable now and is passed on as is.
 
 ## 1.0-beta3 (2026-10-24)
