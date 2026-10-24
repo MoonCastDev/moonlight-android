@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- **TV: Quit game from the sender didn't quit on the PC (Streamer, test258):** a TV that had received an identity (identity transfer) and was then force-stopped kept the session identity files, so after the next start it used them for everything: streams worked as the sender, /mc-native said "paired" though the TV itself isn't paired, and the sender sent no identity. /stop then removed those files *before* quitting, so the quit went out with the TV's own, unpaired identity and the PC refused it ("The client is not authorized"); the game kept running. Now:
+  - leftover session identity files are removed when the TV app starts;
+  - "paired" in /mc-native is asked of the PC with the identity the TV really has (no optimistic yes before the first answer), and asked again when the identity changes;
+  - a stream keeps the identity it connected with, so Quit game uses the same one; /stop removes the session identity only after telling the streams to stop;
+  - if the PC still refuses the quit, /status says so ("failed", "Couldn't quit <game> on <PC>: …").
 - **Wake after Hibernate (handheld; test263, Saleh: "the Wake option doesn't work right away; I have to restart MoonCast"):** MoonCast sent one Wake-on-LAN packet and then only waited. Pressed right after a hibernate, that packet reached the PC while Windows was still writing its memory to disk, before the network card listens for it, so it was lost and nothing sent another (a later Wake, like after restarting MoonCast, worked). Now:
   - Wake sends the packet again every 3 seconds until the PC answers, for up to 2 minutes, also to the network's own broadcast address (some Wi-Fi access points drop 255.255.255.255). The PC's row says "Waking up…", and "<PC> is awake" when it answers (it's asked every 1.5 s meanwhile, with its old answer dropped).
   - "Wake it, then start <game> once it's online" now really starts the game once it's awake (it only woke the PC before); a game pressed while the PC wakes waits for it too. Same for sending to a TV.

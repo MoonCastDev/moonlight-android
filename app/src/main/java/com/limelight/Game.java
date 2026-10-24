@@ -525,11 +525,16 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                 .setPersistGamepadsAfterDisconnect(!prefConfig.multiController)
                 .build();
 
-        // Initialize the connection
+        // Initialize the connection. The identity is loaded now and kept for the whole stream, so Quit game uses the
+        // same one even when a sent session identity's files are removed before it (TV: /stop with quit, test258).
+        streamCrypto = PlatformBinding.getCryptoProvider(this);
+        LimeLog.info("Stream identity: " + (new java.io.File(getFilesDir(), "session-client.crt").isFile() ? "sent by another device (session)" : "this device's own"));
+        streamCrypto.getClientCertificate();
+        streamCrypto.getClientPrivateKey();
         conn = new NvConnection(getApplicationContext(),
                 new ComputerDetails.AddressTuple(host, port),
                 httpsPort, uniqueId, config,
-                PlatformBinding.getCryptoProvider(this), serverCert);
+                streamCrypto, serverCert);
         conn.setControllersBlocked(padsElsewhere);
         controllerHandler = new ControllerHandler(this, conn, this, prefConfig);
         keyboardTranslator = new KeyboardTranslator();
@@ -1844,11 +1849,17 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             if (der != null) cert = (X509Certificate) CertificateFactory.getInstance("X.509").generateCertificate(new ByteArrayInputStream(der));
             new NvHTTP(new ComputerDetails.AddressTuple(i.getStringExtra(EXTRA_HOST), i.getIntExtra(EXTRA_PORT, NvHTTP.DEFAULT_HTTP_PORT)),
                     i.getIntExtra(EXTRA_HTTPS_PORT, 0), i.getStringExtra(EXTRA_UNIQUEID), cert,
-                    PlatformBinding.getCryptoProvider(Game.this)).quitApp();
+                    streamCrypto != null ? streamCrypto : PlatformBinding.getCryptoProvider(Game.this)).quitApp();
         } catch (Exception e) {
             LimeLog.warning("Quick menu quit: " + e);
+            // a sender that asked for the quit (TV: /stop with quit) reads this from /status
+            com.limelight.home.StreamReport.failed("Couldn't quit " + (appName != null ? appName : "the game") + " on "
+                    + (pcName != null ? pcName : "the PC") + ": " + (e.getMessage() != null ? e.getMessage() : e.toString()));
         }
     }
+
+    /** The identity this stream connected with (see onCreate). */
+    private com.limelight.nvstream.http.LimelightCryptoProvider streamCrypto;
 
 
 
