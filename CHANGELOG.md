@@ -1,6 +1,7 @@
 # Changelog
 
-## Unreleased
+## 1.0-beta3 (2026-10-24)
+- Beta 3: everything from test244 to test265 below (release-signed, version code 993). Power (Hibernate, Restart, Shut down) is in the Quick menu: Hibernate, Wake and resuming the game were confirmed on Windows by Saleh.
 - **A stream that doesn't start now gives up with a reason (TV, test258):** a PC game sent to the TV 0.5 s after the sender left its own stream found the PC still holding that session; the TV's player waited in Moonlight's RTSP handshake for about 30 s with /status "starting" and no error. Now, if the stream hasn't started after 15 seconds, the player tries once more; if the second try hasn't started after 15 seconds either, it stops with "<PC> didn't start the stream. It may still be busy with another device; try again in a few seconds", which the sender reads from /status ("failed"). Handheld streams get the same one retry.
   - /status also no longer says "idle" for a few seconds after a new /play: the player it replaces closing reported it.
   - **Which PC:** a TV that knows more than one paired PC (the Streamer: xserv Gaming and Ahmeds-PC) sent games to "the first one", and the database's order changes as polls rewrite it, so a game could go to the other PC; that PC was running something else and the TV waited on a "quit the running game?" box with /status "starting". The TV now picks the PC the sender names (the handheld now sends pcUuid and pcName), else the one PC whose game list has the game, else (of those that answer) the one it played last, else the first by name; /mc-native's "pc" follows the same rule.
