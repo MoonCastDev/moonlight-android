@@ -1701,7 +1701,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         String pc = pcName != null ? pcName : "the PC";
         java.util.List<com.limelight.home.QuickMenu.Item> items = new java.util.ArrayList<>();
         items.add(new com.limelight.home.QuickMenu.Item("↩", "Cancel", "Back to Power", false, this::showPower).staysOpen(null));
-        items.add(new com.limelight.home.QuickMenu.Item(kind == POWER_HIBERNATE ? "Zz" : kind == POWER_RESTART ? "↻" : "⏻",
+        items.add(new com.limelight.home.QuickMenu.Item(kind == POWER_HIBERNATE ? "Zz" : kind == POWER_RESTART ? "↻" : "◉",
                 POWER_VERB[kind], kind == POWER_HIBERNATE ? "Unsaved progress may be lost" : "Unsaved progress is lost", true, () -> power(kind)));
         quickMenu.show(POWER_VERB[kind] + " " + pc + "?",
                 "MoonCast opens Run through Start on the PC (Ctrl + Esc, run), types " + POWER_COMMAND[kind] + " and presses Enter. It works on Windows in English"
