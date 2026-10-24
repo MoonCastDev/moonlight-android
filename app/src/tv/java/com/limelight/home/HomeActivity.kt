@@ -1147,7 +1147,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                 action(list, "set:oled", "OLED screen", "True black, quieter menus, and a dim screen saver that moves", if (tv.oled) "On" else "Off") {
                     prefs.edit().putBoolean("oled", !tv.oled).apply(); recreate() }
                 com.limelight.home.StatsLevel.get(this)   // an old on/off answer becomes Off or Detailed first
-                choice(list, "mc_stats_level", "Stats while playing", "Lite: frame rate and delay, small at the top. Detailed: every number, in a corner",
+                choice(list, "mc_stats_level", "Stats while playing", "Lite: one row of numbers at the top. Detailed: every number, in a corner",
                         listOf("Off" to "off", "Lite" to "lite", "Detailed" to "detailed"), "off") { com.limelight.home.StatsLevel.set(this, it) }
                 tvToggle(list, "hide_hints", "Hide button hints", "They fade after 10 seconds and come back when you press a button", tv.oled)
                 tvToggle(list, "pixel_shift", "Move the menus slightly", "Shifts everything by a few pixels every few minutes, so nothing burns in", tv.oled)

@@ -69,16 +69,6 @@ class StatusCorner(private val act: Activity, private val info: () -> String = {
         var rtt = 0.0; var loss = 0.0
         val known = s.filter { it.first != "…" }
         known.forEach { (v, label) -> if (label == "Network delay") rtt = StatsPill.num(v); if (label == "Lost packets") loss = StatsPill.num(v) }
-        if (level == StatsLevel.LITE) {
-            val lite = known.mapNotNull { (v, label) ->
-                when (label) {
-                    "Frames per second" -> StatsPill.Chip(v, "fps")
-                    "Network delay" -> StatsPill.Chip(v.removeSuffix(" ms"), "ms")
-                    else -> null
-                }
-            }
-            return StatsPill.text(lite, StatsPill.health(rtt, loss))
-        }
         if (level == StatsLevel.DETAILED) {
             val rows = known.map { (v, label) ->
                 when (label) {
