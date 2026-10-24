@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- **Quick menu (PC): Power moves up**, above Move to TV, Disconnect and Quit game. It was last, below Quit game, so on a phone it sat off the bottom of the list (OnePlus 8 Pro, test260). The red items that leave the game are last again, as on the iPad. Its icon, the ⏻ power sign, showed as an empty box with Android 12's fonts; Power, Shut down and Turn off the Xbox now use ◉.
 - **Stats while playing: Off, Lite, Detailed (test259, Saleh):** Settings, Picture, Stats while playing is now a choice of three, and the Quick menu's Streaming status steps Off → Lite → Detailed. PC, PS5 and Xbox; handheld and TV.
   - **Lite:** a small pill centred at the top: the health dot, frame rate and delay. Nothing else.
   - **Detailed:** a panel in the top-left corner. On PC: resolution and codec (with 4:4:4 / HDR), frames shown and received, bitrate, network delay ± variance, decode time, the PC's encode time (average, min, max), frames lost on the network and dropped by the decoder, and the decoder's name. PS5 and Xbox show what their players measure (frame rate, delay, bitrate, lost packets, decode time on PS5).

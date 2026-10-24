@@ -1609,13 +1609,13 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             items.add(new com.limelight.home.QuickMenu.Item("✚", "Controllers", com.limelight.home.QuickMenu.pads().size() + " connected", false, this::showControllers).staysOpen(null));
             items.add(new com.limelight.home.QuickMenu.Item("▤", "Task Manager", "Windows: Ctrl + Shift + Esc", false, this::openTaskManager).staysOpen("Opened on the PC"));
             // handheld only: send the game to the last MoonCast TV (it ends this stream, the game keeps running)
+            items.add(new com.limelight.home.QuickMenu.Item("◉", "Power", "Hibernate, restart or shut down the PC", false, this::showPower).staysOpen(null));
             com.limelight.home.QuickMenu.Item move = com.limelight.home.MoveToTv.item(Game.this, new com.limelight.home.MoveToTv.Target(
                     "pc", appName != null ? appName : "Your game", getIntent().getStringExtra(EXTRA_PC_UUID), pcName,
                     getIntent().getIntExtra(EXTRA_APP_ID, 0), null, null, null, true, null));
             if (move != null) items.add(move);
             items.add(new com.limelight.home.QuickMenu.Item("←", "Disconnect", "The game keeps running", false, this::finish));
             items.add(new com.limelight.home.QuickMenu.Item("✕", "Quit game", null, true, this::quitOnHostAndFinish));
-            items.add(new com.limelight.home.QuickMenu.Item("⏻", "Power", "Hibernate, restart or shut down the PC", false, this::showPower).staysOpen(null));
             quickMenu.show(appName != null ? appName : "Your game",
                     (pcName != null ? "On " + pcName + ". " : "") + com.limelight.home.QuickMenu.COMBO_LABEL + " opens this menu",
                     () -> java.util.Arrays.asList(
@@ -1688,7 +1688,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         items.add(new com.limelight.home.QuickMenu.Item("↩", "Back", "To the menu", false, this::openQuickMenu).staysOpen(null));
         items.add(new com.limelight.home.QuickMenu.Item("Zz", "Hibernate", "The game waits in the PC; wake it from MoonCast", true, () -> confirmPower(POWER_HIBERNATE)).staysOpen(null));
         items.add(new com.limelight.home.QuickMenu.Item("↻", "Restart", "The game closes; unsaved progress is lost", true, () -> confirmPower(POWER_RESTART)).staysOpen(null));
-        items.add(new com.limelight.home.QuickMenu.Item("⏻", "Shut down", "The game closes; unsaved progress is lost", true, () -> confirmPower(POWER_SHUTDOWN)).staysOpen(null));
+        items.add(new com.limelight.home.QuickMenu.Item("◉", "Shut down", "The game closes; unsaved progress is lost", true, () -> confirmPower(POWER_SHUTDOWN)).staysOpen(null));
         quickMenu.show("Power", (pcName != null ? pcName + ". " : "") + "Windows PCs", java.util.Collections::emptyList, items);
     }
 
@@ -1701,7 +1701,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         String pc = pcName != null ? pcName : "the PC";
         java.util.List<com.limelight.home.QuickMenu.Item> items = new java.util.ArrayList<>();
         items.add(new com.limelight.home.QuickMenu.Item("↩", "Cancel", "Back to Power", false, this::showPower).staysOpen(null));
-        items.add(new com.limelight.home.QuickMenu.Item(kind == POWER_HIBERNATE ? "Zz" : kind == POWER_RESTART ? "↻" : "⏻",
+        items.add(new com.limelight.home.QuickMenu.Item(kind == POWER_HIBERNATE ? "Zz" : kind == POWER_RESTART ? "↻" : "◉",
                 POWER_VERB[kind], kind == POWER_HIBERNATE ? "Unsaved progress may be lost" : "Unsaved progress is lost", true, () -> power(kind)));
         quickMenu.show(POWER_VERB[kind] + " " + pc + "?",
                 "MoonCast opens Run through Start on the PC (Ctrl + Esc, run), types " + POWER_COMMAND[kind] + " and presses Enter. It works on Windows in English"

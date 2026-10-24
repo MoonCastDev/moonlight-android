@@ -507,7 +507,7 @@ class XboxStreamActivity : Activity(), com.limelight.home.MoveToTv.LocalSession 
                     .asToggle().liveDetail { com.limelight.home.StatsLevel.label(com.limelight.home.StatsLevel.get(this)) },
             move,
             QuickMenu.Item("←", "Disconnect", "The game keeps running", false) { finish() },
-            QuickMenu.Item("⏻", "Turn off the Xbox", "Ends the game", true) { turnOff() }))
+            QuickMenu.Item("◉", "Turn off the Xbox", "Ends the game", true) { turnOff() }))
     }
 
     private fun tapGuide() {
