@@ -229,6 +229,7 @@
 - Build: chiaki's build script starts the native build clean when chiaki's build files change. The OpenSSL upgrade otherwise failed on a machine that had built before (old configured headers left in the cache).
 
 ## Unreleased
+- **PS5 up to 100 Mbps (Saleh: PXPlay does 100, MoonCast stopped at 50):** Settings, PlayStation: Bitrate has 50, 80 and 100 too, and Custom goes from 2 to 100 Mbps (home and away), on the handheld and the TV. MoonCast's own 50 Mbps cap is gone; chiaki hands the number to the PS5 as it is. The row warns that 80–100 Mbps needs a strong 5 GHz / 6 GHz link (or cable). Auto is unchanged (30 or 20 Mbps by the link).
 - CONTRIBUTING.md: how to report problems, build, and send changes (one topic per pull request, CHANGELOG in each, lint and CI, the chiaki-ng submodule, no game pictures or secrets, licences). SECURITY.md: report privately through GitHub's security advisories, and what MoonCast keeps where.
 - README: rewritten for MoonCast (it was still Moonlight's). It covers what the two apps play and how, the features, install and Sunshine's gamepad setting, building with the chiaki-ng submodule, the licences and the credits.
 

@@ -1091,11 +1091,11 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                     // The PS5 streams at 30 or 60 fps only, so no Custom here (#39)
                     choice(list, "ps5_fps_home", "Frame rate", "60 fps is smoother; 30 fps lets a weak link keep up",
                             listOf("60 fps" to "60", "30 fps" to "30"), "60")
-                    choice(list, "ps5_bitrate_home", "Bitrate", "Auto: 30 Mbps on fast Wi-Fi or cable, 20 otherwise",
-                            listOf("Auto" to "auto", "10" to "10", "15" to "15", "20" to "20", "30" to "30", "Custom" to "custom"), "auto",
-                            onPick = { if (it == "custom") customDialog("ps5_bitrate_home", "Custom bitrate", "Mbps", 2, 50, 20, cancelTo = "auto") })
+                    choice(list, "ps5_bitrate_home", "Bitrate", "Auto: 30 Mbps on fast Wi-Fi or cable, 20 otherwise. 80–100 Mbps needs cable or a strong 5 GHz / 6 GHz link",
+                            listOf("Auto" to "auto", "10" to "10", "15" to "15", "20" to "20", "30" to "30", "50" to "50", "80" to "80", "100" to "100", "Custom" to "custom"), "auto",
+                            onPick = { if (it == "custom") customDialog("ps5_bitrate_home", "Custom bitrate", "Mbps", 2, 100, 20, cancelTo = "auto") })
                     if (stream.getString("ps5_bitrate_home", "auto") == "custom")
-                        customNumber(list, "ps5_bitrate_home", "Custom bitrate", "2 to 50 Mbps", "Mbps", 2, 50, 20)
+                        customNumber(list, "ps5_bitrate_home", "Custom bitrate", "2 to 100 Mbps. 80–100 needs cable or a strong 5 GHz / 6 GHz link", "Mbps", 2, 100, 20)
                     choice(list, "ps5_codec", "Video codec", "HEVC looks better at the same bitrate", listOf("H.264" to "h264", "HEVC" to "h265"), "h265")
                 }
                 if (mode != "home") {
@@ -1105,9 +1105,9 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                             listOf("60 fps" to "60", "30 fps" to "30"), "60")
                     choice(list, "away_bitrate", "Bitrate", "Auto: capped by this TV's Wi-Fi link",
                             listOf("Auto" to "auto", "8" to "8", "10" to "10", "15" to "15", "Custom" to "custom"), "auto",
-                            onPick = { if (it == "custom") customDialog("away_bitrate", "Custom bitrate", "Mbps", 2, 50, 10, cancelTo = "auto") })
+                            onPick = { if (it == "custom") customDialog("away_bitrate", "Custom bitrate", "Mbps", 2, 100, 10, cancelTo = "auto") })
                     if (stream.getString("away_bitrate", "auto") == "custom")
-                        customNumber(list, "away_bitrate", "Custom bitrate", "2 to 50 Mbps", "Mbps", 2, 50, 10)
+                        customNumber(list, "away_bitrate", "Custom bitrate", "2 to 100 Mbps (the internet path rarely carries more than 30)", "Mbps", 2, 100, 10)
                     choice(list, "away_codec", "Video codec", "HEVC looks better at the same bitrate", listOf("H.264" to "h264", "HEVC" to "h265"), "h265")
                 }
                 choice(list, "ps5_on_disconnect", "When I disconnect", "What happens to the PS5 after you leave a game",

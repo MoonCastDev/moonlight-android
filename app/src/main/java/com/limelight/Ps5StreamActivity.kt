@@ -171,10 +171,11 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
             if (h264) Codec.CODEC_H264 else Codec.CODEC_H265
         )
         // Home network: Auto = 30 or 20 Mbps from this device's own link (chiaki's 1080p preset is 15), or the
-        // number picked in Settings, or a Custom value (2-50 Mbps). Over the internet keep the preset - the PS5 backs off by itself.
+        // number picked in Settings, or a Custom value (2-100 Mbps; chiaki passes it to the PS5 as is, PXPlay runs 100).
+        // Over the internet keep the preset - the PS5 backs off by itself.
         // ~30 % of the link is what a busy 2.4 GHz channel really delivers without queueing
         val linkCap = if (link > 0) (link * 300).coerceIn(5000, 30000) else 30000
-        fun customKbps(key: String, def: Int) = (prefs.getString("${key}_custom", def.toString())?.toIntOrNull() ?: def).coerceIn(2, 50) * 1000
+        fun customKbps(key: String, def: Int) = (prefs.getString("${key}_custom", def.toString())?.toIntOrNull() ?: def).coerceIn(2, 100) * 1000
         val homeSel = prefs.getString("ps5_bitrate_home", "auto") ?: "auto"
         val homeKbps = when (homeSel) {
             "custom" -> customKbps("ps5_bitrate_home", 20)
