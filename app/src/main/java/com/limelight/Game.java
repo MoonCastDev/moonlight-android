@@ -1608,7 +1608,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             if (move != null) items.add(move);
             items.add(new com.limelight.home.QuickMenu.Item("←", "Disconnect", "The game keeps running", false, this::finish));
             items.add(new com.limelight.home.QuickMenu.Item("✕", "Quit game", null, true, this::quitOnHostAndFinish));
-            items.add(new com.limelight.home.QuickMenu.Item("Zz", "Hibernate PC", "Windows: runs shutdown /h", true, this::confirmHibernate));
+            items.add(new com.limelight.home.QuickMenu.Item("⏻", "Power", "Hibernate, restart or shut down the PC", false, this::showPower));
             quickMenu.show(appName != null ? appName : "Your game",
                     (pcName != null ? "On " + pcName + ". " : "") + com.limelight.home.QuickMenu.COMBO_LABEL + " opens this menu",
                     () -> java.util.Arrays.asList(
@@ -1671,34 +1671,56 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         sendKeys(new short[] {VK_LCONTROL, VK_LSHIFT, VK_ESCAPE});
     }
 
-    // Quick menu, Hibernate PC: asks first, with Cancel picked, since the game and the stream both stop
-    private void confirmHibernate() {
+    // Quick menu, Power: Hibernate, Restart or Shut down the PC, each asked first with Cancel picked
+    private void showPower() {
+        java.util.List<com.limelight.home.QuickMenu.Item> items = new java.util.ArrayList<>();
+        items.add(new com.limelight.home.QuickMenu.Item("↩", "Back", "Keep playing", false, this::openQuickMenu));
+        items.add(new com.limelight.home.QuickMenu.Item("Zz", "Hibernate", "The game waits in the PC; wake it from MoonCast", true, () -> confirmPower(POWER_HIBERNATE)));
+        items.add(new com.limelight.home.QuickMenu.Item("↻", "Restart", "The game closes; unsaved progress is lost", true, () -> confirmPower(POWER_RESTART)));
+        items.add(new com.limelight.home.QuickMenu.Item("⏻", "Shut down", "The game closes; unsaved progress is lost", true, () -> confirmPower(POWER_SHUTDOWN)));
+        quickMenu.show("Power", (pcName != null ? pcName + ". " : "") + "Windows PCs", java.util.Collections::emptyList, items);
+    }
+
+    private static final int POWER_HIBERNATE = 0, POWER_RESTART = 1, POWER_SHUTDOWN = 2;
+    private static final String[] POWER_VERB = {"Hibernate", "Restart", "Shut down"};
+    private static final String[] POWER_COMMAND = {"shutdown /h", "shutdown /r /t 0", "shutdown /s /t 0"};
+    private static final String[] POWER_DOING = {"is hibernating", "is restarting", "is shutting down"};
+
+    private void confirmPower(int kind) {
         String pc = pcName != null ? pcName : "the PC";
         java.util.List<com.limelight.home.QuickMenu.Item> items = new java.util.ArrayList<>();
         items.add(new com.limelight.home.QuickMenu.Item("↩", "Cancel", "Keep playing", false, () -> { }));
-        items.add(new com.limelight.home.QuickMenu.Item("Zz", "Hibernate", "Unsaved progress may be lost", true, this::hibernate));
-        quickMenu.show("Hibernate " + pc + "?",
-                "MoonCast opens Start on the PC (Ctrl + Esc), types shutdown /h and presses Enter. It works on Windows " +
-                        "with hibernation on (most PCs). Wake the PC again from MoonCast's home.",
+        items.add(new com.limelight.home.QuickMenu.Item(kind == POWER_HIBERNATE ? "Zz" : kind == POWER_RESTART ? "↻" : "⏻",
+                POWER_VERB[kind], kind == POWER_HIBERNATE ? "Unsaved progress may be lost" : "Unsaved progress is lost", true, () -> power(kind)));
+        quickMenu.show(POWER_VERB[kind] + " " + pc + "?",
+                "MoonCast opens Start on the PC (Ctrl + Esc), types " + POWER_COMMAND[kind] + " and presses Enter. It works on Windows"
+                        + (kind == POWER_HIBERNATE ? " with hibernation on (most PCs). Wake the PC again from MoonCast's home." : "."),
                 java.util.Collections::emptyList, items);
     }
 
-    /** When Hibernate PC was sent: the PC going away soon after is the end the user asked for, not an error. */
+    /** When a Power command was sent: the PC going away soon after is the end the user asked for, not an error. */
     private volatile long hibernateAt;
+    private volatile int powerKind = POWER_HIBERNATE;
 
-    private void hibernate() {
+    private void power(int kind) {
+        powerKind = kind;
         hibernateAt = android.os.SystemClock.uptimeMillis();
-        LimeLog.info("Quick menu: Hibernate PC");
+        LimeLog.info("Quick menu: Power, " + POWER_VERB[kind]);
+        // Hibernate: the PC wakes with the game but Sunshine forgets it, so the next start opens Desktop (PowerResume).
+        // Restart and Shut down close the game, so a fresh start is right.
+        String uuid = getIntent().getStringExtra(EXTRA_PC_UUID);
+        if (kind == POWER_HIBERNATE) com.limelight.home.PowerResume.mark(this, uuid, appName);
+        else com.limelight.home.PowerResume.clear(this, uuid);
         // Start's search runs the command. Not Win + R: games turn the Windows key off while they play (test239), and
-        // Ctrl + Esc opens Start without it. Not the Win + X power menu either: its U and H don't match on other
+        // Ctrl + Esc opens Start without it. Not the Win + X power menu either: its letters don't match on other
         // keyboard layouts or Windows languages (test238). The command goes as text, which Sunshine types the same
         // on any layout; search needs a moment to find it before Enter.
         sendKeys(new short[] {VK_LCONTROL, VK_ESCAPE});
         Handler h = new Handler(getMainLooper());
-        h.postDelayed(() -> { if (conn != null) conn.sendUtf8Text("shutdown /h"); }, 1500);
+        h.postDelayed(() -> { if (conn != null) conn.sendUtf8Text(POWER_COMMAND[kind]); }, 1500);
         h.postDelayed(() -> sendKeys(new short[] {VK_RETURN}), 3500);
-        // A PC going into hibernation just stops sending video: Moonlight would only notice after a long timeout,
-        // with the last picture frozen (test241). Watch for it and end the stream ourselves.
+        // A PC going down just stops sending video: Moonlight would only notice after a long timeout, with the last
+        // picture frozen (test241). Watch for it and end the stream ourselves.
         h.postDelayed(() -> watchHibernate(60, -1, 0), 4500);
     }
 
@@ -1729,14 +1751,14 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         }, "mc-hibernate-watch").start();
     }
 
-    /** The PC went down after Hibernate PC: leave the stream without an error (and without quitting the game). */
+    /** The PC went down after Power: leave the stream without an error (and without quitting the game). */
     private void finishHibernated() {
         if (displayedFailureDialog) return;
         displayedFailureDialog = true;
         endedByUser = true;
-        LimeLog.info("Stream ended after Hibernate PC");
+        LimeLog.info("Stream ended after Power, " + POWER_VERB[powerKind]);
         stopConnection();
-        android.widget.Toast.makeText(this, (pcName != null ? pcName : "The PC") + " is hibernating", android.widget.Toast.LENGTH_LONG).show();
+        android.widget.Toast.makeText(this, (pcName != null ? pcName : "The PC") + " " + POWER_DOING[powerKind], android.widget.Toast.LENGTH_LONG).show();
         finish();
     }
 
@@ -2667,7 +2689,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     public void connectionTerminated(final int errorCode) {
         PhoneGamepad.stopFor(conn);   // the stream is over: stop pulling the sender's controller
         if (hibernateAt != 0 && android.os.SystemClock.uptimeMillis() - hibernateAt < 60_000) {
-            // the PC went down after Hibernate PC: that's what the user asked for, so no error
+            // the PC went down after Power: that's what the user asked for, so no error
             endedByUser = true;
             runOnUiThread(this::finishHibernated);
             return;
