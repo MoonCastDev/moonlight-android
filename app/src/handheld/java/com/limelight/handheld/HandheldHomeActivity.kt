@@ -1560,8 +1560,8 @@ class HandheldHomeActivity : Activity() {
                 if (stream.getString(com.limelight.binding.video.FsrRenderer.PREF, "off") == "fsr1")
                     intChoice(list, com.limelight.binding.video.FsrRenderer.SHARPNESS_PREF, "Sharpening", "How crisp FSR makes edges. Lower it if you see halos",
                             listOf(0, 20, 40, 60, 80, 100), com.limelight.binding.video.FsrRenderer.DEFAULT_SHARPNESS) { "$it%" }
-                choice(list, stream, "video_format", "Video codec", "H.265 and AV1 look better at the same bitrate",
-                        listOf("Auto" to "auto", "H.264" to "neverh265", "H.265" to "forceh265", "AV1" to "forceav1"), "auto")
+                choice(list, stream, "video_format", "Video codec", "HEVC and AV1 look better at the same bitrate",
+                        listOf("Auto" to "auto", "H.264" to "neverh265", "HEVC" to "forceh265", "AV1" to "forceav1"), "auto")
                 toggle(list, "checkbox_enable_hdr", "HDR", "Only when the PC, the game and this screen support it", false)
                 toggle(list, com.limelight.home.Yuv444.PREF, "YUV 4:4:4 (HEVC)",
                         if (com.limelight.home.Yuv444.deviceCan()) "Sharper text and colour edges. Needs Sunshine with 4:4:4 on the PC; otherwise it stays 4:2:0"
@@ -1624,7 +1624,7 @@ class HandheldHomeActivity : Activity() {
                             onPick = { if (it == "custom") customDialog(stream, "ps5_bitrate_home", "Custom bitrate", "Mbps", 2, 50, 20) })
                     if (stream.getString("ps5_bitrate_home", "auto") == "custom")
                         customNumber(list, stream, "ps5_bitrate_home", "Custom bitrate", "2 to 50 Mbps", "Mbps", 2, 50, 20)
-                    choice(list, stream, "ps5_codec", "Video codec", "H.265 looks better at the same bitrate", listOf("H.264" to "h264", "H.265" to "h265"), "h265")
+                    choice(list, stream, "ps5_codec", "Video codec", "HEVC looks better at the same bitrate", listOf("H.264" to "h264", "HEVC" to "h265"), "h265")
                 }
                 if (mode != "home") {
                     choice(list, stream, "ps5_away_quality", "Resolution", "Auto follows the Wi-Fi: 1080p strong, 720p weak",
@@ -1636,7 +1636,7 @@ class HandheldHomeActivity : Activity() {
                             onPick = { if (it == "custom") customDialog(stream, "away_bitrate", "Custom bitrate", "Mbps", 2, 50, 10) })
                     if (stream.getString("away_bitrate", "auto") == "custom")
                         customNumber(list, stream, "away_bitrate", "Custom bitrate", "2 to 50 Mbps", "Mbps", 2, 50, 10)
-                    choice(list, stream, "away_codec", "Video codec", "H.265 looks better at the same bitrate", listOf("H.264" to "h264", "H.265" to "h265"), "h265")
+                    choice(list, stream, "away_codec", "Video codec", "HEVC looks better at the same bitrate", listOf("H.264" to "h264", "HEVC" to "h265"), "h265")
                 }
                 choice(list, stream, "ps5_on_disconnect", "When I disconnect", "What happens to the PS5 after you leave a game",
                         listOf("Ask" to "ask", "Rest mode" to "rest", "Keep it on" to "keep"), "ask")
