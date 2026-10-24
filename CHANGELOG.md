@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased
+- **Xbox closed as soon as it connected (Odin, beta 3, Saleh):** libwebrtc hands MoonCast's low-latency H.264 decoder wrapper a null `DecodeInfo` with a frame; the Kotlin override declared it non-null, so the first frame threw (`NullPointerException … LowLatencyDecoder.decode, parameter info`) and the player closed. The parameter is nullable now and is passed on as is.
+
 ## 1.0-beta3 (2026-10-24)
 - Beta 3: everything from test244 to test265 below (release-signed, version code 993). Power (Hibernate, Restart, Shut down) is in the Quick menu: Hibernate, Wake and resuming the game were confirmed on Windows by Saleh.
 - **A stream that doesn't start now gives up with a reason (TV, test258):** a PC game sent to the TV 0.5 s after the sender left its own stream found the PC still holding that session; the TV's player waited in Moonlight's RTSP handshake for about 30 s with /status "starting" and no error. Now, if the stream hasn't started after 15 seconds, the player tries once more; if the second try hasn't started after 15 seconds either, it stops with "<PC> didn't start the stream. It may still be busy with another device; try again in a few seconds", which the sender reads from /status ("failed"). Handheld streams get the same one retry.
