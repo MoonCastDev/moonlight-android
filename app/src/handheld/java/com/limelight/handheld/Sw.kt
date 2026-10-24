@@ -24,7 +24,7 @@ import com.limelight.home.Tv
  * The handheld's Switch-style kit, from mooncast-handheld-v2.html: flat charcoal (or light grey), white type, one
  * cyan double ring. Sizes are design px on a 1920 x 1080 canvas (1080 x 1920 upright), fitted to the screen by [tv].
  */
-class Sw(ctx: Context, val light: Boolean, val portrait: Boolean, val size: Size = Size.NORMAL) {
+class Sw(ctx: Context, val light: Boolean, val portrait: Boolean, val size: Size = Size.NORMAL, val oled: Boolean = false) {
     /**
      * Screen size. NORMAL lays out on a 1920 x 1080 canvas (Odin, phones); COMPACT on 1240 x 1080 for small or square
      * screens (Retroid Pocket Mini: the 1920 canvas shrank everything to 65%); LARGE is COMPACT a step bigger.
@@ -71,10 +71,11 @@ class Sw(ctx: Context, val light: Boolean, val portrait: Boolean, val size: Size
     val lineGap get() = if (compact) 12 else 8
     val c = ctx
 
-    val bg = if (light) 0xFFEBEBEB.toInt() else 0xFF2B2D31.toInt()
-    val panel = if (light) 0xFFFFFFFF.toInt() else 0xFF36393F.toInt()
-    val tile = if (light) 0xFFDADCE0.toInt() else 0xFF3E4249.toInt()
-    val line = if (light) 0xFFCDCFD4.toInt() else 0xFF474B53.toInt()
+    // OLED: pure black behind everything (the screen's pixels off), very dark grey panels and tiles, same type and ring
+    val bg = if (light) 0xFFEBEBEB.toInt() else if (oled) 0xFF000000.toInt() else 0xFF2B2D31.toInt()
+    val panel = if (light) 0xFFFFFFFF.toInt() else if (oled) 0xFF141518.toInt() else 0xFF36393F.toInt()
+    val tile = if (light) 0xFFDADCE0.toInt() else if (oled) 0xFF1C1E22.toInt() else 0xFF3E4249.toInt()
+    val line = if (light) 0xFFCDCFD4.toInt() else if (oled) 0xFF2A2C31.toInt() else 0xFF474B53.toInt()
     val ink = if (light) 0xFF2D2D2D.toInt() else 0xFFFFFFFF.toInt()
     val sub = if (light) 0xFF6E727A.toInt() else 0xFFB5BAC3.toInt()
     val ring = if (light) 0xFF00A9C2.toInt() else 0xFF2FD3E6.toInt()

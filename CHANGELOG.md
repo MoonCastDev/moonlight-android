@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- **OLED theme (handheld):** Settings, Theme has a third choice, **OLED**: a pure black background (an OLED screen turns those pixels off, which saves battery), very dark grey panels and tiles, the same white type and cyan ring. The in-game Quick menu and the licence pages follow it.
 - **Stats while playing, new look (PC, PS5, Xbox):** one compact card in the top-left corner instead of lines of text: a dot (green, amber or red by delay and loss), then the numbers in a row, big and bold with small labels: fps, delay, Mbps, lost, decode and, on PC, the codec ("HEVC", "HEVC 4:4:4", "AV1 HDR"). It keeps clear of a camera cutout and only redraws when a number changes. The Quick menu's Streaming status still turns it on and off.
 - **"HEVC" instead of "H.265"** in Settings (Picture, PlayStation, Away) and the PS5's stream info, on the handheld and the TV. Saved choices don't change.
 - **Power in the Quick menu (PC):** one item, **Power**, opens Hibernate, Restart and Shut down (and Back). Each asks first with Cancel picked, then types the command into Start on the PC as Hibernate did (`shutdown /h`, `shutdown /r /t 0`, `shutdown /s /t 0`), and the stream ends with "<PC> is hibernating / restarting / shutting down" once the PC stops answering. Windows only.

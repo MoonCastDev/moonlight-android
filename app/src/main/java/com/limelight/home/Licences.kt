@@ -76,7 +76,7 @@ class LicenceActivity : Activity() {
             })
         }
         setContentView(ScrollView(this).apply {
-            setBackgroundColor(0xFF2B2D31.toInt())
+            setBackgroundColor(if (getSharedPreferences("mc_tv", MODE_PRIVATE).getString("hh_theme", "dark") == "oled") 0xFF000000.toInt() else 0xFF2B2D31.toInt())
             isFocusable = true; isFocusableInTouchMode = true   // a D-pad scrolls it
             fitsSystemWindows = true
             addView(col)
