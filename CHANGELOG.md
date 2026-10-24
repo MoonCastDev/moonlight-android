@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- **Touch screen (handheld):** the in-game Quick menu no longer has Touch screen (Off, Mouse, Touch). It's set in Settings, Handheld, Touch screen, and now starts as **Touch** (the pointer goes where you tap) unless you picked something else there. Off still moves the PC's pointer out of the picture.
 - **Identity transfer on release builds (TV):** a release-built MoonCast TV (1.0-beta2, for one) answered with an empty `identityKey`, so a phone or iPad could never send it its identity and a TV with no pairing of its own couldn't play PC games from it. R8 had removed BouncyCastle's X25519 classes, which the provider only loads by name; a keep rule brings them back. Debug builds were never affected.
 - **Store icon:** `ic_launcher-web.png` (the 512 px icon stores and some tools pick up) was still Moonlight's wheel, left from the fork. It's now the MoonCast moon on #1A1630, the same picture the launcher icon shows. Nothing on the device changes.
 

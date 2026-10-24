@@ -1500,9 +1500,9 @@ class HandheldHomeActivity : Activity() {
                 appToggle(list, "hh_rotate", "Screen turns with the device", "Portrait when you hold it upright", true) { applyRotation() }
                 action(list, "set:devapps", "Apps on this ${deviceShort()}", "Pick Android apps to show next to your games (emulators, Steam Link…)",
                         com.limelight.home.DeviceApps.pinned(this).size.let { if (it == 0) "None" else "$it" }) { pickDeviceApps() }
-                // PC games: what a finger on the picture does when a game starts (the Quick menu changes it for that game)
-                choice(list, stream, com.limelight.Game.TOUCH_DEFAULT_PREF, "Touch screen", "In PC games. Mouse is a trackpad, Touch clicks where you tap. The Quick menu changes it while you play",
-                        listOf("Off" to "off", "Mouse" to "mouse", "Touch" to "touch"), "off")
+                // PC games: what a finger on the picture does
+                choice(list, stream, com.limelight.Game.TOUCH_DEFAULT_PREF, "Touch screen", "In PC games. Touch clicks where you tap, Mouse is a trackpad, Off ignores the screen",
+                        listOf("Touch" to "touch", "Mouse" to "mouse", "Off" to "off"), "touch")
                 appToggle(list, "hh_dim_on_tv", "Dim the screen on a TV", "While this ${deviceShort()} is the controller for a TV", true)
                 toggle(list, "checkbox_ultra_low_latency", "Ultra low latency", "Experimental. This device: ${chipName()}", false)
             }

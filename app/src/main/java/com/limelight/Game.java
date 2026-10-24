@@ -524,8 +524,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         InputManager inputManager = (InputManager) getSystemService(Context.INPUT_SERVICE);
         inputManager.registerInputDeviceListener(keyboardTranslator, null);
 
-        // Touch screen starts as Settings, Handheld, Touch screen say (Off unless changed there); the Quick menu
-        // switches it for this stream
+        // Touch screen as Settings, Handheld, Touch screen say (Touch unless changed there)
         setTouchMode(defaultTouchMode());
 
         if (prefConfig.onscreenController) {
@@ -1592,8 +1591,6 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             java.util.List<com.limelight.home.QuickMenu.Item> items = new java.util.ArrayList<>();
             items.add(new com.limelight.home.QuickMenu.Item("⌨", "Keyboard", "On-screen", false, this::toggleKeyboard).asToggle());
             items.add(new com.limelight.home.QuickMenu.Item("ⓘ", "Streaming status", prefConfig.enablePerfOverlay ? "On" : "Off", false, this::toggleStatus).asToggle());
-            items.add(new com.limelight.home.QuickMenu.Item("☝", "Touch screen", TOUCH_LABELS[touchMode], false,
-                    () -> setTouchMode((touchMode + 1) % TOUCH_LABELS.length)).asToggle());
             items.add(new com.limelight.home.QuickMenu.Item("✚", "Controllers", com.limelight.home.QuickMenu.pads().size() + " connected", false, this::showControllers));
             items.add(new com.limelight.home.QuickMenu.Item("▤", "Task Manager", "Windows: Ctrl + Shift + Esc", false, this::openTaskManager));
             // handheld only: send the game to the last MoonCast TV (it ends this stream, the game keeps running)
@@ -1616,17 +1613,16 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         });
     }
 
-    // Quick menu, Touch screen: what a finger on the picture does, for this stream only (every stream starts Off,
-    // so a hand on a handheld's screen can't click on the PC). Mouse is Moonlight's trackpad, Touch puts the pointer
-    // where the finger is. A stylus and a real mouse work in every mode.
+    // Touch screen (Settings, Handheld): what a finger on the picture does. Touch puts the pointer where the finger is
+    // (the default), Mouse is Moonlight's trackpad, Off ignores the finger. A stylus and a real mouse work in every mode.
     private static final int TOUCH_OFF = 0, TOUCH_MOUSE = 1, TOUCH_DIRECT = 2;
     private static final String[] TOUCH_LABELS = {"Off", "Mouse", "Touch"};
-    /** Settings, Handheld, Touch screen: how each stream starts ("off", "mouse" or "touch"). */
+    /** Settings, Handheld, Touch screen: "touch" (default), "mouse" or "off". */
     public static final String TOUCH_DEFAULT_PREF = "mc_touch_default";
     private int touchMode = TOUCH_OFF;
 
     private int defaultTouchMode() {
-        String v = android.preference.PreferenceManager.getDefaultSharedPreferences(this).getString(TOUCH_DEFAULT_PREF, "off");
+        String v = android.preference.PreferenceManager.getDefaultSharedPreferences(this).getString(TOUCH_DEFAULT_PREF, "touch");
         return "mouse".equals(v) ? TOUCH_MOUSE : "touch".equals(v) ? TOUCH_DIRECT : TOUCH_OFF;
     }
 
@@ -2332,7 +2328,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                     return true;
                 }
 
-                // Touch screen Off (the Quick menu's default): a finger on the picture does nothing on the PC
+                // Touch screen Off (Settings, Handheld): a finger on the picture does nothing on the PC
                 if (touchMode == TOUCH_OFF) {
                     return true;
                 }
