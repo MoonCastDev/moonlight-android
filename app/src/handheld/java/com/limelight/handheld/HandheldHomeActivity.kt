@@ -1574,7 +1574,7 @@ class HandheldHomeActivity : Activity() {
                         listOf("Lowest delay" to "latency", "Balanced" to "balanced", "Smoothest" to "smoothness"), "latency")
                 com.limelight.home.StatsLevel.get(this)   // an old on/off answer becomes Off or Detailed first
                 choice(list, stream, com.limelight.home.StatsLevel.PREF, "Stats while playing",
-                        "Lite: frame rate and delay, small at the top. Detailed: every number, in a corner",
+                        "Lite: one row of numbers at the top. Detailed: every number, in a corner",
                         listOf("Off" to "off", "Lite" to "lite", "Detailed" to "detailed"), "off") { com.limelight.home.StatsLevel.set(this, it) }
             }
             "sound" -> {

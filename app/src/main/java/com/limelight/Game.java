@@ -3164,9 +3164,14 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         java.util.List<com.limelight.home.StatsPill.Chip> chips = new java.util.ArrayList<>();
         final CharSequence card;
         if (com.limelight.home.StatsLevel.LITE.equals(statsLevel)) {
-            // Lite: the two numbers that matter, small, at the top
+            // Lite: the one-row card (test259's), centred at the top
             chips.add(new com.limelight.home.StatsPill.Chip(String.format(us, "%.0f", st.getFps()), "fps"));
-            chips.add(new com.limelight.home.StatsPill.Chip(String.valueOf(st.getRttMs()), "ms"));
+            chips.add(new com.limelight.home.StatsPill.Chip(String.valueOf(st.getRttMs()), "ms delay"));
+            chips.add(new com.limelight.home.StatsPill.Chip(String.valueOf(prefConfig.bitrate / 1000), "Mbps"));
+            chips.add(new com.limelight.home.StatsPill.Chip(String.format(us, "%.1f%%", st.getLossPct()), "lost"));
+            chips.add(new com.limelight.home.StatsPill.Chip(String.format(us, "%.1f", st.getDecodeMs()), "ms decode"));
+            String codec = codecName();
+            if (!codec.isEmpty()) chips.add(new com.limelight.home.StatsPill.Chip(codec, ""));
             card = com.limelight.home.StatsPill.text(chips, health);
         } else {
             String codec = codecName();
