@@ -76,14 +76,16 @@ class StatusCorner(private val act: Activity, private val info: () -> String = {
                     "Network delay" -> StatsPill.Chip(v, "network delay")
                     "Picture quality" -> StatsPill.Chip(v, "bitrate")
                     "Lost packets" -> StatsPill.Chip(v, "packets lost on the network")
-                    "Decode time" -> StatsPill.Chip(v, "decode")
+                    "Decode time" -> StatsPill.Chip(v, "decode (queued to decoded)")
+                    "Render wait" -> StatsPill.Chip(v, "render wait (decoded to on screen)")
                     else -> StatsPill.Chip(v, label.lowercase())
                 }
             }
             return StatsPill.detailed(info().ifEmpty { "Streaming" }, rows, StatsPill.health(rtt, loss))
         }
-        val chips = known.map { (v, label) ->
+        val chips = known.mapNotNull { (v, label) ->
             when (label) {
+                "Render wait" -> null   // Lite keeps to one row; Detailed shows it
                 "Frames per second" -> StatsPill.Chip(v, "fps")
                 "Network delay" -> { rtt = StatsPill.num(v); StatsPill.Chip(v.removeSuffix(" ms"), "ms delay") }
                 "Lost packets" -> { loss = StatsPill.num(v); StatsPill.Chip(v, "lost") }
