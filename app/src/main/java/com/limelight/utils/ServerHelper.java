@@ -60,6 +60,15 @@ public class ServerHelper {
         intent.putExtra(Game.EXTRA_PORT, computer.activeAddress.port);
         intent.putExtra(Game.EXTRA_HTTPS_PORT, computer.httpsPort);
         intent.putExtra(Game.EXTRA_APP_NAME, app.getAppName());
+        // MoonCast: the PC was hibernated from the Quick menu and has forgotten its game: open its Desktop, where the
+        // game still is, instead of running the game's command again (PowerResume)
+        String wasPlaying = com.limelight.home.PowerResume.gameName(parent, computer.uuid);
+        NvApp instead = com.limelight.home.PowerResume.instead(parent, computer.uuid, computer.runningGameId, app);
+        if (instead != null) {
+            final String msg = "Resuming " + (wasPlaying != null ? wasPlaying : app.getAppName()) + " on " + computer.name;
+            parent.runOnUiThread(() -> Toast.makeText(parent, msg, Toast.LENGTH_LONG).show());
+            app = instead;
+        }
         intent.putExtra(Game.EXTRA_APP_ID, app.getAppId());
         intent.putExtra(Game.EXTRA_APP_HDR, app.isHdrSupported());
         intent.putExtra(Game.EXTRA_UNIQUEID, managerBinder.getUniqueId());
