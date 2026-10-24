@@ -66,7 +66,10 @@ public class PhoneLink {
                     streams.remove(a);
                     // #41: the last stream screen closed, so nothing is playing any more. A failure stays reported
                     // (with its words) until the next /play, so the sender can still read why.
-                    if (isStream(a) && streams.isEmpty() && !"failed".equals(playState)) playState = "idle";
+                    // Not while a /play from the last 10 s is on its way: the screen it replaced closes after it, and
+                    // the sender read "idle" for seconds before the new stream started (test265).
+                    if (isStream(a) && streams.isEmpty() && !"failed".equals(playState)
+                            && System.currentTimeMillis() - lastPlayAt > 10_000) playState = "idle";
                     // #40: forget the sender, unless a new /play just came in (a game switch: the old screen can
                     // close after the next game's /play has already set the sender)
                     if (isStream(a) && streams.isEmpty() && System.currentTimeMillis() - lastPlayAt > 10_000) PhoneGamepad.forgetPhone();

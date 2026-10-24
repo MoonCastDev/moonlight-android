@@ -2,6 +2,7 @@
 
 ## Unreleased
 - **A stream that doesn't start now gives up with a reason (TV, test258):** a PC game sent to the TV 0.5 s after the sender left its own stream found the PC still holding that session; the TV's player waited in Moonlight's RTSP handshake for about 30 s with /status "starting" and no error. Now, if the stream hasn't started after 15 seconds, the player tries once more; if the second try hasn't started after 15 seconds either, it stops with "<PC> didn't start the stream. It may still be busy with another device; try again in a few seconds", which the sender reads from /status ("failed"). Handheld streams get the same one retry.
+  - /status also no longer says "idle" for a few seconds after a new /play: the player it replaces closing reported it.
 - **TV: Quit game from the sender didn't quit on the PC (Streamer, test258):** a TV that had received an identity (identity transfer) and was then force-stopped kept the session identity files, so after the next start it used them for everything: streams worked as the sender, /mc-native said "paired" though the TV itself isn't paired, and the sender sent no identity. /stop then removed those files *before* quitting, so the quit went out with the TV's own, unpaired identity and the PC refused it ("The client is not authorized"); the game kept running. Now:
   - leftover session identity files are removed when the TV app starts;
   - "paired" in /mc-native is asked of the PC with the identity the TV really has (no optimistic yes before the first answer), and asked again when the identity changes;
