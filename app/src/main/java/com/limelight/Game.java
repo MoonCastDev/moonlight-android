@@ -282,6 +282,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         notificationOverlayView = findViewById(R.id.notificationOverlay);
 
         performanceOverlayView = findViewById(R.id.performanceOverlay);
+        com.limelight.home.StatsPill.style(performanceOverlayView);
 
         inputCaptureProvider = InputCaptureManager.getInputCaptureProvider(this, this);
 
@@ -3141,12 +3142,32 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
     @Override
     public void onPerfUpdate(final String text) {
-        runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                performanceOverlayView.setText(text);
-            }
+        // MoonCast: the stats card (StatsPill) instead of Moonlight's lines of text, from the same once-a-second numbers
+        final com.limelight.home.StreamStats st = com.limelight.home.StreamStats.INSTANCE;
+        java.util.List<com.limelight.home.StatsPill.Chip> chips = new java.util.ArrayList<>();
+        chips.add(new com.limelight.home.StatsPill.Chip(String.format(java.util.Locale.US, "%.0f", st.getFps()), "fps"));
+        chips.add(new com.limelight.home.StatsPill.Chip(String.valueOf(st.getRttMs()), "ms delay"));
+        chips.add(new com.limelight.home.StatsPill.Chip(String.valueOf(prefConfig.bitrate / 1000), "Mbps"));
+        chips.add(new com.limelight.home.StatsPill.Chip(String.format(java.util.Locale.US, "%.1f%%", st.getLossPct()), "lost"));
+        chips.add(new com.limelight.home.StatsPill.Chip(String.format(java.util.Locale.US, "%.1f", st.getDecodeMs()), "ms decode"));
+        String codec = codecName();
+        if (!codec.isEmpty()) chips.add(new com.limelight.home.StatsPill.Chip(codec, ""));
+        final CharSequence card = com.limelight.home.StatsPill.text(chips, com.limelight.home.StatsPill.health(st.getRttMs(), st.getLossPct()));
+        runOnUiThread(() -> {
+            if (!performanceOverlayView.getText().toString().equals(card.toString())) performanceOverlayView.setText(card);
         });
+    }
+
+    /** "H.264", "HEVC" or "AV1", with "4:4:4" and "HDR" when they're on; empty before the stream starts. */
+    private String codecName() {
+        if (decoderRenderer == null) return "";
+        int f = decoderRenderer.getActiveVideoFormat();
+        String c = (f & MoonBridge.VIDEO_FORMAT_MASK_H264) != 0 ? "H.264" : (f & MoonBridge.VIDEO_FORMAT_MASK_H265) != 0 ? "HEVC"
+                : (f & MoonBridge.VIDEO_FORMAT_MASK_AV1) != 0 ? "AV1" : "";
+        if (c.isEmpty()) return c;
+        if ((f & MoonBridge.VIDEO_FORMAT_MASK_YUV444) != 0) c += " 4:4:4";
+        if ((f & MoonBridge.VIDEO_FORMAT_MASK_10BIT) != 0) c += " HDR";
+        return c;
     }
 
     @Override
