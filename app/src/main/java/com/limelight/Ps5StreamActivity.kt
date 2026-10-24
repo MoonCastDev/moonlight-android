@@ -827,10 +827,11 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
             (if (streamRemote) "Over PlayStation Network. " else "On your home network. ") + com.limelight.home.QuickMenu.COMBO_LABEL + " opens this menu",
             { liveStats() },
             listOfNotNull(
-                com.limelight.home.QuickMenu.Item("PS", "PS button", "L2 + Start", false) { tap(ControllerState.BUTTON_PS) },
-                com.limelight.home.QuickMenu.Item("▢", "Touchpad", "Select + Start", false) { tap(ControllerState.BUTTON_TOUCHPAD) },
-                com.limelight.home.QuickMenu.Item("ⓘ", "Streaming status", if (com.limelight.home.StatusCorner.enabled(this)) "On" else "Off", false) { corner.toggle() }.asToggle(),
-                com.limelight.home.QuickMenu.Item("✚", "Controllers", "${com.limelight.home.QuickMenu.pads().size} connected", false) { controllers() },
+                com.limelight.home.QuickMenu.Item("PS", "PS button", "L2 + Start", false) { tap(ControllerState.BUTTON_PS) }.staysOpen("Sent to the PS5"),
+                com.limelight.home.QuickMenu.Item("▢", "Touchpad", "Select + Start", false) { tap(ControllerState.BUTTON_TOUCHPAD) }.staysOpen("Sent to the PS5"),
+                com.limelight.home.QuickMenu.Item("ⓘ", "Streaming status", if (com.limelight.home.StatusCorner.enabled(this)) "On" else "Off", false) { corner.toggle() }
+                        .asToggle().liveDetail { if (com.limelight.home.StatusCorner.enabled(this)) "On" else "Off" },
+                com.limelight.home.QuickMenu.Item("✚", "Controllers", "${com.limelight.home.QuickMenu.pads().size} connected", false) { controllers() }.staysOpen(null),
                 move,
                 com.limelight.home.QuickMenu.Item("←", "Disconnect", disconnectHint(), false) { leave() },
                 com.limelight.home.QuickMenu.Item("Zz", "Put PS5 to rest", "Ends the game", true) { rest() }))
@@ -874,7 +875,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
                     (if (muted) "Muted" else "On") + (com.limelight.home.QuickMenu.battery(d)?.let { ", $it" } ?: ""), false) {
                     if (muted) mutedPads.remove(d.id) else { mutedPads.add(d.id); held.clear(); sendLocal() }
                     controllers()
-                }.asToggle()
+                }.asToggle().staysOpen(null)
             } + listOf(com.limelight.home.QuickMenu.Item("+", "Pair a controller", "Bluetooth settings", false) {
                 com.limelight.home.QuickMenu.pairController(this) }))
     }
