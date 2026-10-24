@@ -54,6 +54,16 @@ object PowerResume {
         return if (desktop.appId == app.appId) null else desktop
     }
 
+    /** A stream just ended with this PC going down (uuid, "hibernate" / "restart" / "shutdown"), for the home. */
+    @Volatile private var wentDown: Pair<String, String>? = null
+
+    @JvmStatic
+    fun wentDown(uuid: String?, kind: String) { if (!uuid.isNullOrEmpty()) wentDown = uuid to kind }
+
+    /** The last [wentDown], once. */
+    @JvmStatic
+    fun takeWentDown(): Pair<String, String>? = wentDown.also { wentDown = null }
+
     /** What the game that was playing is called, for "Resuming X". */
     @JvmStatic
     fun gameName(c: Context, uuid: String?): String? =

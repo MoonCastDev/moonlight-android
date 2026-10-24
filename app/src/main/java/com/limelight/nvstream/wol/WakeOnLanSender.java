@@ -58,6 +58,23 @@ public class WakeOnLanSender {
         }
     }
     
+    /** The broadcast address of every IPv4 network this device is on (Wi-Fi, Ethernet), not loopback. */
+    private static java.util.List<InetAddress> subnetBroadcasts() {
+        java.util.List<InetAddress> out = new java.util.ArrayList<>();
+        try {
+            for (java.net.NetworkInterface ni : java.util.Collections.list(java.net.NetworkInterface.getNetworkInterfaces())) {
+                if (!ni.isUp() || ni.isLoopback()) continue;
+                for (java.net.InterfaceAddress ia : ni.getInterfaceAddresses()) {
+                    InetAddress b = ia.getBroadcast();
+                    if (b != null && !out.contains(b)) out.add(b);
+                }
+            }
+        } catch (Exception e) {
+            LimeLog.warning("WoL: no interface list: " + e);
+        }
+        return out;
+    }
+
     public static void sendWolPacket(ComputerDetails computer) throws IOException {
         byte[] payload = createWolPayload(computer);
         IOException lastException = null;
@@ -81,6 +98,17 @@ public class WakeOnLanSender {
                 } catch (IOException e) {
                     e.printStackTrace();
                     lastException = e;
+                }
+
+                // MoonCast: also each local network's own broadcast address (192.168.1.255 and the like). Some Wi-Fi
+                // access points drop 255.255.255.255 but pass a subnet broadcast to the wired side.
+                for (InetAddress bcast : subnetBroadcasts()) {
+                    try {
+                        sendPacketsForAddress(bcast, address.port, sock, payload);
+                        sentWolPacket = true;
+                    } catch (IOException e) {
+                        lastException = e;
+                    }
                 }
 
                 try {
