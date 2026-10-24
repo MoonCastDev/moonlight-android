@@ -100,6 +100,10 @@ public class PhoneLink {
         this.ctx = ctx.getApplicationContext();
         this.listener = listener;
         track(this.ctx);
+        // A sent identity lives for one session in this process. Files left from an earlier run (the app was stopped
+        // without closing, e.g. force-stopped) would otherwise be used for everything after: streaming worked as the
+        // sender, /mc-native said "paired", and the next /stop removed them halfway (test258 on the Streamer).
+        if (sessionPcUuid == null) endSessionIdentity(this.ctx);
     }
 
     public void start() { new Thread(this::serve, "mc-phone-link").start(); }
@@ -205,7 +209,6 @@ public class PhoneLink {
                 } else if ((appId != null || appName != null) && play(appId, appName, from)) send(s, 200, "{\"ok\":1}");
                 else send(s, 400, "{\"error\":\"no app id, or no paired PC\"}");
             } else if ("POST".equals(method) && path.startsWith("/stop")) {
-                endSessionIdentity(ctx);
                 // The sender takes its game back (Play here instead) or stops: end the stream it started here and go
                 // home. Disconnect only; {"quit":true} quits the game on the PC too. Only the sender of the last
                 // /play may do this (it presents the same padKey).
@@ -216,6 +219,8 @@ public class PhoneLink {
                     boolean quit = json.replace(" ", "").contains("\"quit\":true");
                     stopStreams(quit);
                     send(s, 200, "{\"ok\":1}");
+                    // after the streams were told to stop: Quit game still uses the identity its stream connected with
+                    endSessionIdentity(ctx);
                 }
             } else if ("POST".equals(method) && path.startsWith("/pad")) {
                 // The sender's direct controller session didn't connect: relay its pad through this TV after all.
@@ -281,14 +286,15 @@ public class PhoneLink {
      */
     private boolean pairedNow(ComputerDetails pc) {
         if (pc == null || pc.serverCert == null) return false;
-        if (checking.compareAndSet(false, true)) {
+        if (pcAccepts != null && checking.compareAndSet(false, true)) {
             final ComputerDetails target = pc;
             new Thread(() -> {
                 try { pcAccepts = pcAcceptsUs(target); } finally { checking.set(false); }
             }).start();
         }
         Boolean last = pcAccepts;
-        return last == null || last;
+        if (last == null) last = pcAccepts = pcAcceptsUs(pc);   // not asked yet with this identity: ask now, not guess yes
+        return last;
     }
 
     private boolean pcAcceptsUs(ComputerDetails pc) {
@@ -331,6 +337,8 @@ public class PhoneLink {
             pc.state = ComputerDetails.State.ONLINE;
             ComputerDatabaseManager db = new ComputerDatabaseManager(ctx);
             try { db.updateComputer(pc); } finally { db.close(); }
+            pcAccepts = null;   // a new identity: whether the PC takes it is asked again
+            com.limelight.LimeLog.info("Session identity accepted for " + pc.name);
             sessionPcUuid = pc.uuid;
             com.limelight.computers.ComputerManagerService.addSessionComputer(pc);
             return true;
@@ -350,8 +358,9 @@ public class PhoneLink {
 
     /** Removes the session identity and its PC entry. Called when the stream stops and when the TV app closes. */
     public static void endSessionIdentity(Context c) {
-        new java.io.File(c.getFilesDir(), "session-client.crt").delete();
+        boolean had = new java.io.File(c.getFilesDir(), "session-client.crt").delete();
         new java.io.File(c.getFilesDir(), "session-client.key").delete();
+        if (had) { pcAccepts = null; com.limelight.LimeLog.info("Session identity removed: this TV uses its own again"); }
         String uuid = sessionPcUuid;
         sessionPcUuid = null;
         if (uuid != null) {
