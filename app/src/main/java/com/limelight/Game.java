@@ -442,6 +442,14 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             if (willStreamHdr && decoderRenderer.isHevcMain10Hdr10Supported()) {
                 supportedVideoFormats |= MoonBridge.VIDEO_FORMAT_H265_MAIN10;
             }
+            // MoonCast: Settings, Picture, YUV 4:4:4 (HEVC). The PC picks 4:4:4 only when it has it too.
+            if (com.limelight.home.Yuv444.wanted(this) && com.limelight.home.Yuv444.deviceCan()) {
+                supportedVideoFormats |= MoonBridge.VIDEO_FORMAT_H265_REXT8_444;
+                if ((supportedVideoFormats & MoonBridge.VIDEO_FORMAT_H265_MAIN10) != 0) {
+                    supportedVideoFormats |= MoonBridge.VIDEO_FORMAT_H265_REXT10_444;
+                }
+                LimeLog.info("Asking the PC for HEVC 4:4:4");
+            }
         }
         if (decoderRenderer.isAv1Supported()) {
             supportedVideoFormats |= MoonBridge.VIDEO_FORMAT_AV1_MAIN8;
