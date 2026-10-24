@@ -1858,6 +1858,31 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         }
     }
 
+    private static final long START_TIMEOUT_MS = 15_000;
+    public static final String EXTRA_START_RETRY = "mc_start_retry";
+
+    private final Runnable startWatchdog = () -> {
+        if (connected || isFinishing() || displayedFailureDialog) return;
+        final String pc = pcName != null ? pcName : "The PC";
+        if (!getIntent().getBooleanExtra(EXTRA_START_RETRY, false)) {
+            LimeLog.warning("Stream didn't start in " + START_TIMEOUT_MS / 1000 + " s: trying once more");
+            Toast.makeText(this, pc + " didn't answer yet. Trying again…", Toast.LENGTH_SHORT).show();
+            Intent again = new Intent(getIntent()).putExtra(EXTRA_START_RETRY, true);
+            displayedFailureDialog = true;   // this attempt ends quietly; the new one starts fresh
+            endedByUser = true;
+            finish();
+            startActivity(again);
+            return;
+        }
+        LimeLog.warning("Stream didn't start after a retry: giving up");
+        String msg = pc + " didn't start the stream. It may still be busy with another device; try again in a few seconds.";
+        com.limelight.home.StreamReport.failed(msg);
+        displayedFailureDialog = true;
+        endedByUser = true;
+        Toast.makeText(this, msg, Toast.LENGTH_LONG).show();
+        finish();
+    };
+
     /** The identity this stream connected with (see onCreate). */
     private com.limelight.nvstream.http.LimelightCryptoProvider streamCrypto;
 
@@ -2975,6 +3000,10 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                     fsr = null;
                 }
             }
+            // MoonCast: a PC still busy with another device's session can leave the start hanging (the RTSP handshake
+            // waited ~30 s on the TV, test258, with the sender seeing "starting" and no error). Retry once, then give up
+            // with a clear message.
+            new Handler(getMainLooper()).postDelayed(startWatchdog, START_TIMEOUT_MS);
             conn.start(new AndroidAudioRenderer(Game.this, prefConfig.enableAudioFx),
                     decoderRenderer, Game.this);
         }
