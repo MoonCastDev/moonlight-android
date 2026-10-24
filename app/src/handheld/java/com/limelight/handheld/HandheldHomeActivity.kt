@@ -1664,7 +1664,10 @@ class HandheldHomeActivity : Activity() {
                 info(list, "Touchpad", "Select + Start")
             }
             "xbox" -> {
-                if (Xbox.signedIn(this)) action(list, "xbox", "Xbox network", "Signed in" + (Xbox.gamertag(this)?.let { " as $it" } ?: ""), "Sign out") {
+                if (Xbox.noProfile(this)) action(list, "xbox", "Xbox network", "Signed in, no Xbox profile. Sign out, then sign in with the account you use on your Xbox", "Sign out") {
+                    confirm("Sign out of Xbox?", "This Microsoft account has no Xbox profile. Sign out to start fresh with another account.", "Sign out", yesPicked = true) {
+                        Xbox.signOut(this); xboxes = emptyList(); render(force = true) } }
+                else if (Xbox.signedIn(this)) action(list, "xbox", "Xbox network", "Signed in" + (Xbox.gamertag(this)?.let { " as $it" } ?: ""), "Sign out") {
                     confirm("Sign out of Xbox?", "Your Xbox consoles leave this device until you sign in again.", "Sign out") {
                         Xbox.signOut(this); xboxes = emptyList(); render(force = true) } }
                 else action(list, "xbox", "Xbox network", "Sign in once to play your Xbox here, at home or away", "Sign in") { xboxSignIn() }
@@ -2249,8 +2252,10 @@ class HandheldHomeActivity : Activity() {
         val code = sw.text("", 80, sw.ink, 800).apply { letterSpacing = 0.12f; gravity = Gravity.CENTER }
         card.addView(code, sw.lp(-1, -2).apply { topMargin = sw.px(26); bottomMargin = sw.px(10) })
         var url: String? = null
-        buttons(card, listOf("Cancel" to {}, "Open the page" to {
-            url?.let { u -> try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(u))) } catch (e: Exception) { toast("Open $u in a browser") } }
+        // the page opens inside MoonCast with no remembered Microsoft account, the code already filled in
+        buttons(card, listOf("Cancel" to { com.limelight.home.XboxSignInActivity.close() }, "Open the page" to {
+            url?.let { u -> startActivity(Intent(this, com.limelight.home.XboxSignInActivity::class.java)
+                    .putExtra(com.limelight.home.XboxSignInActivity.EXTRA_URL, u)) }
             Unit
         }), keepOpenLast = true)
         showOverlay("xbox", card)
@@ -2258,8 +2263,8 @@ class HandheldHomeActivity : Activity() {
             try {
                 val dc = Xbox.startSignIn()
                 runOnUiThread {
-                    url = dc.url
-                    sub.text = "Open ${dc.url.removePrefix("https://").removePrefix("www.")} (here or on another device), enter this code, and sign in with your Xbox account."
+                    url = Xbox.linkUrl(dc)
+                    sub.text = "Open the page (here, or ${dc.url.removePrefix("https://").removePrefix("www.")} on another device), enter this code, and sign in with the account you use on your Xbox."
                     code.text = dc.userCode
                 }
                 val end = System.currentTimeMillis() + dc.expiresIn * 1000L
@@ -2267,11 +2272,13 @@ class HandheldHomeActivity : Activity() {
                     Thread.sleep(dc.interval * 1000L)
                     if (overlayKind != "xbox") return@Thread
                     if (Xbox.pollSignIn(this, dc)) {
+                        com.limelight.home.XboxSignInActivity.close()
                         val list = try { Xbox.refreshConsoles(this) } catch (e: Exception) { emptyList() }
                         runOnUiThread {
                             xboxes = list
                             if (overlayKind == "xbox") hideOverlay()
-                            toast("Signed in to Xbox" + (Xbox.gamertag(this)?.let { " as $it" } ?: "") +
+                            toast(if (Xbox.unverified(this)) "Signed in, but Xbox network couldn't be reached to check the account. Try Find my Xbox in a moment"
+                                  else "Signed in to Xbox" + (Xbox.gamertag(this)?.let { " as $it" } ?: "") +
                                     if (list.isEmpty()) ". No console found yet" else ". Found " + list.joinToString { it.name })
                             render(force = true)
                         }
@@ -2279,6 +2286,13 @@ class HandheldHomeActivity : Activity() {
                     }
                 }
                 runOnUiThread { if (overlayKind == "xbox") { sub.text = "The code expired. Cancel and try again."; code.text = "" } }
+            } catch (e: Xbox.ProfileError) {
+                // the account can't use Xbox: nothing is kept, and the next try starts with no account remembered
+                com.limelight.home.XboxSignInActivity.close()
+                runOnUiThread {
+                    if (overlayKind == "xbox") { sub.text = e.message; code.text = "" }
+                    render(force = true)
+                }
             } catch (e: Exception) {
                 runOnUiThread { if (overlayKind == "xbox") sub.text = "Sign-in didn't work: ${e.message?.take(120) ?: e.javaClass.simpleName}" }
             }

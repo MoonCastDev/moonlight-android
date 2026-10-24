@@ -938,6 +938,8 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                     }
                 }
                 runOnUiThread { if (overlayKind == "xbox") { sub.text = "The code expired. Press B and try again."; code.text = "" } }
+            } catch (e: Xbox.ProfileError) {
+                runOnUiThread { if (overlayKind == "xbox") { sub.text = e.message; code.text = "" }; render(force = true) }
             } catch (e: Exception) {
                 runOnUiThread { if (overlayKind == "xbox") sub.text = "Sign-in didn't work: ${e.message?.take(120) ?: e.javaClass.simpleName}" }
             }
@@ -1103,7 +1105,8 @@ class HomeActivity : Activity(), PhoneLink.Listener {
             }
             "xbox" -> {
                 if (Xbox.signedIn(this)) action(list, "set:xbox", "Xbox network",
-                        "Signed in" + (Xbox.gamertag(this)?.let { " as $it" } ?: "") + ". Your consoles show under Consoles", "Sign out") {
+                        if (Xbox.noProfile(this)) "Signed in, no Xbox profile. Sign out, then sign in with the account you use on your Xbox"
+                        else "Signed in" + (Xbox.gamertag(this)?.let { " as $it" } ?: "") + ". Your consoles show under Consoles", "Sign out") {
                     confirm("Sign out of Xbox?", "Your Xbox consoles leave this TV until you sign in again.", "Sign out") {
                         Xbox.signOut(this); xboxes = emptyList(); render(force = true) } }
                 else action(list, "set:xbox", "Xbox network", "Sign in once to play your Xbox on this TV, at home or away", "Sign in") { xboxSignIn() }

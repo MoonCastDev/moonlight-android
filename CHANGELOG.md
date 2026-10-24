@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- **Xbox sign-in with an account that has no Xbox profile (test266, Saleh: "you can't sign out to start fresh"):** the sign-in kept the Microsoft account even when Xbox network refused it, so it ended "Signed in" with no gamertag, and signing in again went straight back to the same account because the phone's browser was still signed in to it. Now:
+  - **Handheld:** "Open the page" opens Microsoft's page inside MoonCast, with the code already filled in and no Microsoft account remembered (a fresh start every time). It closes by itself once you're signed in; Close goes back to the code. Sign out forgets that page's account too.
+  - Right after the sign-in MoonCast asks Xbox network about the account. If it has no Xbox profile, is a child account not yet in a family, or can't use Xbox network in its country, nothing is kept and the card says so in plain words ("This Microsoft account has no Xbox profile. Sign in with the account you use on your Xbox."). If Xbox network can't be reached, the sign-in is kept and it says it couldn't check.
+  - Someone already in that state sees Settings, Xbox: "Signed in, no Xbox profile", and Sign out is picked in its question. Same words on the TV, which also gets the check (its page is on another device, so the browser part doesn't apply).
 - **Xbox closed as soon as it connected (Odin, beta 3, Saleh):** libwebrtc hands MoonCast's low-latency H.264 decoder wrapper a null `DecodeInfo` with a frame; the Kotlin override declared it non-null, so the first frame threw (`NullPointerException … LowLatencyDecoder.decode, parameter info`) and the player closed. The parameter is nullable now and is passed on as is.
 
 ## 1.0-beta3 (2026-10-24)
