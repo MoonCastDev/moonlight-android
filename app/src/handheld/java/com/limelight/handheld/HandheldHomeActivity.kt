@@ -510,7 +510,7 @@ class HandheldHomeActivity : Activity() {
         sw.touchFirst = !hasController()
         sw.bars = systemBarSizes()
         root = FrameLayout(this).apply { setBackgroundColor(sw.bg) }
-        wash = Wash(this)
+        wash = Wash(this).apply { still = prefs.getString("hh_backdrop", "game") == "static" }
         root.addView(wash, FrameLayout.LayoutParams(-1, -1))
         main = sw.col().apply { clipChildren = false }
 
@@ -1680,6 +1680,13 @@ class HandheldHomeActivity : Activity() {
                         Triple("light", "Light", "Light grey, dark type"))) {
                     srow(list, "theme:$key", title, sub, if (cur == key) value("On") else null) {
                         if (cur != key) { prefs.edit().putString("hh_theme", key).apply(); recreate() } }
+                }
+                // the background: the selected game's colour washed over it, or the theme's own plain colour
+                val bd = prefs.getString("hh_backdrop", "game")
+                for ((key, title, sub) in listOf(Triple("game", "Background: follows the game", "The selected game's colour washes over the background"),
+                        Triple("static", "Background: static", "The theme's plain background" + if (sw.oled) " (pure black)" else ""))) {
+                    srow(list, "backdrop:$key", title, sub, if (bd == key) value("On") else null) {
+                        if (bd != key) { prefs.edit().putString("hh_backdrop", key).apply(); wash.still = key == "static"; render(force = true) } }
                 }
             }
             "about" -> if (licencesOpen) licences(list) else {

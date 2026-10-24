@@ -370,11 +370,14 @@ class BiasFrame(ctx: Context, private val bias: Float) : FrameLayout(ctx) {
 
 /** A radial wash of the selected game's colour behind everything, as in the feel mockup. */
 class Wash(ctx: Context) : View(ctx) {
+    /** Settings, Theme, Background: Static keeps the theme's plain background, with no wash. */
+    var still = false
+        set(v) { field = v; invalidate() }
     var color = 0
         set(v) { field = v; invalidate() }
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     override fun onDraw(cv: Canvas) {
-        if (color == 0 || width == 0) return
+        if (still || color == 0 || width == 0) return
         val a = (0.26f * 255).toInt()
         val c0 = (a shl 24) or (color and 0xFFFFFF)
         p.shader = RadialGradient(width * 0.3f, height * 0.4f, maxOf(width, height) * 0.6f, intArrayOf(c0, color and 0xFFFFFF), null, Shader.TileMode.CLAMP)
