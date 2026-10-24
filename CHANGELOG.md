@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- **Power (Quick menu) now runs the command (test259, Saleh):** Start opened and the command was typed, but Enter opened Start search's best match instead of running it. MoonCast now goes through Start to the **Run** box (Ctrl + Esc, types "run", Enter), then selects what's in Run, types the command and presses Enter. Known limit: "run" finds the Run app on English Windows; Windows in another display language may call it something else.
 - **OLED theme (handheld):** Settings, Theme has a third choice, **OLED**: a pure black background (an OLED screen turns those pixels off, which saves battery), very dark grey panels and tiles, the same white type and cyan ring. The in-game Quick menu and the licence pages follow it.
 - **Stats while playing, new look (PC, PS5, Xbox):** one compact card in the top-left corner instead of lines of text: a dot (green, amber or red by delay and loss), then the numbers in a row, big and bold with small labels: fps, delay, Mbps, lost, decode and, on PC, the codec ("HEVC", "HEVC 4:4:4", "AV1 HDR"). It keeps clear of a camera cutout and only redraws when a number changes. The Quick menu's Streaming status still turns it on and off.
 - **"HEVC" instead of "H.265"** in Settings (Picture, PlayStation, Away) and the PS5's stream info, on the handheld and the TV. Saved choices don't change.
