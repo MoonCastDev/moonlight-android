@@ -505,7 +505,8 @@ class HandheldHomeActivity : Activity() {
 
     private fun buildShell() {
         portrait = isPortrait()
-        sw = Sw(this, prefs.getString("hh_theme", "dark") == "light", portrait, Sw.pick(this, portrait, prefs.getString("hh_screen_size", "auto")))
+        val theme = prefs.getString("hh_theme", "dark")
+        sw = Sw(this, theme == "light", portrait, Sw.pick(this, portrait, prefs.getString("hh_screen_size", "auto")), theme == "oled")
         sw.touchFirst = !hasController()
         sw.bars = systemBarSizes()
         root = FrameLayout(this).apply { setBackgroundColor(sw.bg) }
@@ -1670,11 +1671,13 @@ class HandheldHomeActivity : Activity() {
                 toggle(list, "xbox_coop", "Two players", "A second controller plays as player 2", false)
             }
             "theme" -> {
-                val light = sw.light
-                srow(list, "theme:dark", "Dark", "Charcoal, white type", if (!light) value("On") else null) {
-                    if (light) { prefs.edit().putString("hh_theme", "dark").apply(); recreate() } }
-                srow(list, "theme:light", "Light", "Light grey, dark type", if (light) value("On") else null) {
-                    if (!light) { prefs.edit().putString("hh_theme", "light").apply(); recreate() } }
+                val cur = if (sw.light) "light" else if (sw.oled) "oled" else "dark"
+                for ((key, title, sub) in listOf(Triple("dark", "Dark", "Charcoal, white type"),
+                        Triple("oled", "OLED", "Pure black, for OLED screens: black pixels are off, which saves battery"),
+                        Triple("light", "Light", "Light grey, dark type"))) {
+                    srow(list, "theme:$key", title, sub, if (cur == key) value("On") else null) {
+                        if (cur != key) { prefs.edit().putString("hh_theme", key).apply(); recreate() } }
+                }
             }
             "about" -> if (licencesOpen) licences(list) else {
                 val ver = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (e: Exception) { "" }
