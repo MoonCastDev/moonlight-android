@@ -63,7 +63,9 @@ private class LowLatencyDecoder(private val delegate: VideoDecoder, private val 
         return delegate.initDecode(settings, callback)
     }
     override fun release(): VideoCodecStatus = delegate.release()
-    override fun decode(frame: EncodedImage, info: VideoDecoder.DecodeInfo): VideoCodecStatus = delegate.decode(frame, info)
+    // libwebrtc passes a null DecodeInfo (seen on the Odin 2 Portal's c2.qti.avc.decoder): a non-null Kotlin parameter
+    // threw on the first frame and the player closed as soon as the Xbox connected
+    override fun decode(frame: EncodedImage, info: VideoDecoder.DecodeInfo?): VideoCodecStatus = delegate.decode(frame, info)
     override fun getImplementationName(): String = delegate.implementationName + "+mooncast-low-latency"
 
     private fun patch() {
