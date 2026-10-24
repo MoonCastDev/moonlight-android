@@ -145,8 +145,25 @@ public class PhoneLink {
             if (has.size() == 1) return has.get(0);
             if (!has.isEmpty()) pool = has;
         }
+        if (pool.size() > 1 && appName != null) {   // for a /play: a PC that answers beats one that's off
+            List<ComputerDetails> up = new java.util.ArrayList<>();
+            for (ComputerDetails c : pool) if (answers(c)) up.add(c);
+            if (!up.isEmpty()) pool = up;
+        }
         for (ComputerDetails c : pool) if (c.uuid != null && c.uuid.equals(last)) return c;
         return pool.get(0);
+    }
+
+    /** The PC's http port takes a connection within 0.8 s. */
+    private static boolean answers(ComputerDetails c) {
+        ComputerDetails.AddressTuple a = c.localAddress != null ? c.localAddress : c.activeAddress;
+        if (a == null) return false;
+        try (java.net.Socket sock = new java.net.Socket()) {
+            sock.connect(new InetSocketAddress(a.address, a.port), 800);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private void serve() {
