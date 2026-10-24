@@ -806,7 +806,8 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
             lastLossPct = 100.0 * (v[5] - lastLost) / (v[4] + v[5] - lastShown - lastLost)
         lastShown = v[4]; lastLost = v[5]; lastAt = now
         val decodeMs = if (v.size > 6) v[6] else 0.0
-        Log.d(TAG, "stats mbps=${v[0]} loss=${v[1]} rtt=${v[2]} rtt0=${v[3]} shown=${v[4]} lost=${v[5]} decode=${"%.2f".format(java.util.Locale.US, decodeMs)}ms")
+        val renderMs = if (v.size > 7) v[7] else 0.0   // decoded -> on screen (Android 13+); 0 = not known
+        Log.d(TAG, "stats mbps=${v[0]} loss=${v[1]} rtt=${v[2]} rtt0=${v[3]} shown=${v[4]} lost=${v[5]} decode=${"%.2f".format(java.util.Locale.US, decodeMs)}ms render=${"%.2f".format(java.util.Locale.US, renderMs)}ms")
         val loss = maxOf(v[1] * 100.0, lastLossPct)
         val rtt = if (v[3] > 1.0) v[3] else 0.0   // chiaki uses 1 ms when it couldn't measure
         return listOf(
@@ -814,7 +815,8 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
             (if (rtt > 0) "%.0f ms".format(java.util.Locale.US, rtt) else "…") to "Network delay",
             (if (v[0] > 0) "%.1f Mbps".format(java.util.Locale.US, v[0]) else "…") to "Picture quality",
             "%.1f%%".format(java.util.Locale.US, loss) to "Lost packets",
-            (if (decodeMs > 0) "%.1f ms".format(java.util.Locale.US, decodeMs) else "…") to "Decode time")
+            (if (decodeMs > 0) "%.1f ms".format(java.util.Locale.US, decodeMs) else "…") to "Decode time",
+            (if (renderMs > 0) "%.1f ms".format(java.util.Locale.US, renderMs) else "…") to "Render wait")
     }
 
     private fun openMenu() {
