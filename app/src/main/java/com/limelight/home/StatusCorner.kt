@@ -23,7 +23,7 @@ class StatusCorner(private val act: Activity, private val info: () -> String = {
             val v = view ?: return
             val line = line()
             if (v.text.toString() != line.toString()) v.text = line   // a new text lays the player out again: only when it changed
-            val vis = if (line.isEmpty()) android.view.View.GONE else android.view.View.VISIBLE
+            val vis = if (line.isEmpty() || hidden) android.view.View.GONE else android.view.View.VISIBLE
             if (v.visibility != vis) v.visibility = vis
             ui.postDelayed(this, 1000)
         }
@@ -40,6 +40,10 @@ class StatusCorner(private val act: Activity, private val info: () -> String = {
     }
 
     fun stop() { ui.removeCallbacks(tick) }
+
+    /** Hidden while the stream is in a picture-in-picture window. */
+    var hidden = false
+        set(v) { field = v; if (v) view?.visibility = android.view.View.GONE }
 
     private fun set(lv: String) {
         level = lv

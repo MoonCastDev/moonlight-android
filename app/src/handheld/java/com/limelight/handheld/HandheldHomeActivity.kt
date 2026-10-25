@@ -1535,6 +1535,7 @@ class HandheldHomeActivity : Activity() {
                 // PC games: what a finger on the picture does
                 choice(list, stream, com.limelight.Game.TOUCH_DEFAULT_PREF, "Touch screen", "In PC games. Touch clicks where you tap, Mouse is a trackpad, Off ignores the screen",
                         listOf("Touch" to "touch", "Mouse" to "mouse", "Off" to "off"), "touch")
+                toggle(list, com.limelight.home.Pip.PREF, "Picture in picture", "Going Home during a game keeps it playing in a small window; closing the window ends the stream (the game keeps running)", false)
                 appToggle(list, "hh_dim_on_tv", "Dim the screen on a TV", "While this ${deviceShort()} is the controller for a TV", true)
             }
             "picture" -> {

@@ -492,6 +492,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
             is ConnectedEvent -> {
                 Log.i(TAG, "PS5 connected"); connected = true
                 com.limelight.home.StreamReport.playing()
+                com.limelight.home.Pip.arm(this)
                 stopProgressWatch(); showStatus(null); attemptLatch?.countDown()
             }
             is QuitEvent -> {
@@ -911,7 +912,16 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
     // MoonCast) and the PS5 - one Remote Play session at a time - refuses the next device with "Remote is already in use".
     override fun onStop() {
         super.onStop()
-        if (!isChangingConfigurations && !isFinishing) finish()
+        if (!isChangingConfigurations && !isFinishing) finish()   // also when its picture-in-picture window is closed
+    }
+
+    // Settings, Handheld, Picture in picture: Home keeps the stream in a small window, without the overlays
+    override fun onUserLeaveHint() { super.onUserLeaveHint(); com.limelight.home.Pip.onLeave(this) }
+
+    override fun onPictureInPictureModeChanged(inPip: Boolean, newConfig: android.content.res.Configuration) {
+        super.onPictureInPictureModeChanged(inPip, newConfig)
+        corner.hidden = inPip
+        if (inPip && menu.isShowing) menu.hide()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
