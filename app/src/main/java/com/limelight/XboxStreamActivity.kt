@@ -496,6 +496,14 @@ class XboxStreamActivity : Activity(), com.limelight.home.MoveToTv.LocalSession 
             f(st.lossPct, "%.1f%%") to "Lost packets")
     }
 
+    /** Quick menu, Bitrate: the new cap is saved; leave and connect again with it (the game keeps running). */
+    private fun reconnectForBitrate() {
+        android.widget.Toast.makeText(this, "Changing bitrate…", android.widget.Toast.LENGTH_SHORT).show()
+        val again = android.content.Intent(intent)
+        finish()
+        startActivity(again)
+    }
+
     private fun openMenu() {
         if (isFinishing) return
         sendNeutral()
@@ -505,6 +513,8 @@ class XboxStreamActivity : Activity(), com.limelight.home.MoveToTv.LocalSession 
             QuickMenu.Item("⊗", "Xbox button", "Opens the guide", false) { tapGuide() }.staysOpen("Sent to the Xbox"),
             QuickMenu.Item("ⓘ", "Streaming status", com.limelight.home.StatsLevel.label(com.limelight.home.StatsLevel.get(this)), false) { corner.toggle() }
                     .asToggle().liveDetail { com.limelight.home.StatsLevel.label(com.limelight.home.StatsLevel.get(this)) },
+            com.limelight.home.QuickBitrate.item(menu, this, "xb",
+                    android.preference.PreferenceManager.getDefaultSharedPreferences(this).getInt("xbox_bitrate", 0), { openMenu() }, { reconnectForBitrate() }),
             move,
             QuickMenu.Item("←", "Disconnect", "The game keeps running", false) { finish() },
             QuickMenu.Item("◉", "Turn off the Xbox", "Ends the game", true) { turnOff() }))
