@@ -1581,14 +1581,16 @@ class HandheldHomeActivity : Activity() {
                         stream.edit().putString("list_fps", "120").apply()
                 }
                 bitrate(list)
-                // any bitrate, like Moonlight's slider: 0.5 to 150 Mbps in 0.5 steps
+                // any bitrate, like Moonlight's slider: 0.5 to 1000 Mbps in 0.5 steps
                 val kbps = stream.getInt("seekbar_bitrate_kbps", 0)
                 val customRate = kbps != 0 && (kbps / 1000 !in BITRATE_STEPS || kbps % 1000 != 0)
-                action(list, "seekbar_bitrate_kbps-custom", "Custom bitrate", "Any bitrate from 0.5 to 150 Mbps", if (customRate) mbps(kbps) else "Off") {
-                    entry("Custom bitrate", "In Mbps, from 0.5 to 150. Higher looks better and needs a faster network.", "For example 25",
+                val maxRate = com.limelight.home.QuickBitrate.PC_MAX_MBPS
+                action(list, "seekbar_bitrate_kbps-custom", "Custom bitrate", "Any bitrate from 0.5 to $maxRate Mbps", if (customRate) mbps(kbps) else "Off") {
+                    entry("Custom bitrate", "In Mbps, from 0.5 to $maxRate. Higher looks better and needs a faster network. " +
+                            "Above ${com.limelight.home.QuickBitrate.HIGH_MBPS}: ${com.limelight.home.QuickBitrate.HIGH_HINT}.", "For example 25",
                             if (customRate) mbps(kbps).removeSuffix(" Mbps") else "", "decimal") { raw ->
                         val v = raw.trim().replace(',', '.').toDoubleOrNull()
-                        if (v == null || v < 0.5 || v > 150) "A number from 0.5 to 150."
+                        if (v == null || v < 0.5 || v > maxRate) "A number from 0.5 to $maxRate."
                         else { stream.edit().putInt("seekbar_bitrate_kbps", (Math.round(v * 2) * 500).toInt()).apply(); render(force = true); null }
                     }
                 }
@@ -1867,7 +1869,7 @@ class HandheldHomeActivity : Activity() {
         val kbps = stream.getInt("seekbar_bitrate_kbps", 0)
         val cur = kbps / 1000
         val custom = kbps != 0 && (cur !in BITRATE_STEPS || kbps % 1000 != 0)
-        srow(list, "seekbar_bitrate_kbps", "Bitrate", "Auto picks one for the resolution", value(if (kbps == 0) "Auto" else if (custom) "Custom" else "$cur Mbps")) {
+        srow(list, "seekbar_bitrate_kbps", "Bitrate", com.limelight.home.QuickBitrate.highHint(kbps) ?: "Auto picks one for the resolution", value(if (kbps == 0) "Auto" else if (custom) "Custom" else "$cur Mbps")) {
             val next = steps[(steps.indexOf(steps.firstOrNull { it >= cur } ?: 0) + 1) % steps.size]
             if (next == 0) stream.edit().remove("seekbar_bitrate_kbps").apply() else stream.edit().putInt("seekbar_bitrate_kbps", next * 1000).apply()
             render(force = true)
@@ -2709,7 +2711,7 @@ class HandheldHomeActivity : Activity() {
     companion object {
         /** The fixed resolution steps; anything else saved was a screen's own size (Native). */
         /** Bitrate's steps in Mbps (Auto is 0); anything else saved is a Custom bitrate. */
-        val BITRATE_STEPS = listOf(10, 20, 30, 50, 80)
+        val BITRATE_STEPS = com.limelight.home.QuickBitrate.PC_STEPS
         val RES_STEPS = listOf("720p" to "1280x720", "1080p" to "1920x1080", "1440p" to "2560x1440", "4K" to "3840x2160")
 
         private const val STATE_PAGE = "hh_page"
