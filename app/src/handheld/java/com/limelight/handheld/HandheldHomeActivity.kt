@@ -492,19 +492,33 @@ class HandheldHomeActivity : Activity() {
      * up to ten, before "All games".
      */
     private fun homeGames(): List<Game> {
-        val all = allGames()
-        val byKey = all.associateBy { it.key }
-        val recent = Recents.list(this).mapNotNull { byKey[it] }
+        // Home shows one tile per paired PC, not every PC game (Saleh): a PC tile opens All games on that PC's tab.
+        // A PC game in Recents brings its PC's tile forward; the games themselves stay in All games.
+        val all = allGames().filter { it.pc == null }
+        val pcTiles = pcs.values.filter { paired(it) }.sortedBy { it.name.lowercase() }
+                .map { pc -> Game("pcbox:${pc.uuid}", pc.name, "PC", pc.name, pc.runningGameId != 0, pc = pc) }
+        val byKey = all.associateBy { it.key } + pcTiles.associateBy { it.key }
+        fun forKey(k: String) = if (k.startsWith("pc:")) byKey["pcbox:" + k.removePrefix("pc:").substringBefore(':')] else byKey[k]
+        val recent = Recents.list(this).mapNotNull { forKey(it) }
         val ordered = LinkedHashMap<String, Game>()
-        all.filter { it.running }.forEach { ordered[it.key] = it }
+        (pcTiles + all).filter { it.running }.forEach { ordered[it.key] = it }
         recent.take(5).forEach { ordered[it.key] = it }
         all.filter { it.ps != null || it.xb != null }.forEach { ordered[it.key] = it }
         all.filter { it.dev != null }.forEach { ordered[it.key] = it }
-        val kept = ordered.size
+        pcTiles.forEach { ordered[it.key] = it }
         recent.forEach { ordered[it.key] = it }
-        all.filter { it.pc != null }.sortedBy { it.title.lowercase() }.forEach { ordered[it.key] = it }
-        return ordered.values.take(maxOf(10, kept))
+        return ordered.values.toList()
     }
+
+    /** All games' tabs: All, one per paired PC when there's more than one (else "PC"), PlayStation, Xbox, this device. */
+    private fun gamesTabs(): List<Pair<String, String>> {
+        val paired = pcs.values.filter { paired(it) }.sortedBy { it.name.lowercase() }
+        val pcTabs = if (paired.size > 1) paired.map { "pc:${it.uuid}" to it.name } else listOf("pc" to "PC")
+        return listOf("all" to "All") + pcTabs + listOf("ps" to "PlayStation", "xb" to "Xbox", "dev" to "This ${deviceShort()}")
+    }
+
+    /** The All games tab that shows [d]'s games. */
+    private fun pcTab(d: ComputerDetails) = if (pcs.values.count { paired(it) } > 1) "pc:${d.uuid}" else "pc"
 
     private fun gameFor(key: String?): Game? = key?.let { k -> allGames().firstOrNull { it.key == k } }
 
@@ -946,6 +960,9 @@ class HandheldHomeActivity : Activity() {
             val m = if (size >= 360) 18 else 12
             f.addView(sw.badge(g.src, bs), sw.flp(-2, bs * 2).apply { leftMargin = sw.px(m); topMargin = sw.px(m) })
             if (g.running) f.addView(sw.live(bs), sw.flp(-2, bs * 2, Gravity.END).apply { rightMargin = sw.px(m); topMargin = sw.px(m) })
+            else if (g.pc != null && g.app == null && !online(g.pc))   // a PC's tile: say when it's off or asleep
+                f.addView(sw.badge(if (g.pc.state == ComputerDetails.State.UNKNOWN) "Checking…" else "Offline", bs),
+                        sw.flp(-2, bs * 2, Gravity.END).apply { rightMargin = sw.px(m); topMargin = sw.px(m) })
             run {
                 f.setOnLongClickListener { gameMenu(g); true }
                 f.setOnKeyListener { _, code, e ->
@@ -1022,7 +1039,8 @@ class HandheldHomeActivity : Activity() {
     private fun gamesPage(): View {
         val col = sw.col().apply { setPadding(sw.px(sw.edge), 0, sw.px(sw.edge), 0); clipChildren = false }
         val tabs = sw.row()
-        listOf("all" to "All", "pc" to "PC", "ps" to "PlayStation", "xb" to "Xbox", "dev" to "This ${deviceShort()}").forEachIndexed { i, (k, label) ->
+        if (gamesTabs().none { it.first == gamesTab }) gamesTab = if (gamesTab.startsWith("pc")) "pc".takeIf { t -> gamesTabs().any { it.first == t } } ?: "all" else "all"
+        gamesTabs().forEachIndexed { i, (k, label) ->
             val on = k == gamesTab
             tabs.addView(sw.text(label, 26, if (on) sw.bg else sw.sub, 700).apply {
                 tag = "tab:$k"
@@ -1036,12 +1054,16 @@ class HandheldHomeActivity : Activity() {
         col.addView(part(tabs), LinearLayout.LayoutParams(-2, sw.tap(64)).apply { topMargin = sw.px(20) })
 
         val recent = Recents.list(this)
-        var list = allGames().filter { g -> when (gamesTab) { "pc" -> g.pc != null; "ps" -> g.ps != null; "xb" -> g.xb != null; "dev" -> g.dev != null; else -> true } }
+        var list = allGames().filter { g -> when {
+            gamesTab == "pc" -> g.pc != null
+            gamesTab.startsWith("pc:") -> g.pc?.uuid == gamesTab.removePrefix("pc:")
+            gamesTab == "ps" -> g.ps != null; gamesTab == "xb" -> g.xb != null; gamesTab == "dev" -> g.dev != null
+            else -> true } }
         list = if (sortAz) list.sortedBy { it.title.lowercase() }
                else list.sortedWith(compareByDescending<Game> { it.running }.thenBy { recent.indexOf(it.key).let { i -> if (i < 0) Int.MAX_VALUE else i } }
                        .thenBy { if (it.pc != null) 1 else 0 }.thenBy { it.title.lowercase() })
         if (list.isEmpty() && gamesTab != "dev") {
-            val what = when (gamesTab) { "pc" -> "No PC games yet"; "ps" -> "No PlayStation yet"; "xb" -> "No Xbox yet"; else -> "No games yet" }
+            val what = when { gamesTab.startsWith("pc") -> "No PC games yet"; gamesTab == "ps" -> "No PlayStation yet"; gamesTab == "xb" -> "No Xbox yet"; else -> "No games yet" }
             col.addView(part(sw.text(what, 40, sw.ink, 800)), sw.lp(-2, -2).apply { topMargin = sw.px(80) })
             col.addView(part(sw.text(if (pcs.isEmpty() && consoles.isEmpty() && xboxes.isEmpty()) "Pair a PC, register a PS5 or sign in to Xbox in Consoles."
                                      else "Still loading, or nothing here. Consoles shows what's connected.", 26, sw.sub, 600, 2)),
@@ -1163,7 +1185,7 @@ class HandheldHomeActivity : Activity() {
                     opts += Opt("▶", Sw.LIVE, "Resume ${run.appName}") { start(d, run) }
                     opts += Opt("✕", Sw.DANGER, "Quit ${run.appName}", "Closes it on the PC") { quit(d, run) }
                 }
-                opts += Opt("PC", Sw.PC, "Show its games") { gamesTab = "pc"; go(Page.GAMES) }
+                opts += Opt("PC", Sw.PC, "Show its games") { gamesTab = pcTab(d); go(Page.GAMES) }
                 val hidden = hiddenIds(d)
                 if (hidden.isNotEmpty()) opts += Opt("–", Sw.PC, "Hidden games", "${hidden.size} hidden. Show them again") { hiddenGames(d) }
                 opts += Opt("↯", Sw.C_GREEN, "Test the network") { networkTest() }
@@ -1329,6 +1351,7 @@ class HandheldHomeActivity : Activity() {
     }
 
     private fun gameMenu(g: Game) {
+        if (g.pc != null && g.app == null) { pcMenu(g.pc); return }   // a PC's tile on Home: the PC's own menu
         if (g.ps != null || g.xb != null) {
             dialog(g.title, if (g.ps != null) "A PlayStation." else "An Xbox.", listOfNotNull(
                     Opt("▶", Sw.LIVE, "Play") { play(g) }, shortcutOpt(g)) + pictureOpts(g), listOf("Close" to {}))
@@ -1861,6 +1884,8 @@ class HandheldHomeActivity : Activity() {
 
     /** A: plays where games go now, this device or the TV picked in "Play on" (the top chip says which). */
     private fun play(g: Game) {
+        // a PC's tile on Home opens its games
+        if (g.pc != null && g.app == null) { gamesTab = pcTab(g.pc); FeelSounds.play(this, FeelSounds.Cue.OPEN); go(Page.GAMES); return }
         if (g.dev != null) { playHere(g); return }   // an app on this device opens here (Play on TV for apps: #99)
         val tv = TvFinder.target(this)
         if (tv != null) sendToTv(g, tv) else playHere(g)
@@ -2103,7 +2128,7 @@ class HandheldHomeActivity : Activity() {
             runOnUiThread {
                 if (overlayKind == "pin") hideOverlay(false)
                 msg?.let { toast(it) }
-                if (ok) { toast("Paired with ${d.name}"); gamesTab = "pc"; page = Page.GAMES }
+                if (ok) { toast("Paired with ${d.name}"); gamesTab = pcTab(d); page = Page.GAMES }
                 startPolling()
                 render(force = true)
             }
@@ -2552,7 +2577,7 @@ class HandheldHomeActivity : Activity() {
                     val step = if (e.keyCode == KeyEvent.KEYCODE_BUTTON_L1) -1 else 1
                     when (page) {
                         Page.GAMES -> {
-                            val tabs = listOf("all", "pc", "ps", "xb", "dev")
+                            val tabs = gamesTabs().map { it.first }
                             gamesTab = tabs[(tabs.indexOf(gamesTab) + step + tabs.size) % tabs.size]
                             FeelSounds.play(this, FeelSounds.Cue.TAB, 0.3f * step); render(force = true); return true
                         }
