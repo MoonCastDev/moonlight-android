@@ -1536,7 +1536,6 @@ class HandheldHomeActivity : Activity() {
                 choice(list, stream, com.limelight.Game.TOUCH_DEFAULT_PREF, "Touch screen", "In PC games. Touch clicks where you tap, Mouse is a trackpad, Off ignores the screen",
                         listOf("Touch" to "touch", "Mouse" to "mouse", "Off" to "off"), "touch")
                 appToggle(list, "hh_dim_on_tv", "Dim the screen on a TV", "While this ${deviceShort()} is the controller for a TV", true)
-                toggle(list, "checkbox_ultra_low_latency", "Ultra low latency", "Experimental. This device: ${chipName()}", false)
             }
             "picture" -> {
                 // Home and Away: one switch for PC, PlayStation and Xbox. Each profile keeps its own settings.
@@ -1611,6 +1610,8 @@ class HandheldHomeActivity : Activity() {
                 choice(list, stream, "frame_pacing", "Frame pacing", "PC and PS5: trade a little delay for smoother motion. Xbox paces itself",
                         listOf("Lowest delay" to "latency", "Balanced" to "balanced", "Smoothest" to "smoothness"), "latency")
                 com.limelight.home.StatsLevel.get(this)   // an old on/off answer becomes Off or Detailed first
+                // moved here from Handheld: it's about the picture (same setting)
+                toggle(list, "checkbox_ultra_low_latency", "Ultra low latency", "Experimental. Frames out of the decoder sooner. This device: ${chipName()}", false)
                 choice(list, stream, com.limelight.home.StatsLevel.PREF, "Stats while playing",
                         "Lite: one row of numbers at the top. Detailed: every number, in a corner",
                         listOf("Off" to "off", "Lite" to "lite", "Detailed" to "detailed"), "off") { com.limelight.home.StatsLevel.set(this, it) }
