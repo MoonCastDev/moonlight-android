@@ -10,9 +10,24 @@ import android.preference.PreferenceManager
  * belongs to the streaming profile in use.
  */
 object QuickBitrate {
+    /**
+     * The PC (Sunshine) bitrate steps in Mbps, shared by Settings (handheld and TV) and this menu: fine steps up to
+     * 150, then bigger ones up to 1 Gbps. Anything else saved is a Custom bitrate. PS5 and Xbox keep their own limits.
+     */
+    @JvmField val PC_STEPS = listOf(10, 20, 30, 50, 80, 100, 150, 200, 300, 400, 500, 600, 800, 1000)
+    /** The highest PC bitrate, in Mbps (Custom entry and the legacy Moonlight slider). */
+    const val PC_MAX_MBPS = 1000
+    /** Above this many Mbps, Settings shows [HIGH_HINT]. */
+    const val HIGH_MBPS = 300
+    const val HIGH_HINT = "Needs a cable or Wi-Fi 6/7 close to the router; the PC's encoder and this device's decoder must keep up"
+
+    /** The hint for a PC bitrate in kbps, or null when it isn't high. */
+    @JvmStatic
+    fun highHint(kbps: Int): String? = if (kbps > HIGH_MBPS * 1000) HIGH_HINT else null
+
     /** "pc", "ps" or "xb": the bitrate steps in Mbps, 0 = Auto. */
     private fun steps(ctx: Context, kind: String): List<Int> = when (kind) {
-        "pc" -> listOf(0, 10, 20, 30, 50, 80, 150)
+        "pc" -> listOf(0) + PC_STEPS
         "ps" -> if (Profile.isAway(ctx)) listOf(0, 8, 10, 15, 30, 50) else listOf(0, 10, 15, 20, 30, 50, 80, 100)
         else -> listOf(0, 5, 10, 15, 20, 30)
     }

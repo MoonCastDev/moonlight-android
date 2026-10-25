@@ -1020,7 +1020,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                         if (customFps) "$fps fps" else "Off") { customFrameRate(fps, customFps) }
                 bitrate(list)
                 val kbps = stream.getInt("seekbar_bitrate_kbps", 0)
-                val customRate = kbps != 0 && kbps / 1000 !in listOf(10, 20, 30, 50, 80)
+                val customRate = kbps != 0 && (kbps / 1000 !in QuickBitrate.PC_STEPS || kbps % 1000 != 0)
                 action(list, "set:customrate", "Custom bitrate", "Any value between the steps above, in Mbps",
                         if (customRate) "${kbps / 1000} Mbps" else "Off") { customBitrate(kbps) }
                 choice(list, com.limelight.binding.video.FsrRenderer.PREF, "Super resolution",
@@ -1309,10 +1309,11 @@ class HomeActivity : Activity(), PhoneLink.Listener {
 
     /** Moonlight keeps the bitrate in kbps; no value means Moonlight picks one for the resolution. */
     private fun bitrate(list: LinearLayout) {
-        val steps = listOf(0, 10, 20, 30, 50, 80)
-        val cur = stream.getInt("seekbar_bitrate_kbps", 0) / 1000
+        val steps = listOf(0) + QuickBitrate.PC_STEPS
+        val kbps = stream.getInt("seekbar_bitrate_kbps", 0)
+        val cur = kbps / 1000
         val shown = if (cur == 0) "Auto" else "$cur Mbps"
-        settingRow(list, "seekbar_bitrate_kbps", "Bitrate", "Auto picks one for the resolution. Raise it for a sharper picture on a fast network",
+        settingRow(list, "seekbar_bitrate_kbps", "Bitrate", QuickBitrate.highHint(kbps) ?: "Auto picks one for the resolution. Raise it for a sharper picture on a fast network",
                 true, tv.text(shown, 23, tv.p.moon, tv.ui(700))) {
             val next = steps[(steps.indexOf(steps.firstOrNull { it >= cur } ?: 0) + 1) % steps.size]
             if (next == 0) stream.edit().remove("seekbar_bitrate_kbps").apply()
@@ -1864,10 +1865,12 @@ class HomeActivity : Activity(), PhoneLink.Listener {
     }
 
     private fun customBitrate(kbps: Int) {
-        entryDialog("Custom bitrate", "In Mbps, from 1 to 150. Higher is sharper and needs a faster network.",
+        val max = QuickBitrate.PC_MAX_MBPS
+        entryDialog("Custom bitrate", "In Mbps, from 1 to $max. Higher is sharper and needs a faster network. " +
+                "Above ${QuickBitrate.HIGH_MBPS}: ${QuickBitrate.HIGH_HINT}.",
                 "For example 25", if (kbps > 0) (kbps / 1000).toString() else "", true, onSave = { raw ->
             val v = raw.toIntOrNull()
-            if (v == null || v !in 1..150) "A number from 1 to 150."
+            if (v == null || v !in 1..max) "A number from 1 to $max."
             else { stream.edit().putInt("seekbar_bitrate_kbps", v * 1000).apply(); render(force = true); null }
         }, clear = if (kbps > 0) ({ stream.edit().remove("seekbar_bitrate_kbps").apply(); render(force = true) }) else null)
     }
