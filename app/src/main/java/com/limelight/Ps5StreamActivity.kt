@@ -834,6 +834,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
                 com.limelight.home.QuickMenu.Item("▢", "Touchpad", "Select + Start", false) { tap(ControllerState.BUTTON_TOUCHPAD) }.staysOpen("Sent to the PS5"),
                 com.limelight.home.QuickMenu.Item("ⓘ", "Streaming status", com.limelight.home.StatsLevel.label(com.limelight.home.StatsLevel.get(this)), false) { corner.toggle() }
                         .asToggle().liveDetail { com.limelight.home.StatsLevel.label(com.limelight.home.StatsLevel.get(this)) },
+                com.limelight.home.QuickBitrate.item(menu, this, "ps", streamInfo.third, { openMenu() }, { reconnectForBitrate() }),
                 com.limelight.home.QuickMenu.Item("✚", "Controllers", "${com.limelight.home.QuickMenu.pads().size} connected", false) { controllers() }.staysOpen(null),
                 move,
                 com.limelight.home.QuickMenu.Item("←", "Disconnect", disconnectHint(), false) { leave() },
@@ -843,6 +844,15 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
     // What leaving does: Settings, PlayStation, "When I disconnect" (ask / rest / keep).
     private fun onDisconnect() = android.preference.PreferenceManager.getDefaultSharedPreferences(this).getString("ps5_on_disconnect", "ask")
     private fun disconnectHint() = when (onDisconnect()) { "rest" -> "Puts it in rest mode"; "keep" -> "Your PS5 stays on"; else -> "Asks what to do" }
+
+    /** Quick menu, Bitrate: the new one is saved; leave (the PS5 stays on) and connect again with it. */
+    private fun reconnectForBitrate() {
+        Log.i(TAG, "Quick menu: bitrate changed, reconnecting")
+        android.widget.Toast.makeText(this, "Changing bitrate…", android.widget.Toast.LENGTH_SHORT).show()
+        val again = android.content.Intent(intent)
+        finish()
+        startActivity(again)
+    }
 
     private fun leave() {
         when (onDisconnect()) {
