@@ -43,6 +43,12 @@ object MoveToTv {
         fun tvName(ctx: Context): String?
         /** Send [t] to that TV and show controller mode. The player leaves (disconnects) right after this. */
         fun move(act: Activity, t: Target)
+        /** Every TV this device knows: (id, name, on this network now), the ones here first. */
+        fun tvs(ctx: Context): List<Triple<String, String, Boolean>>
+        /** Look for TVs on this network (about 2 s); [done] runs on the main thread. */
+        fun sweep(ctx: Context, done: Runnable)
+        /** Like [move], to the TV [tvId] (it becomes the last TV). */
+        fun moveTo(act: Activity, t: Target, tvId: String)
     }
 
     @JvmStatic var handler: Handler? = null
@@ -61,13 +67,47 @@ object MoveToTv {
         val h = handler ?: return null
         val name = h.tvName(act) ?: return null
         return QuickMenu.Item("TV", "Move to $name", "Keeps playing there. This device becomes the controller", false) {
-            // end this device's session first (disconnect, don't quit), THEN send: the TV picks the game up
-            val once = java.util.concurrent.atomic.AtomicBoolean(false)
-            val go = Runnable { if (once.compareAndSet(false, true) && !act.isDestroyed) { h.move(act, t); act.finish() } }
-            if (act is LocalSession) {
-                act.endLocalSession(go)
-                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(go, 3000)   // never wait longer than ~3 s
-            } else go.run()
+            leaveThen(act) { h.move(act, t) }
         }
+    }
+
+    /** End this device's session first (disconnect, don't quit), THEN send: the TV picks the game up. */
+    private fun leaveThen(act: Activity, send: () -> Unit) {
+        val once = java.util.concurrent.atomic.AtomicBoolean(false)
+        val go = Runnable { if (once.compareAndSet(false, true) && !act.isDestroyed) { send(); act.finish() } }
+        if (act is LocalSession) {
+            act.endLocalSession(go)
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(go, 3000)   // never wait longer than ~3 s
+        } else go.run()
+    }
+
+    /**
+     * The Quick menu's Play on TV (Saleh): one item, which opens the TVs this device knows (the last one used on top)
+     * after a quick look round the network, and moves the game to the one picked. Null on the TV app.
+     */
+    @JvmStatic
+    fun playOnTv(act: Activity, t: Target, menu: QuickMenu, back: Runnable): QuickMenu.Item? {
+        if (com.limelight.BuildConfig.TV_APP) return null
+        val h = handler ?: return null
+        val last = h.tvName(act)
+        return QuickMenu.Item("TV", "Play on TV", if (last != null) "Move it to $last, or another TV. This device becomes the controller"
+                else "Pick a MoonCast TV. This device becomes the controller", false) {
+            fun list(looked: Boolean) {
+                if (act.isFinishing) return
+                val tvs = h.tvs(act)
+                val items = ArrayList<QuickMenu.Item>()
+                items.add(QuickMenu.Item("↩", "Back", "To the menu", false, back).staysOpen(null))
+                tvs.forEach { (id, name, here) ->
+                    items.add(QuickMenu.Item("TV", name, if (here) "On this network" + (if (name == last) ". Last used" else "")
+                            else "Not found on this network", false) { leaveThen(act) { h.moveTo(act, t, id) } })
+                }
+                if (!looked) items.add(QuickMenu.Item("…", "Looking for TVs", "A moment", false).staysOpen(null))
+                else items.add(QuickMenu.Item("⟳", "Look again", "Searches this network", false) { h.sweep(act) { list(true) } }.staysOpen(null))
+                menu.show("Play on TV", if (tvs.isEmpty() && looked) "No MoonCast TV found. Open MoonCast on the TV, on the same Wi-Fi."
+                        else "Pick the TV. The game moves there and keeps running.", QuickMenu.Stats { emptyList() }, items)
+            }
+            list(false)
+            h.sweep(act) { if (menu.isShowing) list(true) }
+        }.staysOpen(null)
     }
 }
