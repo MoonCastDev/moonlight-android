@@ -1673,6 +1673,16 @@ class HandheldHomeActivity : Activity() {
                         customNumber(list, stream, "away_bitrate", "Custom bitrate", "2 to 100 Mbps (the internet path rarely carries more than 30)", "Mbps", 2, 100, 10)
                     choice(list, stream, "away_codec", "Video codec", "HEVC looks better at the same bitrate", listOf("H.264" to "h264", "HEVC" to "h265"), "h265")
                 }
+                // its own picture settings; "Same as Picture" until set
+                choice(list, stream, "ps5_fsr", "Super resolution", "FSR 1.0 for the PS5 only, or the same as Picture",
+                        listOf("Same as Picture" to "same", "Off" to "off", "FSR 1.0" to "fsr1"), "same")
+                if (com.limelight.home.ConsolePicture.fsrOn(stream, "ps5"))
+                    intChoice(list, "ps5_fsr_sharp", "Sharpening", "How crisp FSR makes edges", listOf(-1, 0, 20, 40, 60, 80, 100), -1) { if (it < 0) "Same as Picture" else "$it%" }
+                choice(list, stream, "ps5_shape", "Picture shape", "Fit shows all of it, Fill fills the screen (edges cut off), Stretch fills it and changes the shape",
+                        listOf("Same as Picture" to "same", "Fit" to "fit", "Fill" to "fill", "Stretch" to "stretch"), "same")
+                choice(list, stream, "ps5_pacing", "Frame pacing", "Lowest delay shows each frame at once; Balanced and Smoothest even out the motion, a little later",
+                        listOf("Same as Picture" to "same", "Lowest delay" to "latency", "Balanced" to "balanced", "Smoothest" to "smoothness"), "same")
+                info(list, "HDR", "Not in the PS5 player yet")
                 choice(list, stream, "ps5_on_disconnect", "When I disconnect", "What happens to the PS5 after you leave a game",
                         listOf("Ask" to "ask", "Rest mode" to "rest", "Keep it on" to "keep"), "ask")
                 toggle(list, "ps5_swap_cross_circle", "Swap Cross and Circle", "For the Japanese layout", false)
@@ -1706,6 +1716,15 @@ class HandheldHomeActivity : Activity() {
                 intChoice(list, "xbox_deadzone", "Stick deadzone", "Raise it if a character drifts on its own", listOf(3, 5, 8, 10, 15), 8) { "$it%" }
                 toggle(list, "xbox_swap_ab", "Swap A and B", "For Nintendo-style layouts", false)
                 toggle(list, "xbox_coop", "Two players", "A second controller plays as player 2", false)
+                // its own picture settings; "Same as Picture" until set
+                choice(list, stream, "xbox_fsr", "Super resolution", "FSR 1.0 for the Xbox only, or the same as Picture",
+                        listOf("Same as Picture" to "same", "Off" to "off", "FSR 1.0" to "fsr1"), "same")
+                if (com.limelight.home.ConsolePicture.fsrOn(stream, "xbox"))
+                    intChoice(list, "xbox_fsr_sharp", "Sharpening", "How crisp FSR makes edges", listOf(-1, 0, 20, 40, 60, 80, 100), -1) { if (it < 0) "Same as Picture" else "$it%" }
+                choice(list, stream, "xbox_shape", "Picture shape", "Fit shows all of it, Fill fills the screen (edges cut off), Stretch fills it and changes the shape",
+                        listOf("Same as Picture" to "same", "Fit" to "fit", "Fill" to "fill", "Stretch" to "stretch"), "same")
+                info(list, "Frame pacing", "The Xbox paces its own picture")
+                info(list, "HDR", "Not available on Xbox Remote Play")
             }
             "theme" -> {
                 val cur = if (sw.light) "light" else if (sw.oled) "oled" else "dark"
