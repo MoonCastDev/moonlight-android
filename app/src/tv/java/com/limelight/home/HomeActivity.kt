@@ -860,7 +860,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
     /** What the Xbox streams with the profile in use (#44). Xbox Remote Play is always 60 fps. */
     private fun xboxPicture(): String {
         val r = when (val v = stream.getString("xbox_resolution", "auto")) { "auto", null -> "Auto"; "1081" -> "1080p high"; else -> "${v}p" }
-        return "$r, 60 fps (${if (Profile.isAway(this)) "Away" else "Home"})"
+        return "$r, 60 fps (${Profile.name(this)})"
     }
 
     // ---------------------------------------------------------------- Xbox
@@ -1001,8 +1001,8 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         when (settingsGroup) {
             "video" -> {
                 // Home and Away: one switch for PC, PlayStation and Xbox. Each profile keeps its own settings.
-                choice(list, Profile.PREF, "Streaming profile", "Home: best quality on your network. Away: lighter settings for PlayStation Network and slower links",
-                        listOf("Home" to "home", "Away" to "away"), "home")
+                choice(list, Profile.PREF, "Streaming profile", "Home: best quality on your network. Away: lighter settings for PlayStation Network and slower links. Custom: your own sets (rename them on the handheld app)",
+                        Profile.choices(this), "home")
                 // Native: this screen's real panel size (its display mode), as in Moonlight/Artemis' "Native (WxH)"
                 val native = nativeResolution()
                 val presets = listOf("720p" to "1280x720", "1080p" to "1920x1080", "1440p" to "2560x1440", "4K" to "3840x2160")
