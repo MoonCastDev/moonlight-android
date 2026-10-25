@@ -74,14 +74,14 @@ class XboxStreamActivity : Activity(), com.limelight.home.MoveToTv.LocalSession 
         val r = SurfaceViewRenderer(this).also { renderer = it }
         // Super resolution (FSR 1.0): WebRTC's renderer draws each frame through FSR's drawer. The surface then keeps
         // the view's real size (no hardware scaler, which would shrink it to the frame's) so FSR has room to upscale
-        val fsrOn = com.limelight.binding.video.FsrRenderer.enabled(prefs)
+        val fsrOn = com.limelight.home.ConsolePicture.fsrOn(prefs, "xbox")   // Settings, Xbox (or Picture)
         r.init(egl.eglBaseContext, object : RendererCommon.RendererEvents {
             override fun onFirstFrameRendered() { firstFrame = true; main.removeCallbacks(pictureWatchdog); showStatus(null); com.limelight.home.StreamReport.playing() }
             override fun onFrameResolutionChanged(w: Int, h: Int, rotation: Int) {
                 Log.i(TAG, "picture ${w}x$h"); runOnUiThread { applyShape(w, h) }
             }
         }, org.webrtc.EglBase.CONFIG_PLAIN,
-            if (fsrOn) com.limelight.binding.video.FsrGlDrawer(com.limelight.binding.video.FsrRenderer.sharpness(prefs)) else org.webrtc.GlRectDrawer())
+            if (fsrOn) com.limelight.binding.video.FsrGlDrawer(com.limelight.home.ConsolePicture.sharpness(prefs, "xbox") / 100f) else org.webrtc.GlRectDrawer())
         r.setEnableHardwareScaler(!fsrOn)
         if (fsrOn) Log.i(TAG, "FSR drawer on")
         applyShape(0, 0)
@@ -220,7 +220,7 @@ class XboxStreamActivity : Activity(), com.limelight.home.MoveToTv.LocalSession 
                 if (rr - l != or - ol || b - t != ob - ot) applyShape(shapeW, shapeH)
             }
         }
-        val shape = prefs.getString("list_video_scale_mode", if (prefs.getBoolean("checkbox_stretch_video", false)) "stretch" else "fit")
+        val shape = com.limelight.home.ConsolePicture.shape(prefs, "xbox")
         val zoom = prefs.getInt("seekbar_video_zoom", 100) / 100f
         r.setScalingType(if (shape == "fill") RendererCommon.ScalingType.SCALE_ASPECT_FILL else RendererCommon.ScalingType.SCALE_ASPECT_FIT)
         r.post {

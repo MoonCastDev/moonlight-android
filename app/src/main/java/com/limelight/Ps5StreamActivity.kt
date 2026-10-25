@@ -163,7 +163,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
         else fpsSel == "30"
         // Settings, PlayStation, Frame pacing: frames spaced at this stream's rate (lowest delay, balanced, smoothest)
         // Moonlight's All settings also offers "cap-fps": the nearest PS5 mode for it is Balanced
-        val pacing = when (prefs.getString(PACING_PREF, "latency")) { "balanced", "cap-fps" -> 1; "smoothness" -> 2; else -> 0 }
+        val pacing = when (com.limelight.home.ConsolePicture.pacing(prefs)) { "balanced" -> 1; "smoothness" -> 2; else -> 0 }
         try { com.metallic.chiaki.lib.decoderPacing(pacing, if (fps30) 30 else 60) } catch (e: UnsatisfiedLinkError) { }
         Log.i(TAG, "frame pacing $pacing at ${if (fps30) 30 else 60} fps")
         val preset = ConnectVideoProfile.preset(
@@ -761,7 +761,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
     /** The surface the decoder renders into: the screen's, or FSR's when it's on and the stream is smaller than the screen. */
     private fun decoderSurface(screen: android.view.Surface): android.view.Surface {
         val prefs = android.preference.PreferenceManager.getDefaultSharedPreferences(this)
-        if (prefs.getString(com.limelight.binding.video.FsrRenderer.PREF, "off") != "fsr1") return screen
+        if (!com.limelight.home.ConsolePicture.fsrOn(prefs, "ps5")) return screen   // Settings, PlayStation (or Picture)
         val outH = screenHolder?.surfaceFrame?.height() ?: 0
         if (!com.limelight.binding.video.FsrRenderer.worthIt(videoH, outH)) {
             Log.i(TAG, "FSR not needed: stream ${videoW}x$videoH, screen ${screenHolder?.surfaceFrame?.width()}x$outH")
@@ -769,7 +769,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
         }
         fsr?.let { return it.inputSurface }
         return try {
-            val sharp = prefs.getInt(com.limelight.binding.video.FsrRenderer.SHARPNESS_PREF, com.limelight.binding.video.FsrRenderer.DEFAULT_SHARPNESS)
+            val sharp = com.limelight.home.ConsolePicture.sharpness(prefs, "ps5")
             val f = com.limelight.binding.video.FsrRenderer(videoW, videoH, sharp / 100f)
             f.attachOutput(screen)
             fsr = f
@@ -930,7 +930,7 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
         override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
             val c = getChildAt(0) ?: return
             val w = r - l; val h = b - t
-            val shape = prefs.getString("list_video_scale_mode", if (prefs.getBoolean("checkbox_stretch_video", false)) "stretch" else "fit")
+            val shape = com.limelight.home.ConsolePicture.shape(prefs, "ps5")
             val zoom = prefs.getInt("seekbar_video_zoom", 100) / 100f
             var vw = w.toFloat(); var vh = h.toFloat()
             if (shape != "stretch" && w > 0 && h > 0) {

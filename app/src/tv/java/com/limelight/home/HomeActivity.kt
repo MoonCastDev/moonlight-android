@@ -1110,6 +1110,16 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                         customNumber(list, "away_bitrate", "Custom bitrate", "2 to 100 Mbps (the internet path rarely carries more than 30)", "Mbps", 2, 100, 10)
                     choice(list, "away_codec", "Video codec", "HEVC looks better at the same bitrate", listOf("H.264" to "h264", "HEVC" to "h265"), "h265")
                 }
+                // its own picture settings; "Same as Picture" until set
+                choice(list, "ps5_fsr", "Super resolution", "FSR 1.0 for the PS5 only, or the same as Picture",
+                        listOf("Same as Picture" to "same", "Off" to "off", "FSR 1.0" to "fsr1"), "same")
+                if (com.limelight.home.ConsolePicture.fsrOn(stream, "ps5"))
+                    intChoice(list, "ps5_fsr_sharp", "Sharpening", "How crisp FSR makes edges", listOf(-1, 0, 20, 40, 60, 80, 100), -1) { if (it < 0) "Same as Picture" else "$it%" }
+                choice(list, "ps5_shape", "Picture shape", "Fit shows all of it, Fill fills the screen (edges cut off), Stretch fills it and changes the shape",
+                        listOf("Same as Picture" to "same", "Fit" to "fit", "Fill" to "fill", "Stretch" to "stretch"), "same")
+                choice(list, "ps5_pacing", "Frame pacing", "Lowest delay shows each frame at once; Balanced and Smoothest even out the motion, a little later",
+                        listOf("Same as Picture" to "same", "Lowest delay" to "latency", "Balanced" to "balanced", "Smoothest" to "smoothness"), "same")
+                info(list, "HDR", "Not in the PS5 player yet")
                 choice(list, "ps5_on_disconnect", "When I disconnect", "What happens to the PS5 after you leave a game",
                         listOf("Ask" to "ask", "Rest mode" to "rest", "Keep it on" to "keep"), "ask")
                 toggle(list, "ps5_swap_cross_circle", "Swap Cross and Circle", "For the Japanese layout", false)
@@ -1155,6 +1165,15 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                 toggle(list, "xbox_swap_xy", "Swap X and Y", "For Nintendo-style layouts", false)
                 toggle(list, "xbox_short_triggers", "Short triggers", "A light pull counts as a full press", false)
                 toggle(list, "xbox_coop", "Two players", "A second controller plays as player 2", false)
+                // its own picture settings; "Same as Picture" until set
+                choice(list, "xbox_fsr", "Super resolution", "FSR 1.0 for the Xbox only, or the same as Picture",
+                        listOf("Same as Picture" to "same", "Off" to "off", "FSR 1.0" to "fsr1"), "same")
+                if (com.limelight.home.ConsolePicture.fsrOn(stream, "xbox"))
+                    intChoice(list, "xbox_fsr_sharp", "Sharpening", "How crisp FSR makes edges", listOf(-1, 0, 20, 40, 60, 80, 100), -1) { if (it < 0) "Same as Picture" else "$it%" }
+                choice(list, "xbox_shape", "Picture shape", "Fit shows all of it, Fill fills the screen (edges cut off), Stretch fills it and changes the shape",
+                        listOf("Same as Picture" to "same", "Fit" to "fit", "Fill" to "fill", "Stretch" to "stretch"), "same")
+                info(list, "Frame pacing", "The Xbox paces its own picture")
+                info(list, "HDR", "Not available on Xbox Remote Play")
                 choice(list, "xbox_language", "Game language", "The language games start in", listOf("English" to "en-US",
                         "Arabic" to "ar-SA", "French" to "fr-FR", "German" to "de-DE", "Spanish" to "es-ES"), "en-US")
                 info(list, "Quick menu", QuickMenu.COMBO_LABEL + ", or Back on the TV remote")
