@@ -207,6 +207,8 @@
             android:exported="true"
             android:theme="@style/StreamTheme"
             android:launchMode="singleTop"
+            android:supportsPictureInPicture="true"
+            android:resizeableActivity="true"
             android:screenOrientation="sensorLandscape"
             android:configChanges="mcc|mnc|touchscreen|keyboard|keyboardHidden|navigation|screenLayout|fontScale|uiMode|orientation|screenSize|smallestScreenSize|layoutDirection" />
         <activity
@@ -219,6 +221,8 @@
             android:exported="false"
             android:theme="@style/StreamTheme"
             android:launchMode="singleTop"
+            android:supportsPictureInPicture="true"
+            android:resizeableActivity="true"
             android:screenOrientation="sensorLandscape"
             android:configChanges="mcc|mnc|touchscreen|keyboard|keyboardHidden|navigation|screenLayout|fontScale|uiMode|orientation|screenSize|smallestScreenSize|layoutDirection" />
         <!-- About, Open-source licences: one licence's full text (both apps) -->

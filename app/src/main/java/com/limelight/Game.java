@@ -648,6 +648,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
                 performanceOverlayView.setVisibility(View.GONE);
                 notificationOverlayView.setVisibility(View.GONE);
+                if (quickMenu != null && quickMenu.isShowing()) quickMenu.hide();   // MoonCast: no menu in the small window
 
                 // Disable sensors while in PiP mode
                 controllerHandler.disableSensors();

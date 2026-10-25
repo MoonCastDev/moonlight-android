@@ -76,7 +76,8 @@ class XboxStreamActivity : Activity(), com.limelight.home.MoveToTv.LocalSession 
         // the view's real size (no hardware scaler, which would shrink it to the frame's) so FSR has room to upscale
         val fsrOn = com.limelight.home.ConsolePicture.fsrOn(prefs, "xbox")   // Settings, Xbox (or Picture)
         r.init(egl.eglBaseContext, object : RendererCommon.RendererEvents {
-            override fun onFirstFrameRendered() { firstFrame = true; main.removeCallbacks(pictureWatchdog); showStatus(null); com.limelight.home.StreamReport.playing() }
+            override fun onFirstFrameRendered() { firstFrame = true; main.removeCallbacks(pictureWatchdog); showStatus(null); com.limelight.home.StreamReport.playing()
+                runOnUiThread { com.limelight.home.Pip.arm(this@XboxStreamActivity) } }
             override fun onFrameResolutionChanged(w: Int, h: Int, rotation: Int) {
                 Log.i(TAG, "picture ${w}x$h"); runOnUiThread { applyShape(w, h) }
             }
@@ -238,7 +239,16 @@ class XboxStreamActivity : Activity(), com.limelight.home.MoveToTv.LocalSession 
         @Suppress("DEPRECATION") wm.connectionInfo?.linkSpeed ?: 0
     } catch (e: Exception) { 0 }
 
-    override fun onStop() { super.onStop(); if (!isChangingConfigurations) finish() }
+    override fun onStop() { super.onStop(); if (!isChangingConfigurations) finish() }   // also when the PiP window closes
+
+    // Settings, Handheld, Picture in picture: Home keeps the stream in a small window, without the overlays
+    override fun onUserLeaveHint() { super.onUserLeaveHint(); com.limelight.home.Pip.onLeave(this) }
+
+    override fun onPictureInPictureModeChanged(inPip: Boolean, newConfig: android.content.res.Configuration) {
+        super.onPictureInPictureModeChanged(inPip, newConfig)
+        corner.hidden = inPip
+        if (inPip && menu.isShowing) menu.hide()
+    }
 
     /** "Move to TV": the Xbox session here is fully closed before the TV starts its own. */
     override fun endLocalSession(done: Runnable) {
