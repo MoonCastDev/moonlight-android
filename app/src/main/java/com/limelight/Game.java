@@ -462,6 +462,14 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                 supportedVideoFormats |= MoonBridge.VIDEO_FORMAT_AV1_MAIN10;
             }
         }
+        // MoonCast: Settings, Picture, PyroWave. The PC picks it over the other codecs when it offers it (NvConnection
+        // drops it, and says so, when it doesn't). 4:2:0 8-bit only: PyroWave streams are SDR.
+        if (com.limelight.home.Pyrowave.wanted(this) && com.limelight.home.Pyrowave.deviceCan(this)) {
+            supportedVideoFormats |= MoonBridge.VIDEO_FORMAT_PYROWAVE;
+            LimeLog.info("Asking the PC for PyroWave (recommended bitrate at " + prefConfig.width + "x" + prefConfig.height + " "
+                    + prefConfig.fps + " fps: " + com.limelight.home.Pyrowave.recommendedKbps(prefConfig.width, prefConfig.height, prefConfig.fps) / 1000
+                    + " Mbps, set " + prefConfig.bitrate / 1000 + " Mbps)");
+        }
 
         int gamepadMask = ControllerHandler.getAttachedControllerMask(this);
         if (!prefConfig.multiController) {
@@ -1182,6 +1190,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                     else if ((videoFormat & MoonBridge.VIDEO_FORMAT_MASK_AV1) != 0) {
                         message += "AV1";
                     }
+                    else if ((videoFormat & MoonBridge.VIDEO_FORMAT_MASK_PYROWAVE) != 0) {
+                        message += "PyroWave";
+                    }
                     else {
                         message += "UNKNOWN";
                     }
@@ -1628,7 +1639,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                     () -> java.util.Arrays.asList(
                             com.limelight.home.QuickMenu.stat(String.format(java.util.Locale.US, "%.0f", com.limelight.home.StreamStats.INSTANCE.getFps()), "Frames per second"),
                             com.limelight.home.QuickMenu.stat(com.limelight.home.StreamStats.INSTANCE.getRttMs() + " ms", "Network delay"),
-                            com.limelight.home.QuickMenu.stat((prefConfig.bitrate / 1000) + " Mbps", "Picture quality"),
+                            com.limelight.home.QuickMenu.stat((prefConfig.bitrate / 1000) + " Mbps",
+                                    decoderRenderer != null && decoderRenderer.isPyrowaveActive() ? "Picture quality · PyroWave" : "Picture quality"),
                             com.limelight.home.QuickMenu.stat(String.format(java.util.Locale.US, "%.1f%%", com.limelight.home.StreamStats.INSTANCE.getLossPct()), "Lost frames"),
                             com.limelight.home.QuickMenu.stat(String.format(java.util.Locale.US, "%.1f ms", com.limelight.home.StreamStats.INSTANCE.getDecodeMs()), "Decode delay")),
                     items);
@@ -3014,6 +3026,15 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                     fsr = null;
                 }
             }
+            // MoonCast: a PyroWave stream draws to the screen's surface with Vulkan, so Super resolution (GL on the
+            // same surface) lets go of it; it only upscales MediaCodec's frames
+            decoderRenderer.setPyrowaveSurfaceRelease(() -> {
+                com.limelight.binding.video.FsrRenderer f = fsr;
+                if (f != null) {
+                    f.detachOutput();
+                    LimeLog.info("FSR off: PyroWave draws the picture itself");
+                }
+            });
             // MoonCast: a PC still busy with another device's session can leave the start hanging (the RTSP handshake
             // waited ~30 s on the TV, test258, with the sender seeing "starting" and no error). Retry once, then give up
             // with a clear message.
@@ -3248,12 +3269,12 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         });
     }
 
-    /** "H.264", "HEVC" or "AV1", with "4:4:4" and "HDR" when they're on; empty before the stream starts. */
+    /** "H.264", "HEVC", "AV1" or "PyroWave", with "4:4:4" and "HDR" when they're on; empty before the stream starts. */
     private String codecName() {
         if (decoderRenderer == null) return "";
         int f = decoderRenderer.getActiveVideoFormat();
         String c = (f & MoonBridge.VIDEO_FORMAT_MASK_H264) != 0 ? "H.264" : (f & MoonBridge.VIDEO_FORMAT_MASK_H265) != 0 ? "HEVC"
-                : (f & MoonBridge.VIDEO_FORMAT_MASK_AV1) != 0 ? "AV1" : "";
+                : (f & MoonBridge.VIDEO_FORMAT_MASK_AV1) != 0 ? "AV1" : (f & MoonBridge.VIDEO_FORMAT_MASK_PYROWAVE) != 0 ? "PyroWave" : "";
         if (c.isEmpty()) return c;
         if ((f & MoonBridge.VIDEO_FORMAT_MASK_YUV444) != 0) c += " 4:4:4";
         if ((f & MoonBridge.VIDEO_FORMAT_MASK_10BIT) != 0) c += " HDR";

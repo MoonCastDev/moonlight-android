@@ -1032,6 +1032,14 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                 choice(list, "video_format", "Video codec", "HEVC and AV1 look better at the same bitrate",
                         listOf("Auto" to "auto", "H.264" to "neverh265", "HEVC" to "forceh265", "AV1" to "forceav1"), "auto")
                 toggle(list, "checkbox_enable_hdr", "HDR", "Only when the PC, the game and this TV support it", false)
+                // PyroWave: only where this TV's GPU can decode it (arm64, Vulkan); hidden elsewhere
+                if (com.limelight.home.Pyrowave.deviceCan(this)) {
+                    val pc = com.limelight.preferences.PreferenceConfiguration.readPreferences(this)
+                    val rec = com.limelight.home.Pyrowave.recommendedKbps(pc.width, pc.height, pc.fps) / 1000
+                    toggle(list, com.limelight.home.Pyrowave.PREF, "PyroWave (wired / fast Wi-Fi only)",
+                            "Lowest delay, with a lot of bitrate: about $rec Mbps at your resolution and frame rate. Needs a PC with PyroWave " +
+                            "in Sunshine; otherwise your codec above is used. SDR, and no Super resolution", false)
+                }
                 toggle(list, "checkbox_full_range", "Full-range colour", "Deeper blacks, if this TV shows them correctly", false)
                 choice(list, "list_video_scale_mode", "Picture shape", "When the stream's shape doesn't match this TV: fit with bars, fill and crop, or stretch",
                         listOf("Fit" to "fit", "Fill" to "fill", "Stretch" to "stretch"),

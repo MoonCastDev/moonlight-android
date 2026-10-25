@@ -202,6 +202,11 @@ public class StreamConfiguration {
         return supportedVideoFormats;
     }
 
+    // MoonCast: PyroWave is only asked for when the PC offers it (NvConnection)
+    public void removeSupportedVideoFormats(int formats) {
+        supportedVideoFormats &= ~formats;
+    }
+
     public int getAttachedGamepadMask() {
         return attachedGamepadMask;
     }

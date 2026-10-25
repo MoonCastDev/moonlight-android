@@ -261,6 +261,16 @@ public class NvConnection {
 
         context.serverCodecModeSupport = (int)h.getServerCodecModeSupport(serverInfo);
 
+        // MoonCast: PyroWave (Settings, Picture) only when the PC offers it; otherwise the stream uses the normal
+        // codec setting, and says so once
+        if ((context.streamConfig.getSupportedVideoFormats() & MoonBridge.VIDEO_FORMAT_MASK_PYROWAVE) != 0 &&
+                (context.serverCodecModeSupport & MoonBridge.SCM_PYROWAVE) == 0) {
+            context.streamConfig.removeSupportedVideoFormats(MoonBridge.VIDEO_FORMAT_MASK_PYROWAVE);
+            LimeLog.info("PyroWave asked for, but the PC doesn't offer it (codec modes 0x" +
+                    Integer.toHexString(context.serverCodecModeSupport) + ")");
+            context.connListener.displayTransientMessage("This PC doesn't offer PyroWave, so the stream uses your usual codec");
+        }
+
         context.negotiatedHdr = (context.streamConfig.getSupportedVideoFormats() & MoonBridge.VIDEO_FORMAT_MASK_10BIT) != 0;
         if ((context.serverCodecModeSupport & 0x20200) == 0 && context.negotiatedHdr) {
             context.connListener.displayTransientMessage("Your PC GPU does not support streaming HDR. The stream will be SDR.");

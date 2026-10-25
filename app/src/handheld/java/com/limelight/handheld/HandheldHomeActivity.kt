@@ -1605,6 +1605,14 @@ class HandheldHomeActivity : Activity() {
                 toggle(list, com.limelight.home.Yuv444.PREF, "YUV 4:4:4 (HEVC)",
                         if (com.limelight.home.Yuv444.deviceCan()) "Sharper text and colour edges. Needs Sunshine with 4:4:4 on the PC; otherwise it stays 4:2:0"
                         else "This device's decoder can't show 4:4:4, so streams stay 4:2:0", false)
+                // PyroWave: only where this device's GPU can decode it (arm64, Vulkan); hidden elsewhere
+                if (com.limelight.home.Pyrowave.deviceCan(this)) {
+                    val pc = com.limelight.preferences.PreferenceConfiguration.readPreferences(this)
+                    val rec = com.limelight.home.Pyrowave.recommendedKbps(pc.width, pc.height, pc.fps) / 1000
+                    toggle(list, com.limelight.home.Pyrowave.PREF, "PyroWave (wired / fast Wi-Fi only)",
+                            "Lowest delay, with a lot of bitrate: about $rec Mbps at your resolution and frame rate. Needs a PC with PyroWave " +
+                            "in Sunshine; otherwise your codec above is used. SDR, and no Super resolution", false)
+                }
                 toggle(list, "checkbox_full_range", "Full range colour", "Experimental: deeper blacks and brighter whites. On screens that don't handle it, dark and light detail is lost", false)
                 choice(list, stream, "list_video_scale_mode", "Picture shape", "Fit with bars, fill and crop, or stretch",
                         listOf("Fit" to "fit", "Fill" to "fill", "Stretch" to "stretch"), if (stream.getBoolean("checkbox_stretch_video", false)) "stretch" else "fit")

@@ -280,6 +280,23 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         this.surfaceOverride = surface;
     }
 
+    // MoonCast: PyroWave (Settings, Picture). No MediaCodec then: PyrowaveRenderer decodes each frame on Vulkan and
+    // draws it straight to the screen's surface, so whatever else draws there (Super resolution) lets go of it first.
+    private volatile PyrowaveRenderer pyrowave;
+    private boolean pyrowaveActive;
+    private String pyrowaveDescription = "";
+    private long pyrowaveDecodeRemainderNs;
+    private Runnable pyrowaveSurfaceRelease;
+
+    public void setPyrowaveSurfaceRelease(Runnable release) {
+        this.pyrowaveSurfaceRelease = release;
+    }
+
+    /** The stream is PyroWave (set up in setup()). */
+    public boolean isPyrowaveActive() {
+        return pyrowaveActive;
+    }
+
     public MediaCodecDecoderRenderer(Activity activity, PreferenceConfiguration prefs,
                                      CrashListener crashListener, int consecutiveCrashCount,
                                      boolean meteredData, boolean requestedHdr,
@@ -367,6 +384,14 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         if (consecutiveCrashCount % 2 == 1) {
             refFrameInvalidationAvc = refFrameInvalidationHevc = false;
             LimeLog.warning("Disabling RFI due to previous crash");
+        }
+
+        // MoonCast: PyroWave decodes and shows frames as they're handed over, which on the receive thread would keep it
+        // from draining the socket (packets overflow and whole frames are lost). getCapabilities() comes before the
+        // codec is known, so this goes by whether PyroWave may be asked for.
+        if (directSubmit && com.limelight.home.Pyrowave.wanted(activity) && com.limelight.home.Pyrowave.deviceCan(activity)) {
+            directSubmit = false;
+            LimeLog.info("Not using direct submit, since the stream may be PyroWave");
         }
     }
 
@@ -693,7 +718,81 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         this.videoFormat = format;
         this.refreshRate = redrawRate;
 
+        if ((format & MoonBridge.VIDEO_FORMAT_MASK_PYROWAVE) != 0) {
+            return setupPyrowave();
+        }
+
         return initializeDecoder(false);
+    }
+
+    private int setupPyrowave() {
+        pyrowaveActive = true;
+
+        // Hosts that say which PyroWave they encode with (vibeshine) site 4:2:0 chroma at the center
+        String bitstreamId = MoonBridge.getHostPyroWaveBitstreamId();
+        boolean centerChroma = bitstreamId != null && !bitstreamId.isEmpty();
+        if (centerChroma) {
+            LimeLog.info("PyroWave host bitstream revision: " + bitstreamId);
+        }
+
+        // Super resolution draws to the screen's surface with GL; Vulkan needs it to itself
+        if (pyrowaveSurfaceRelease != null) {
+            pyrowaveSurfaceRelease.run();
+        }
+
+        pyrowave = PyrowaveRenderer.create(renderTarget.getSurface(), initialWidth, initialHeight,
+                getPreferredColorSpace(), centerChroma);
+        if (pyrowave == null) {
+            LimeLog.severe("PyroWave decoding failed to start");
+            return -4;
+        }
+        pyrowaveDescription = pyrowave.getDescription();
+        LimeLog.info("Decoding PyroWave " + initialWidth + "x" + initialHeight + " on " + pyrowaveDescription);
+        return 0;
+    }
+
+    // Takes the PyroWave renderer's counts into this stats window
+    private void collectPyrowaveStats() {
+        PyrowaveRenderer r = pyrowave;
+        long[] st = r != null ? r.takeStats() : null;
+        if (st == null) {
+            return;
+        }
+        activeWindowVideoStats.totalFramesRendered += (int) st[2];
+        decodeNsSum += st[0];
+        decodeFrames += (int) st[1];
+        // Kept in ns, so the remainder under 1 ms carries over to the next window
+        pyrowaveDecodeRemainderNs += st[0];
+        long decodeMs = pyrowaveDecodeRemainderNs / 1_000_000L;
+        pyrowaveDecodeRemainderNs -= decodeMs * 1_000_000L;
+        activeWindowVideoStats.decoderTimeMs += decodeMs;
+        numFramesOut += (int) st[2];
+    }
+
+    private int submitPyrowaveFrame(byte[] decodeUnitData, int decodeUnitLength, char frameHostProcessingLatency,
+                                    long receiveTimeUs, long enqueueTimeUs) {
+        if (frameHostProcessingLatency != 0) {
+            if (activeWindowVideoStats.minHostProcessingLatency != 0) {
+                activeWindowVideoStats.minHostProcessingLatency = (char) Math.min(activeWindowVideoStats.minHostProcessingLatency, frameHostProcessingLatency);
+            } else {
+                activeWindowVideoStats.minHostProcessingLatency = frameHostProcessingLatency;
+            }
+            activeWindowVideoStats.framesWithHostProcessingLatency += 1;
+        }
+        activeWindowVideoStats.maxHostProcessingLatency = (char) Math.max(activeWindowVideoStats.maxHostProcessingLatency, frameHostProcessingLatency);
+        activeWindowVideoStats.totalHostProcessingLatency += frameHostProcessingLatency;
+        activeWindowVideoStats.totalFramesReceived++;
+        activeWindowVideoStats.totalFrames++;
+        activeWindowVideoStats.totalTimeMs += (enqueueTimeUs - receiveTimeUs) / 1000;
+        numFramesIn++;
+
+        PyrowaveRenderer r = pyrowave;
+        if (r != null) {
+            r.submit(decodeUnitData, decodeUnitLength);
+        }
+
+        // Every PyroWave frame decodes on its own, so one that couldn't be decoded needs no IDR frame to recover from
+        return MoonBridge.DR_OK;
     }
 
     // All threads that interact with the MediaCodec instance must call this function regularly!
@@ -1192,6 +1291,10 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
     @Override
     public void start() {
+        // PyroWave frames are decoded and shown as they're submitted
+        if (pyrowaveActive) {
+            return;
+        }
         startRendererThread();
         startChoreographerThread();
     }
@@ -1200,6 +1303,12 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     public void prepareForStop() {
         // Let the decoding code know to ignore codec exceptions now
         stopping = true;
+
+        // PyroWave lets go of the surface now: this is also called as the surface goes away
+        PyrowaveRenderer r = pyrowave;
+        if (r != null) {
+            r.destroy();
+        }
 
         // Halt the rendering thread
         if (rendererThread != null) {
@@ -1246,9 +1355,9 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
             }
         }
 
-        // Wait for the renderer thread to shut down
+        // Wait for the renderer thread to shut down (there's none for PyroWave)
         try {
-            rendererThread.join();
+            if (rendererThread != null) rendererThread.join();
         } catch (InterruptedException e) {
             e.printStackTrace();
 
@@ -1261,11 +1370,23 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
     @Override
     public void cleanup() {
-        videoDecoder.release();
+        PyrowaveRenderer r = pyrowave;
+        pyrowave = null;
+        if (r != null) {
+            r.destroy();
+        }
+        if (videoDecoder != null) {
+            videoDecoder.release();
+        }
     }
 
     @Override
     public void setHdrMode(boolean enabled, byte[] hdrMetadata) {
+        // There's no MediaCodec to restart for PyroWave (streamed in SDR)
+        if (pyrowaveActive) {
+            return;
+        }
+
         // HDR metadata is only supported in Android 7.0 and later, so don't bother
         // restarting the codec on anything earlier than that.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
@@ -1405,6 +1526,9 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
         // Flip stats windows roughly every second
         if (SystemClock.uptimeMillis() >= activeWindowVideoStats.measurementStartTimestamp + 1000) {
+            if (pyrowaveActive) {
+                collectPyrowaveStats();
+            }
             {
                 // MoonCast Quick menu: keep the headline numbers even when the overlay is off
                 VideoStats q = new VideoStats();
@@ -1424,7 +1548,9 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                 VideoStatsFps fps = lastTwo.getFps();
                 String decoder;
 
-                if ((videoFormat & MoonBridge.VIDEO_FORMAT_MASK_H264) != 0) {
+                if (pyrowaveActive) {
+                    decoder = "PyroWave (" + pyrowaveDescription + ")";
+                } else if ((videoFormat & MoonBridge.VIDEO_FORMAT_MASK_H264) != 0) {
                     decoder = avcDecoder.getName();
                 } else if ((videoFormat & MoonBridge.VIDEO_FORMAT_MASK_H265) != 0) {
                     decoder = hevcDecoder.getName();
@@ -1464,6 +1590,11 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
             lastWindowVideoStats.copy(activeWindowVideoStats);
             activeWindowVideoStats.clear();
             activeWindowVideoStats.measurementStartTimestamp = SystemClock.uptimeMillis();
+        }
+
+        if (pyrowaveActive) {
+            return submitPyrowaveFrame(decodeUnitData, decodeUnitLength, frameHostProcessingLatency,
+                    receiveTimeUs, enqueueTimeUs);
         }
 
         boolean csdSubmittedForThisFrame = false;
