@@ -34,6 +34,9 @@ public class MoonBridge {
 
     // ServerCodecModeSupport bit of a host that offers PyroWave (4:2:0 8-bit)
     public static final int SCM_PYROWAVE = 0x00800000;
+    public static final int SCM_PYROWAVE_444 = 0x01000000;
+    public static final int SCM_PYROWAVE_10BIT = 0x02000000;
+    public static final int SCM_PYROWAVE_10BIT_444 = 0x04000000;
 
     public static final int BUFFER_TYPE_PICDATA = 0;
     public static final int BUFFER_TYPE_SPS = 1;

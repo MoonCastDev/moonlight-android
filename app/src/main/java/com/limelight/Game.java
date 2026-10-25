@@ -374,7 +374,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                     }
                 }
 
-                if (!willStreamHdr) {
+                // MoonCast: PyroWave still streams 10-bit then, shown as 10-bit SDR (tone mapped if the PC is in HDR)
+                if (!willStreamHdr && !(com.limelight.home.Pyrowave.wanted(this) && com.limelight.home.Pyrowave.deviceCan(this))) {
                     // Nope, no HDR for us :(
                     Toast.makeText(this, "Display does not support HDR10", Toast.LENGTH_LONG).show();
                 }
@@ -463,9 +464,15 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             }
         }
         // MoonCast: Settings, Picture, PyroWave. The PC picks it over the other codecs when it offers it (NvConnection
-        // drops it, and says so, when it doesn't). 4:2:0 8-bit only: PyroWave streams are SDR.
+        // drops it, and says so, when it doesn't). With HDR on, 10-bit too: HDR10 on an HDR screen, 10-bit SDR (and
+        // HDR tone mapped) otherwise, so it doesn't wait for the screen check above. With YUV 4:4:4 on, 4:4:4 too.
         if (com.limelight.home.Pyrowave.wanted(this) && com.limelight.home.Pyrowave.deviceCan(this)) {
             supportedVideoFormats |= MoonBridge.VIDEO_FORMAT_PYROWAVE;
+            boolean pyrowaveTenBit = prefConfig.enableHdr;
+            boolean pyrowave444 = com.limelight.home.Yuv444.wanted(this);
+            if (pyrowaveTenBit) supportedVideoFormats |= MoonBridge.VIDEO_FORMAT_PYROWAVE_10BIT;
+            if (pyrowave444) supportedVideoFormats |= MoonBridge.VIDEO_FORMAT_PYROWAVE_444;
+            if (pyrowaveTenBit && pyrowave444) supportedVideoFormats |= MoonBridge.VIDEO_FORMAT_PYROWAVE_10BIT_444;
             LimeLog.info("Asking the PC for PyroWave (recommended bitrate at " + prefConfig.width + "x" + prefConfig.height + " "
                     + prefConfig.fps + " fps: " + com.limelight.home.Pyrowave.recommendedKbps(prefConfig.width, prefConfig.height, prefConfig.fps) / 1000
                     + " Mbps, set " + prefConfig.bitrate / 1000 + " Mbps)");
@@ -1191,7 +1198,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                         message += "AV1";
                     }
                     else if ((videoFormat & MoonBridge.VIDEO_FORMAT_MASK_PYROWAVE) != 0) {
-                        message += "PyroWave";
+                        message += (videoFormat & MoonBridge.VIDEO_FORMAT_MASK_10BIT) != 0 && !decoderRenderer.isPyrowaveHdr()
+                                ? "PyroWave 10-bit" : "PyroWave";
                     }
                     else {
                         message += "UNKNOWN";
@@ -3273,8 +3281,15 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     private String codecName() {
         if (decoderRenderer == null) return "";
         int f = decoderRenderer.getActiveVideoFormat();
+        if ((f & MoonBridge.VIDEO_FORMAT_MASK_PYROWAVE) != 0) {
+            // "PyroWave 10-bit" for 10-bit SDR, "PyroWave HDR" while the PC's display is in HDR
+            String p = "PyroWave";
+            if ((f & MoonBridge.VIDEO_FORMAT_MASK_YUV444) != 0) p += " 4:4:4";
+            if ((f & MoonBridge.VIDEO_FORMAT_MASK_10BIT) != 0) p += decoderRenderer.isPyrowaveHdr() ? " HDR" : " 10-bit";
+            return p;
+        }
         String c = (f & MoonBridge.VIDEO_FORMAT_MASK_H264) != 0 ? "H.264" : (f & MoonBridge.VIDEO_FORMAT_MASK_H265) != 0 ? "HEVC"
-                : (f & MoonBridge.VIDEO_FORMAT_MASK_AV1) != 0 ? "AV1" : (f & MoonBridge.VIDEO_FORMAT_MASK_PYROWAVE) != 0 ? "PyroWave" : "";
+                : (f & MoonBridge.VIDEO_FORMAT_MASK_AV1) != 0 ? "AV1" : "";
         if (c.isEmpty()) return c;
         if ((f & MoonBridge.VIDEO_FORMAT_MASK_YUV444) != 0) c += " 4:4:4";
         if ((f & MoonBridge.VIDEO_FORMAT_MASK_10BIT) != 0) c += " HDR";

@@ -112,8 +112,9 @@ public:
     };
 
     // Null if PyroWave can't decode on this device. width and height must be even.
+    // MoonCast: chroma444 decodes 4:4:4 (full size Cb and Cr planes) rather than 4:2:0
     static std::unique_ptr<PyrowaveDecoder> create(const VkApi& vk, const DeviceInfo& info, int width, int height,
-                                                   bool tenBit);
+                                                   bool tenBit, bool chroma444 = false);
 
     // The GPU must be done with the planes
     ~PyrowaveDecoder();
@@ -133,6 +134,7 @@ public:
     uint32_t width() const { return width_; }
     uint32_t height() const { return height_; }
     bool tenBit() const { return tenBit_; }
+    bool chroma444() const { return chroma444_; }
     bool fragmentPath() const { return fragmentPath_; }
 
     // The share of its blocks a frame that lost packets must still have to be decoded, rather
@@ -192,7 +194,7 @@ public:
 private:
     PyrowaveDecoder(const VkApi& vk, const DeviceInfo& info);
 
-    bool init(int width, int height, bool tenBit);
+    bool init(int width, int height, bool tenBit, bool chroma444);
     PyrowavePlanes* acquirePlanes();
     bool createPlanes(PyrowavePlanes& planes);
     void destroyPlanes(PyrowavePlanes& planes);
@@ -208,8 +210,8 @@ private:
     // The memory of a plane made on the decode device, imported into the render device
     bool importPlane(PyrowavePlanes& planes, int plane, const VkImageCreateInfo& imageInfo, uint32_t memoryType,
                      VkDeviceSize size);
-    uint32_t planeWidth(int plane) const { return plane == 0 ? width_ : width_ / 2; }
-    uint32_t planeHeight(int plane) const { return plane == 0 ? height_ : height_ / 2; }
+    uint32_t planeWidth(int plane) const { return plane == 0 || chroma444_ ? width_ : width_ / 2; }
+    uint32_t planeHeight(int plane) const { return plane == 0 || chroma444_ ? height_ : height_ / 2; }
 
     const VkApi& vk_;
     const DeviceInfo info_;
@@ -220,6 +222,7 @@ private:
     uint32_t width_ = 0;
     uint32_t height_ = 0;
     bool tenBit_ = false;
+    bool chroma444_ = false;
     bool fragmentPath_ = false;
     float lostFrameMinBlocks_ = 0.9f;
     VkFormat format_ = VK_FORMAT_UNDEFINED;

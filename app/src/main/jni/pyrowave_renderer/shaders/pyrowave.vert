@@ -4,7 +4,9 @@
 // pyrowave.frag and PushConstants in pyrowave_renderer.cpp.
 layout(push_constant) uniform PushConstants {
     vec4 uvClamp;  // xy = min UV, zw = max UV (half a texel inside the picture)
-    vec4 params;   // x = quarter turns clockwise to pre-rotate by
+    vec4 params;   // x = quarter turns clockwise to pre-rotate by, y = dither amplitude, z = frame counter,
+                   // w = output mode (0 = as is, 1 = PQ HDR10 tone mapped to SDR)
+    vec4 params2;  // x = content peak nits, y = SDR reference white nits
     vec4 ycbcr;    // x = Kr, y = Kb, z = chroma midpoint, w = chroma U offset
 } pc;
 

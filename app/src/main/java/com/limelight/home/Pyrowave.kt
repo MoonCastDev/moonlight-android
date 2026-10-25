@@ -20,8 +20,30 @@ object Pyrowave {
     // Where this device's answer is kept, so the Vulkan probe runs once per app version and system build
     private const val CACHE_PREF = "mc_pyrowave_probe"
 
+    // Settings, Picture, PyroWave group (Moonlight X's keys): Vulkan options for the PyroWave renderer, and the GPU boost
+    const val DITHER_PREF = "spatial_dithering"            // off / low / high
+    const val FRONT_BUFFER_PREF = "checkbox_front_buffer"
+    const val GPU_BOOST_PREF = "checkbox_pyrowave_gpu_boost"
+    @JvmField val KEYS = listOf(PREF, DITHER_PREF, FRONT_BUFFER_PREF, GPU_BOOST_PREF)
+
     @JvmStatic
     fun wanted(ctx: Context): Boolean = PreferenceManager.getDefaultSharedPreferences(ctx).getBoolean(PREF, false)
+
+    /** PyrowaveRenderer.DITHER_*: fine moving noise that hides banding, most visible in HDR gradients. */
+    @JvmStatic
+    fun ditherMode(ctx: Context): Int = when (PreferenceManager.getDefaultSharedPreferences(ctx).getString(DITHER_PREF, "off")) {
+        "low" -> PyrowaveRenderer.DITHER_LOW
+        "high" -> PyrowaveRenderer.DITHER_HIGH
+        else -> PyrowaveRenderer.DITHER_OFF
+    }
+
+    /** Draw each frame into the image on screen (lower delay; may tear). Off by default in MoonCast. */
+    @JvmStatic
+    fun frontBuffer(ctx: Context): Boolean = PreferenceManager.getDefaultSharedPreferences(ctx).getBoolean(FRONT_BUFFER_PREF, false)
+
+    /** Light GPU work between frames so its clock stays up. Costs battery and heat. */
+    @JvmStatic
+    fun gpuBoost(ctx: Context): Boolean = PreferenceManager.getDefaultSharedPreferences(ctx).getBoolean(GPU_BOOST_PREF, false)
 
     @Volatile private var able: Boolean? = null
 

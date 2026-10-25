@@ -242,13 +242,13 @@ bool PyrowaveDecoder::loadLibrary() {
 }
 
 std::unique_ptr<PyrowaveDecoder> PyrowaveDecoder::create(const VkApi& vk, const DeviceInfo& info, int width,
-                                                         int height, bool tenBit) {
+                                                         int height, bool tenBit, bool chroma444) {
     if (!loadLibrary()) {
         return nullptr;
     }
 
     std::unique_ptr<PyrowaveDecoder> decoder(new PyrowaveDecoder(vk, info));
-    if (!decoder->init(width, height, tenBit)) {
+    if (!decoder->init(width, height, tenBit, chroma444)) {
         return nullptr;
     }
     return decoder;
@@ -257,8 +257,9 @@ std::unique_ptr<PyrowaveDecoder> PyrowaveDecoder::create(const VkApi& vk, const 
 PyrowaveDecoder::PyrowaveDecoder(const VkApi& vk, const DeviceInfo& info) : vk_(vk), info_(info) {
 }
 
-bool PyrowaveDecoder::init(int width, int height, bool tenBit) {
-    if (width <= 0 || height <= 0 || (width & 1) || (height & 1)) {
+bool PyrowaveDecoder::init(int width, int height, bool tenBit, bool chroma444) {
+    chroma444_ = chroma444;
+    if (width <= 0 || height <= 0 || (!chroma444 && ((width & 1) || (height & 1)))) {
         ALOGE("4:2:0 needs an even width and height, not %dx%d", width, height);
         return false;
     }
@@ -323,7 +324,7 @@ bool PyrowaveDecoder::init(int width, int height, bool tenBit) {
     decoderInfo.device = device_;
     decoderInfo.width = width;
     decoderInfo.height = height;
-    decoderInfo.chroma = PYROWAVE_CHROMA_SUBSAMPLING_420;
+    decoderInfo.chroma = chroma444 ? PYROWAVE_CHROMA_SUBSAMPLING_444 : PYROWAVE_CHROMA_SUBSAMPLING_420;
     decoderInfo.fragment_path = fragmentPath_;
     result = api.decoderCreate(&decoderInfo, &decoder_);
     if (result != PYROWAVE_SUCCESS) {
@@ -428,7 +429,7 @@ bool PyrowaveDecoder::init(int width, int height, bool tenBit) {
         }
     }
 
-    ALOGI("Decoding %ux%u %s 4:2:0 on the %s path", width_, height_, tenBit_ ? "10-bit" : "8-bit",
+    ALOGI("Decoding %ux%u %s %s on the %s path", width_, height_, tenBit_ ? "10-bit" : "8-bit", chroma444_ ? "4:4:4" : "4:2:0",
           fragmentPath_ ? "fragment" : "compute");
     return true;
 }

@@ -7,6 +7,7 @@ include $(CLEAR_VARS)
 
 LOCAL_MODULE := mooncast-pyrowave
 LOCAL_SRC_FILES := \
+    gpu_keep_busy.cpp \
     pyrowave_decoder.cpp \
     pyrowave_jni.cpp \
     pyrowave_renderer.cpp \

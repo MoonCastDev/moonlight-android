@@ -21,8 +21,13 @@ namespace {
     struct PushConstants {
         float uvClamp[4];
         float params[4];
+        float params2[4];
         float ycbcr[4];
     };
+
+    constexpr float kOutputPassthrough = 0.0f;
+    constexpr float kOutputPqToSdr = 1.0f;
+    constexpr float kSdrWhiteNits = 203.0f;
 
     // The newest Vulkan a PyroWave instance and device use, where they have it
     constexpr uint32_t kPyrowaveApiVersion = VK_API_VERSION_1_3;
@@ -92,7 +97,7 @@ namespace {
     }
 }
 
-VkInstance PyrowaveRenderer::createInstance(VkApi& vk, InstanceSetup& setup) {
+VkInstance PyrowaveRenderer::createInstance(VkApi& vk, InstanceSetup& setup, bool frontBuffer) {
     uint32_t version = 0;
     if (vk.vkEnumerateInstanceVersion(&version) != VK_SUCCESS || version < VK_API_VERSION_1_1) {
         ALOGI("Vulkan instance version too old");
@@ -115,6 +120,15 @@ VkInstance PyrowaveRenderer::createInstance(VkApi& vk, InstanceSetup& setup) {
             ALOGI("Instance lacks %s", name);
             return VK_NULL_HANDLE;
         }
+    }
+
+    // Needed for HDR10 swapchains
+    if (hasExtension(available, VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME)) {
+        setup.extensions.push_back(VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME);
+    }
+    // VK_KHR_shared_presentable_image, for a front buffer, depends on it
+    if (frontBuffer && hasExtension(available, VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME)) {
+        setup.extensions.push_back(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME);
     }
 
     setup.app.pApplicationName = "MoonCast";
@@ -244,30 +258,30 @@ bool PyrowaveRenderer::probe() {
     return supported;
 }
 
-std::unique_ptr<PyrowaveRenderer> PyrowaveRenderer::create(ANativeWindow* window, int width, int height,
-                                                           int colorspace, bool centerChroma) {
+std::unique_ptr<PyrowaveRenderer> PyrowaveRenderer::create(ANativeWindow* window, const PyrowaveConfig& config) {
     if (!PyrowaveDecoder::loadLibrary()) {
         return nullptr;
     }
     std::unique_ptr<PyrowaveRenderer> renderer(new PyrowaveRenderer());
-    if (!renderer->init(window, width, height, colorspace, centerChroma)) {
+    if (!renderer->init(window, config)) {
         return nullptr;
     }
     return renderer;
 }
 
-bool PyrowaveRenderer::init(ANativeWindow* window, int width, int height, int colorspace, bool centerChroma) {
+bool PyrowaveRenderer::init(ANativeWindow* window, const PyrowaveConfig& config) {
     ANativeWindow_acquire(window);
     window_ = window;
-    width_ = width;
-    height_ = height;
-    colorspace_ = colorspace;
-    centerChroma_ = centerChroma;
+    config_ = config;
+    width_ = config.width;
+    height_ = config.height;
+    const int width = config.width;
+    const int height = config.height;
 
     if (!vk_.loadGlobal()) {
         return false;
     }
-    instance_ = createInstance(vk_, instanceSetup_);
+    instance_ = createInstance(vk_, instanceSetup_, config.frontBuffer);
     if (instance_ == VK_NULL_HANDLE || !vk_.loadInstance(instance_)) {
         return false;
     }
@@ -295,9 +309,10 @@ bool PyrowaveRenderer::init(ANativeWindow* window, int width, int height, int co
     info.timestampValidBits = timestampValidBits_;
     info.timestampPeriodNs = timestampPeriodNs_;
     info.timelineSemaphores = deviceSetup_.pyrowave.timelineSemaphores;
-    decoder_ = PyrowaveDecoder::create(vk_, info, width, height, false);
+    decoder_ = PyrowaveDecoder::create(vk_, info, width, height, config.tenBit, config.chroma444);
     if (!decoder_) {
-        ALOGE("No PyroWave decoder for %dx%d", width, height);
+        ALOGE("No PyroWave decoder for %dx%d%s%s", width, height, config.tenBit ? " 10-bit" : "",
+              config.chroma444 ? " 4:4:4" : "");
         return false;
     }
 
@@ -329,6 +344,13 @@ bool PyrowaveRenderer::init(ANativeWindow* window, int width, int height, int co
         return false;
     }
 
+    // PyroWave GPU boost: light work between decodes on a device of its own, so the GPU keeps its clock up
+    if (config.gpuBoost) {
+        if (!keepBusy_.start(vk_, instance_, physicalDevice_, queueFamily_, globalPriorityExt_, 500'000, 4)) {
+            ALOGW("PyroWave GPU boost couldn't start");
+        }
+    }
+
     VkPhysicalDeviceProperties props;
     vk_.vkGetPhysicalDeviceProperties(physicalDevice_, &props);
     description_ = std::string(props.deviceName) + (decoder_->fragmentPath() ? ", fragment path" : ", compute path");
@@ -357,6 +379,19 @@ bool PyrowaveRenderer::pickDevice() {
                 vk_.vkGetPhysicalDeviceProperties(device, &props);
                 timestampValidBits_ = families[i].timestampValidBits;
                 timestampPeriodNs_ = props.limits.timestampPeriod;
+                const auto extensions = deviceExtensions(vk_, device);
+                hasColorspaceExt_ = std::any_of(instanceSetup_.extensions.begin(), instanceSetup_.extensions.end(),
+                        [](const char* name) { return strcmp(name, VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME) == 0; });
+                hasHdrMetadataExt_ = hasExtension(extensions, VK_EXT_HDR_METADATA_EXTENSION_NAME);
+                hasSharedPresentExt_ = config_.frontBuffer &&
+                        hasExtension(extensions, VK_KHR_SHARED_PRESENTABLE_IMAGE_EXTENSION_NAME) &&
+                        std::any_of(instanceSetup_.extensions.begin(), instanceSetup_.extensions.end(), [](const char* name) {
+                            return strcmp(name, VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME) == 0;
+                        });
+                globalPriorityExt_ = hasExtension(extensions, VK_KHR_GLOBAL_PRIORITY_EXTENSION_NAME)
+                        ? VK_KHR_GLOBAL_PRIORITY_EXTENSION_NAME
+                        : hasExtension(extensions, VK_EXT_GLOBAL_PRIORITY_EXTENSION_NAME)
+                        ? VK_EXT_GLOBAL_PRIORITY_EXTENSION_NAME : nullptr;
                 ALOGI("Using %s (Vulkan %u.%u.%u), queue family %u", props.deviceName,
                       VK_API_VERSION_MAJOR(props.apiVersion), VK_API_VERSION_MINOR(props.apiVersion),
                       VK_API_VERSION_PATCH(props.apiVersion), i);
@@ -372,6 +407,17 @@ bool PyrowaveRenderer::createDevice() {
     if (!prepareDevice(vk_, physicalDevice_, queueFamily_, instanceSetup_.apiVersion, deviceSetup_)) {
         return false;
     }
+    if (hasHdrMetadataExt_) {
+        deviceSetup_.extensions.push_back(VK_EXT_HDR_METADATA_EXTENSION_NAME);
+    }
+    if (hasSharedPresentExt_) {
+        deviceSetup_.extensions.push_back(VK_KHR_SHARED_PRESENTABLE_IMAGE_EXTENSION_NAME);
+    }
+    else if (config_.frontBuffer) {
+        ALOGW("Front buffer asked for, but the device has no shared presentable images");
+    }
+    deviceSetup_.info.enabledExtensionCount = static_cast<uint32_t>(deviceSetup_.extensions.size());
+    deviceSetup_.info.ppEnabledExtensionNames = deviceSetup_.extensions.data();
     VkDevice device = VK_NULL_HANDLE;
     VkResult result = vk_.vkCreateDevice(physicalDevice_, &deviceSetup_.info, nullptr, &device);
     if (result != VK_SUCCESS) {
@@ -383,6 +429,9 @@ bool PyrowaveRenderer::createDevice() {
         return false;
     }
     device_ = device;
+    if (!vk_.vkSetHdrMetadataEXT) {
+        hasHdrMetadataExt_ = false;
+    }
     vk_.vkGetDeviceQueue(device_, queueFamily_, 0, &queue_);
     return true;
 }
@@ -414,6 +463,7 @@ bool PyrowaveRenderer::createFrameResources() {
 }
 
 PyrowaveRenderer::~PyrowaveRenderer() {
+    keepBusy_.stop();
     if (device_) {
         {
             std::lock_guard<std::mutex> lock(queueMutex_);
@@ -452,6 +502,65 @@ PyrowaveRenderer::~PyrowaveRenderer() {
 void PyrowaveRenderer::releasePlanes(PyrowavePlanes* planes) {
     if (planes && decoder_) {
         decoder_->release(planes);
+    }
+}
+
+void PyrowaveRenderer::setHdrMode(bool enabled, const uint8_t* metadata, size_t metadataLength) {
+    // From Moonlight X's VulkanRenderer::setHdrMode()
+    HdrMetadata parsed;
+    if (metadata && metadataLength >= 24) {
+        uint16_t v[12];
+        memcpy(v, metadata, sizeof(v));
+        ALOGI("HDR metadata: max %u nits, min %.4f nits, MaxCLL %u, MaxFALL %u", v[8], v[9] * 0.0001f, v[10], v[11]);
+        // A 10000 nit peak is the top of the PQ range, which hosts send when they don't know the
+        // display's real peak. Passed on, it has the compositor squeeze everything above the
+        // panel's own peak into a sliver, so leave it out.
+        if (v[8] >= 10000) {
+            ALOGI("Ignoring placeholder HDR metadata");
+        }
+        else {
+            // SS_HDR_METADATA: R, G, B primaries and white point in 0.00002 units, max display
+            // luminance in nits, min in 0.0001 nits, then MaxCLL and MaxFALL in nits
+            auto xy = [](uint16_t x, uint16_t y) { return VkXYColorEXT {x * 0.00002f, y * 0.00002f}; };
+            parsed.vk.displayPrimaryRed = xy(v[0], v[1]);
+            parsed.vk.displayPrimaryGreen = xy(v[2], v[3]);
+            parsed.vk.displayPrimaryBlue = xy(v[4], v[5]);
+            parsed.vk.whitePoint = xy(v[6], v[7]);
+            parsed.vk.maxLuminance = v[8];
+            parsed.vk.minLuminance = v[9] * 0.0001f;
+            parsed.vk.maxContentLightLevel = v[10];
+            parsed.vk.maxFrameAverageLightLevel = v[11];
+            if (v[10] != 0) {
+                parsed.contentPeakNits = v[10];
+            }
+            else if (v[8] != 0) {
+                parsed.contentPeakNits = v[8];
+            }
+        }
+    }
+    std::lock_guard<std::mutex> lock(hdrMutex_);
+    hdrEnabled_ = enabled;
+    hdrMetadata_ = parsed;
+    hdrChanged_ = true;
+}
+
+void PyrowaveRenderer::applyHdrMetadata() {
+    if (!hasHdrMetadataExt_ || !swapchain_) {
+        ALOGW("Can't pass HDR metadata to the compositor: %s", hasHdrMetadataExt_ ? "no swapchain" : "no VK_EXT_hdr_metadata");
+        return;
+    }
+    VkHdrMetadataEXT metadata;
+    {
+        std::lock_guard<std::mutex> lock(hdrMutex_);
+        metadata = hdrMetadata_.vk;
+    }
+    if (metadata.maxLuminance > 0) {
+        vk_.vkSetHdrMetadataEXT(device_, 1, &swapchain_, &metadata);
+        ALOGI("Applied HDR metadata: max %.0f nits, MaxCLL %.0f, MaxFALL %.0f", metadata.maxLuminance,
+              metadata.maxContentLightLevel, metadata.maxFrameAverageLightLevel);
+    }
+    else {
+        ALOGW("No HDR metadata from the host; the compositor will assume a default peak");
     }
 }
 
@@ -507,6 +616,23 @@ bool PyrowaveRenderer::submit(const uint8_t* data, size_t size) {
         stats_.decoded++;
     }
 
+    float contentPeakNits;
+    {
+        std::lock_guard<std::mutex> lock(hdrMutex_);
+        if (hdrChanged_) {
+            hdrChanged_ = false;
+            if (hdrActive_ != hdrEnabled_) {
+                hdrActive_ = hdrEnabled_;
+                // A new swapchain format and color space
+                swapchainDirty_ = true;
+                ALOGI("Host HDR %s", hdrActive_ ? "on" : "off");
+            }
+            else if (outputPq_) {
+                swapchainDirty_ = true;  // New metadata for the HDR10 swapchain
+            }
+        }
+        contentPeakNits = hdrMetadata_.contentPeakNits;
+    }
     if (!ensureSwapchain()) {
         releasePlanes(planes);
         return drop();
@@ -548,12 +674,22 @@ bool PyrowaveRenderer::submit(const uint8_t* data, size_t size) {
     pc.uvClamp[2] = 1.0f - 0.5f / w;
     pc.uvClamp[3] = 1.0f - 0.5f / h;
     pc.params[0] = static_cast<float>(std::max(quarterTurns(preTransform_), 0));
-    // PyroWave is always full range, in the colorspace we asked for (0 = BT.601, 2 = BT.2020)
-    pc.ycbcr[0] = colorspace_ == 0 ? 0.299f : colorspace_ == 2 ? 0.2627f : 0.2126f;
-    pc.ycbcr[1] = colorspace_ == 0 ? 0.114f : colorspace_ == 2 ? 0.0593f : 0.0722f;
-    // Gray chroma as the host's 8-bit UNORM target stores it
-    pc.ycbcr[2] = 128.0f / 255.0f;
-    pc.ycbcr[3] = centerChroma_ ? 0.0f : 0.5f / w;
+    // Low dithers at the output's own precision. High dithers at 8-bit precision even on a 10-bit
+    // output, which also hides banding from an 8-bit panel or compositor further on.
+    pc.params[1] = config_.ditherMode == 1 ? 1.0f / static_cast<float>((1 << outputBits_) - 1)
+                 : config_.ditherMode == 2 ? 1.0f / 255.0f : 0.0f;
+    pc.params[2] = static_cast<float>(frameCounter_ % 64);
+    pc.params[3] = (hdrActive_ && !outputPq_) ? kOutputPqToSdr : kOutputPassthrough;
+    pc.params2[0] = contentPeakNits;
+    pc.params2[1] = kSdrWhiteNits;
+    // PyroWave is always full range, in the colorspace we asked for (0 = BT.601), or BT.2020 for HDR
+    const int colorspace = hdrActive_ ? 2 : config_.colorspace;
+    pc.ycbcr[0] = colorspace == 0 ? 0.299f : colorspace == 2 ? 0.2627f : 0.2126f;
+    pc.ycbcr[1] = colorspace == 0 ? 0.114f : colorspace == 2 ? 0.0593f : 0.0722f;
+    // Gray chroma as the host's 8-bit UNORM target stores it; 16-bit is as good as 0.5
+    pc.ycbcr[2] = config_.tenBit ? 0.5f : 128.0f / 255.0f;
+    // 4:4:4 has a chroma sample at every pixel
+    pc.ycbcr[3] = (config_.centerChroma || config_.chroma444) ? 0.0f : 0.5f / w;
 
     VkCommandBuffer cmd = commandBuffers_[slot];
     vk_.vkResetCommandBuffer(cmd, 0);
@@ -715,12 +851,33 @@ bool PyrowaveRenderer::createSwapchain() {
         return false;
     }
     // The picture is already non-linear R'G'B', so a UNORM target takes it as it is
-    VkSurfaceFormatKHR chosen = formats[0];
-    for (const auto& f : formats) {
-        if (f.format == VK_FORMAT_R8G8B8A8_UNORM && f.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-            chosen = f;
-            break;
+    auto findFormat = [&](VkFormat format, VkColorSpaceKHR colorSpace, VkSurfaceFormatKHR* out) {
+        for (const auto& f : formats) {
+            if (f.format == format && f.colorSpace == colorSpace) {
+                *out = f;
+                return true;
+            }
         }
+        return false;
+    };
+    VkSurfaceFormatKHR chosen {};
+    bool found = false;
+    bool pq = false;
+    if (hdrActive_ && hasColorspaceExt_) {
+        // The stream is already PQ-encoded BT.2020, so it passes straight through
+        found = pq = findFormat(VK_FORMAT_A2B10G10R10_UNORM_PACK32, VK_COLOR_SPACE_HDR10_ST2084_EXT, &chosen);
+    }
+    if (hdrActive_ && !found) {
+        ALOGW("Surface has no HDR10 format; tone mapping HDR to SDR");
+    }
+    if (!found && (config_.tenBit || hdrActive_)) {
+        found = findFormat(VK_FORMAT_A2B10G10R10_UNORM_PACK32, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR, &chosen);
+    }
+    if (!found) {
+        found = findFormat(VK_FORMAT_R8G8B8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR, &chosen);
+    }
+    if (!found) {
+        chosen = formats[0];
     }
 
     // Mailbox shows each frame as soon as it's drawn, replacing one not yet shown
@@ -728,12 +885,25 @@ bool PyrowaveRenderer::createSwapchain() {
     vk_.vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice_, surface_, &modeCount, nullptr);
     std::vector<VkPresentModeKHR> modes(modeCount);
     vk_.vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice_, surface_, &modeCount, modes.data());
-    const VkPresentModeKHR presentMode = std::find(modes.begin(), modes.end(), VK_PRESENT_MODE_MAILBOX_KHR) != modes.end()
+    VkPresentModeKHR presentMode = std::find(modes.begin(), modes.end(), VK_PRESENT_MODE_MAILBOX_KHR) != modes.end()
             ? VK_PRESENT_MODE_MAILBOX_KHR : VK_PRESENT_MODE_FIFO_KHR;
+    // Front buffer: the compositor takes the image again at every vsync, so whatever was last drawn
+    // into it is shown without queueing a new buffer (frames drawn on arrival, so it may tear)
+    const bool shared = hasSharedPresentExt_ &&
+            std::find(modes.begin(), modes.end(), VK_PRESENT_MODE_SHARED_CONTINUOUS_REFRESH_KHR) != modes.end();
+    if (shared) {
+        presentMode = VK_PRESENT_MODE_SHARED_CONTINUOUS_REFRESH_KHR;
+    }
+    else if (hasSharedPresentExt_) {
+        ALOGW("Front buffer asked for, but the surface has no shared present mode");
+    }
 
     uint32_t imageCount = std::max(caps.minImageCount, 3u);
     if (caps.maxImageCount != 0) {
         imageCount = std::min(imageCount, caps.maxImageCount);
+    }
+    if (shared) {
+        imageCount = 1;
     }
 
     VkCompositeAlphaFlagBitsKHR compositeAlpha = VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
@@ -768,6 +938,12 @@ bool PyrowaveRenderer::createSwapchain() {
     VkSwapchainKHR swapchain = VK_NULL_HANDLE;
     VkResult result = vk_.vkCreateSwapchainKHR(device_, &info, nullptr, &swapchain);
     destroySwapchain();
+    if (result != VK_SUCCESS && shared) {
+        // The driver offered the mode but refused it: the normal swapchain from now on
+        ALOGW("Front buffer swapchain refused (%d); using the normal swapchain", result);
+        hasSharedPresentExt_ = false;
+        return createSwapchain();
+    }
     if (result != VK_SUCCESS) {
         ALOGE("vkCreateSwapchainKHR failed: %d", result);
         return false;
@@ -775,8 +951,14 @@ bool PyrowaveRenderer::createSwapchain() {
     swapchain_ = swapchain;
     extent_ = extent;
     preTransform_ = transform;
+    outputPq_ = pq;
+    outputBits_ = chosen.format == VK_FORMAT_A2B10G10R10_UNORM_PACK32 ? 10 : 8;
+    frontBuffer_ = shared;
+    frontBufferUnavailable_ = config_.frontBuffer && !shared;
 
-    if (renderPass_ && renderPassFormat_ != chosen.format) {
+    // A shared image stays in its own layout, in which the display reads it
+    const VkImageLayout finalLayout = shared ? VK_IMAGE_LAYOUT_SHARED_PRESENT_KHR : VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    if (renderPass_ && (renderPassFormat_ != chosen.format || renderPassFinalLayout_ != finalLayout)) {
         if (pipeline_) {
             vk_.vkDestroyPipeline(device_, pipeline_, nullptr);
             pipeline_ = VK_NULL_HANDLE;
@@ -793,7 +975,7 @@ bool PyrowaveRenderer::createSwapchain() {
         color.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         color.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
         color.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        color.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        color.finalLayout = finalLayout;
         VkAttachmentReference ref {0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
         VkSubpassDescription subpass {};
         subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
@@ -805,6 +987,8 @@ bool PyrowaveRenderer::createSwapchain() {
         dependency.dstSubpass = 0;
         dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
         dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        // A shared image is acquired with nothing to wait for, so it also waits for the last frame drawn into it
+        dependency.srcAccessMask = shared ? VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT : 0;
         dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
         VkRenderPassCreateInfo rpInfo {VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
         rpInfo.attachmentCount = 1;
@@ -819,6 +1003,7 @@ bool PyrowaveRenderer::createSwapchain() {
             return false;
         }
         renderPassFormat_ = chosen.format;
+        renderPassFinalLayout_ = finalLayout;
     }
     if (!pipeline_ && !createPipeline()) {
         return false;
@@ -861,8 +1046,14 @@ bool PyrowaveRenderer::createSwapchain() {
         renderDone_.push_back(semaphore);
     }
 
-    ALOGI("Swapchain %ux%u, format %d, %u images, %s, pre-rotated %d degrees", extent.width, extent.height,
-          chosen.format, count, presentMode == VK_PRESENT_MODE_MAILBOX_KHR ? "mailbox" : "FIFO",
+    if (outputPq_) {
+        applyHdrMetadata();
+    }
+
+    ALOGI("Swapchain %ux%u, format %d, color space %d (%s%s), %u images, %s, pre-rotated %d degrees", extent.width,
+          extent.height, chosen.format, chosen.colorSpace, outputPq_ ? "HDR10" : outputBits_ == 10 ? "10-bit SDR" : "8-bit SDR",
+          (hdrActive_ && !outputPq_) ? ", tone mapped" : "", count,
+          shared ? "front buffer" : presentMode == VK_PRESENT_MODE_MAILBOX_KHR ? "mailbox" : "FIFO",
           std::max(quarterTurns(transform), 0) * 90);
     return true;
 }

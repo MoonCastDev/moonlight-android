@@ -297,6 +297,14 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         return pyrowaveActive;
     }
 
+    // The host's display is in HDR (PyroWave 10-bit streams follow it; the renderer picks HDR10 or tone maps)
+    private volatile boolean pyrowaveHdr;
+    private volatile byte[] pyrowaveHdrMetadata;
+
+    public boolean isPyrowaveHdr() {
+        return pyrowaveHdr;
+    }
+
     public MediaCodecDecoderRenderer(Activity activity, PreferenceConfiguration prefs,
                                      CrashListener crashListener, int consecutiveCrashCount,
                                      boolean meteredData, boolean requestedHdr,
@@ -740,14 +748,29 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
             pyrowaveSurfaceRelease.run();
         }
 
+        // Settings, Picture, PyroWave: the Vulkan options and the GPU boost
+        boolean tenBit = (videoFormat & MoonBridge.VIDEO_FORMAT_MASK_10BIT) != 0;
+        boolean chroma444 = (videoFormat & MoonBridge.VIDEO_FORMAT_MASK_YUV444) != 0;
+        int dither = com.limelight.home.Pyrowave.ditherMode(context);
+        boolean frontBuffer = com.limelight.home.Pyrowave.frontBuffer(context);
+        boolean gpuBoost = com.limelight.home.Pyrowave.gpuBoost(context);
         pyrowave = PyrowaveRenderer.create(renderTarget.getSurface(), initialWidth, initialHeight,
-                getPreferredColorSpace(), centerChroma);
+                getPreferredColorSpace(), centerChroma, tenBit, chroma444, dither, frontBuffer, gpuBoost);
         if (pyrowave == null) {
             LimeLog.severe("PyroWave decoding failed to start");
             return -4;
         }
+        if (pyrowaveHdr) {
+            pyrowave.setHdrMode(true, pyrowaveHdrMetadata);
+        }
         pyrowaveDescription = pyrowave.getDescription();
-        LimeLog.info("Decoding PyroWave " + initialWidth + "x" + initialHeight + " on " + pyrowaveDescription);
+        LimeLog.info("Decoding PyroWave " + initialWidth + "x" + initialHeight + (tenBit ? " 10-bit" : "")
+                + (chroma444 ? " 4:4:4" : "") + " on " + pyrowaveDescription + ", dither " + dither
+                + ", front buffer " + frontBuffer + ", GPU boost " + gpuBoost);
+        if (frontBuffer && pyrowave.getFrontBufferState() == 2 && activity != null) {
+            activity.runOnUiThread(() -> android.widget.Toast.makeText(activity,
+                    "Front buffer rendering not supported on this device", android.widget.Toast.LENGTH_LONG).show());
+        }
         return 0;
     }
 
@@ -1382,8 +1405,14 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
     @Override
     public void setHdrMode(boolean enabled, byte[] hdrMetadata) {
-        // There's no MediaCodec to restart for PyroWave (streamed in SDR)
+        // There's no MediaCodec to restart for PyroWave: the renderer switches its swapchain itself
         if (pyrowaveActive) {
+            pyrowaveHdr = enabled;
+            pyrowaveHdrMetadata = hdrMetadata;
+            PyrowaveRenderer r = pyrowave;
+            if (r != null) {
+                r.setHdrMode(enabled, hdrMetadata);
+            }
             return;
         }
 

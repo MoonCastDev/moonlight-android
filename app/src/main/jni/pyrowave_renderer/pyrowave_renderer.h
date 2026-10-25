@@ -5,8 +5,10 @@
 // swapchain and draw setup are adapted from Moonlight X's Vulkan renderer
 // (https://github.com/MoreOrLessSoftware/moonlight-android, GPL-3.0,
 // app/src/main/jni/vulkan/vulkan_renderer.cpp at 3e6665e7): only the parts PyroWave needs to reach
-// the screen. Frames are shown as they're decoded (mailbox where the surface has it), with none of
-// Moonlight X's frame pacing, jitter buffer, front buffer or HDR output.
+// the screen. Frames are shown as they're decoded (mailbox where the surface has it, or straight into
+// the image on screen with the front buffer setting), with none of Moonlight X's frame pacing or
+// jitter buffer. HDR10 output, 10-bit SDR, PQ to SDR tone mapping, dithering and the GPU boost
+// (GpuKeepBusy) are Moonlight X's.
 
 #include <cstdint>
 #include <memory>
@@ -16,6 +18,7 @@
 
 #include <android/native_window.h>
 
+#include "gpu_keep_busy.h"
 #include "pyrowave_decoder.h"
 #include "vk_api.h"
 
@@ -28,17 +31,26 @@ struct PyrowaveStats {
     uint32_t dropped = 0;     // Frames that couldn't be decoded or shown
 };
 
+struct PyrowaveConfig {
+    int width = 0;
+    int height = 0;
+    int colorspace = 1;         // MoonBridge.COLORSPACE_* the host encodes SDR in
+    bool centerChroma = false;  // The host sites 4:2:0 chroma at the center of each 2x2 quad
+    bool tenBit = false;        // A 10-bit stream (VIDEO_FORMAT_PYROWAVE_10BIT*): 16-bit planes, 10-bit swapchain
+    bool chroma444 = false;     // A 4:4:4 stream
+    int ditherMode = 0;         // 0 off, 1 low (the output's precision), 2 high (8-bit precision)
+    bool frontBuffer = false;   // Draw into the image on screen (VK_KHR_shared_presentable_image)
+    bool gpuBoost = false;      // Keep the GPU's clock up between decodes (GpuKeepBusy)
+};
+
 class PyrowaveRenderer {
 public:
     // Whether PyroWave can decode on this device: the library loads, and a decoder can be made on a
     // device set up as create() would. Tried once per process.
     static bool probe();
 
-    // colorspace: MoonBridge.COLORSPACE_* the host encodes in. centerChroma: the host sites 4:2:0
-    // chroma at the center of each 2x2 quad (hosts that send x-ss-pyrowave.bitstream), rather than
-    // with the left luma sample of each pair. Null if anything fails.
-    static std::unique_ptr<PyrowaveRenderer> create(ANativeWindow* window, int width, int height, int colorspace,
-                                                    bool centerChroma);
+    // Null if anything fails
+    static std::unique_ptr<PyrowaveRenderer> create(ANativeWindow* window, const PyrowaveConfig& config);
 
     ~PyrowaveRenderer();
 
@@ -53,6 +65,14 @@ public:
 
     // "Adreno (TM) 740, fragment path", for the stats
     std::string describe() const { return description_; }
+
+    // The host's display switched HDR on or off; metadata is SS_HDR_METADATA (24 bytes) or null.
+    // Thread safe; the swapchain follows at the next frame.
+    void setHdrMode(bool enabled, const uint8_t* metadata, size_t metadataLength);
+
+    // The front buffer was asked for but the device or surface can't do it
+    bool frontBufferUnavailable() const { return frontBufferUnavailable_; }
+    bool frontBufferActive() const { return frontBuffer_; }
 
 private:
     struct InstanceSetup {
@@ -69,12 +89,13 @@ private:
         PyrowaveDeviceFeatures pyrowave;
     };
 
-    static VkInstance createInstance(VkApi& vk, InstanceSetup& setup);
+    static VkInstance createInstance(VkApi& vk, InstanceSetup& setup, bool frontBuffer = false);
     static bool prepareDevice(VkApi& vk, VkPhysicalDevice device, uint32_t queueFamily, uint32_t instanceApi,
                               DeviceSetup& setup);
 
     PyrowaveRenderer() = default;
-    bool init(ANativeWindow* window, int width, int height, int colorspace, bool centerChroma);
+    bool init(ANativeWindow* window, const PyrowaveConfig& config);
+    void applyHdrMetadata();
     bool pickDevice();
     bool createDevice();
     bool createFrameResources();
@@ -102,10 +123,31 @@ private:
     std::mutex queueMutex_;
 
     std::unique_ptr<PyrowaveDecoder> decoder_;
+    PyrowaveConfig config_;
     int width_ = 0;
     int height_ = 0;
-    int colorspace_ = 1;
-    bool centerChroma_ = false;
+    bool hasColorspaceExt_ = false;
+    bool hasHdrMetadataExt_ = false;
+    bool hasSharedPresentExt_ = false;
+    const char* globalPriorityExt_ = nullptr;
+    GpuKeepBusy keepBusy_;
+
+    // HDR state from setHdrMode(), taken up at the next frame
+    struct HdrMetadata {
+        VkHdrMetadataEXT vk {VK_STRUCTURE_TYPE_HDR_METADATA_EXT};
+        float contentPeakNits = 1000.0f;
+    };
+    std::mutex hdrMutex_;
+    bool hdrEnabled_ = false;
+    bool hdrChanged_ = false;
+    HdrMetadata hdrMetadata_;
+    // What the swapchain shows
+    bool hdrActive_ = false;
+    bool outputPq_ = false;
+    int outputBits_ = 8;
+    bool frontBuffer_ = false;
+    bool frontBufferUnavailable_ = false;
+    VkImageLayout renderPassFinalLayout_ = VK_IMAGE_LAYOUT_UNDEFINED;
 
     VkShaderModule vertShader_ = VK_NULL_HANDLE;
     VkShaderModule fragShader_ = VK_NULL_HANDLE;

@@ -50,13 +50,34 @@ public class PyrowaveRenderer {
         }
     }
 
-    /** Null if it can't start. colorspace is MoonBridge.COLORSPACE_*. */
-    public static PyrowaveRenderer create(Surface surface, int width, int height, int colorspace, boolean centerChroma) {
+    /** Spatial dithering (Settings, Picture, PyroWave): off, low (the output's precision), high (8-bit precision). */
+    public static final int DITHER_OFF = 0, DITHER_LOW = 1, DITHER_HIGH = 2;
+
+    /**
+     * Null if it can't start. colorspace is MoonBridge.COLORSPACE_*; tenBit and chroma444 follow the negotiated
+     * VIDEO_FORMAT_PYROWAVE* format.
+     */
+    public static PyrowaveRenderer create(Surface surface, int width, int height, int colorspace, boolean centerChroma,
+                                          boolean tenBit, boolean chroma444, int ditherMode, boolean frontBuffer,
+                                          boolean gpuBoost) {
         if (!LOADED || surface == null || !surface.isValid()) {
             return null;
         }
-        long handle = nativeCreate(surface, width, height, colorspace, centerChroma);
+        long handle = nativeCreate(surface, width, height, colorspace, centerChroma, tenBit, chroma444, ditherMode,
+                frontBuffer, gpuBoost);
         return handle != 0 ? new PyrowaveRenderer(handle) : null;
+    }
+
+    /** The host's display switched HDR on or off (metadata: SS_HDR_METADATA, or null). */
+    public synchronized void setHdrMode(boolean enabled, byte[] metadata) {
+        if (handle != 0) {
+            nativeSetHdrMode(handle, enabled, metadata);
+        }
+    }
+
+    /** 1: drawing into the front buffer, 2: it was asked for but this device can't, 0: not asked for. */
+    public synchronized int getFrontBufferState() {
+        return handle != 0 ? nativeFrontBufferState(handle) : 0;
     }
 
     /** Decodes and shows one whole frame. False if it was dropped. */
@@ -90,7 +111,11 @@ public class PyrowaveRenderer {
     }
 
     private static native boolean nativeProbe();
-    private static native long nativeCreate(Surface surface, int width, int height, int colorspace, boolean centerChroma);
+    private static native long nativeCreate(Surface surface, int width, int height, int colorspace, boolean centerChroma,
+                                            boolean tenBit, boolean chroma444, int ditherMode, boolean frontBuffer,
+                                            boolean gpuBoost);
+    private static native void nativeSetHdrMode(long handle, boolean enabled, byte[] metadata);
+    private static native int nativeFrontBufferState(long handle);
     private static native boolean nativeSubmit(long handle, byte[] data, int length);
     private static native void nativeTakeStats(long handle, long[] out);
     private static native String nativeDescribe(long handle);

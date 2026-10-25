@@ -19,13 +19,24 @@ Java_com_limelight_binding_video_PyrowaveRenderer_nativeProbe(JNIEnv*, jclass) {
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_limelight_binding_video_PyrowaveRenderer_nativeCreate(JNIEnv* env, jclass, jobject surface, jint width,
-                                                               jint height, jint colorspace, jboolean centerChroma) {
+                                                               jint height, jint colorspace, jboolean centerChroma,
+                                                               jboolean tenBit, jboolean chroma444, jint ditherMode,
+                                                               jboolean frontBuffer, jboolean gpuBoost) {
     ANativeWindow* window = ANativeWindow_fromSurface(env, surface);
     if (!window) {
         return 0;
     }
-    std::unique_ptr<PyrowaveRenderer> renderer = PyrowaveRenderer::create(window, width, height, colorspace,
-                                                                          centerChroma == JNI_TRUE);
+    vkr::PyrowaveConfig config;
+    config.width = width;
+    config.height = height;
+    config.colorspace = colorspace;
+    config.centerChroma = centerChroma == JNI_TRUE;
+    config.tenBit = tenBit == JNI_TRUE;
+    config.chroma444 = chroma444 == JNI_TRUE;
+    config.ditherMode = ditherMode;
+    config.frontBuffer = frontBuffer == JNI_TRUE;
+    config.gpuBoost = gpuBoost == JNI_TRUE;
+    std::unique_ptr<PyrowaveRenderer> renderer = PyrowaveRenderer::create(window, config);
     // The renderer holds its own reference
     ANativeWindow_release(window);
     return reinterpret_cast<jlong>(renderer.release());
@@ -68,4 +79,32 @@ Java_com_limelight_binding_video_PyrowaveRenderer_nativeDescribe(JNIEnv* env, jc
 extern "C" JNIEXPORT void JNICALL
 Java_com_limelight_binding_video_PyrowaveRenderer_nativeDestroy(JNIEnv*, jclass, jlong handle) {
     delete fromHandle(handle);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_limelight_binding_video_PyrowaveRenderer_nativeSetHdrMode(JNIEnv* env, jclass, jlong handle, jboolean enabled,
+                                                                   jbyteArray metadata) {
+    PyrowaveRenderer* renderer = fromHandle(handle);
+    if (!renderer) {
+        return;
+    }
+    if (metadata) {
+        jsize length = env->GetArrayLength(metadata);
+        jbyte* bytes = env->GetByteArrayElements(metadata, nullptr);
+        renderer->setHdrMode(enabled == JNI_TRUE, reinterpret_cast<const uint8_t*>(bytes), static_cast<size_t>(length));
+        env->ReleaseByteArrayElements(metadata, bytes, JNI_ABORT);
+    }
+    else {
+        renderer->setHdrMode(enabled == JNI_TRUE, nullptr, 0);
+    }
+}
+
+// 1: front buffer in use, 2: asked for but unavailable, 0: not asked for
+extern "C" JNIEXPORT jint JNICALL
+Java_com_limelight_binding_video_PyrowaveRenderer_nativeFrontBufferState(JNIEnv*, jclass, jlong handle) {
+    PyrowaveRenderer* renderer = fromHandle(handle);
+    if (!renderer) {
+        return 0;
+    }
+    return renderer->frontBufferActive() ? 1 : renderer->frontBufferUnavailable() ? 2 : 0;
 }

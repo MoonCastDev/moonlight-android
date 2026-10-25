@@ -271,8 +271,21 @@ public class NvConnection {
             context.connListener.displayTransientMessage("This PC doesn't offer PyroWave, so the stream uses your usual codec");
         }
 
+        // MoonCast: of the PyroWave formats, only the ones the PC offers (so 10-bit PyroWave doesn't ask for HDR from a PC
+        // that would stream PyroWave 8-bit)
+        if ((context.streamConfig.getSupportedVideoFormats() & MoonBridge.VIDEO_FORMAT_MASK_PYROWAVE) != 0) {
+            int scm = context.serverCodecModeSupport;
+            if ((scm & MoonBridge.SCM_PYROWAVE_10BIT) == 0) context.streamConfig.removeSupportedVideoFormats(MoonBridge.VIDEO_FORMAT_PYROWAVE_10BIT);
+            if ((scm & MoonBridge.SCM_PYROWAVE_444) == 0) context.streamConfig.removeSupportedVideoFormats(MoonBridge.VIDEO_FORMAT_PYROWAVE_444);
+            if ((scm & MoonBridge.SCM_PYROWAVE_10BIT_444) == 0) context.streamConfig.removeSupportedVideoFormats(MoonBridge.VIDEO_FORMAT_PYROWAVE_10BIT_444);
+        }
+
         context.negotiatedHdr = (context.streamConfig.getSupportedVideoFormats() & MoonBridge.VIDEO_FORMAT_MASK_10BIT) != 0;
-        if ((context.serverCodecModeSupport & 0x20200) == 0 && context.negotiatedHdr) {
+        int hdrCodecModes = 0x20200;
+        if ((context.streamConfig.getSupportedVideoFormats() & MoonBridge.VIDEO_FORMAT_MASK_PYROWAVE) != 0) {
+            hdrCodecModes |= MoonBridge.SCM_PYROWAVE_10BIT;
+        }
+        if ((context.serverCodecModeSupport & hdrCodecModes) == 0 && context.negotiatedHdr) {
             context.connListener.displayTransientMessage("Your PC GPU does not support streaming HDR. The stream will be SDR.");
             context.negotiatedHdr = false;
         }
