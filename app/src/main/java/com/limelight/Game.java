@@ -1617,9 +1617,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             items.add(new com.limelight.home.QuickMenu.Item("▤", "Task Manager", "Windows: Ctrl + Shift + Esc", false, this::openTaskManager).staysOpen("Opened on the PC"));
             // handheld only: send the game to the last MoonCast TV (it ends this stream, the game keeps running)
             items.add(new com.limelight.home.QuickMenu.Item("◉", "Power", "Hibernate, restart or shut down the PC", false, this::showPower).staysOpen(null));
-            com.limelight.home.QuickMenu.Item move = com.limelight.home.MoveToTv.item(Game.this, new com.limelight.home.MoveToTv.Target(
+            com.limelight.home.QuickMenu.Item move = com.limelight.home.MoveToTv.playOnTv(Game.this, new com.limelight.home.MoveToTv.Target(
                     "pc", appName != null ? appName : "Your game", getIntent().getStringExtra(EXTRA_PC_UUID), pcName,
-                    getIntent().getIntExtra(EXTRA_APP_ID, 0), null, null, null, true, null));
+                    getIntent().getIntExtra(EXTRA_APP_ID, 0), null, null, null, true, null), quickMenu, this::openQuickMenu);
             if (move != null) items.add(move);
             items.add(new com.limelight.home.QuickMenu.Item("←", "Disconnect", "The game keeps running", false, this::finish));
             items.add(new com.limelight.home.QuickMenu.Item("✕", "Quit game", null, true, this::quitOnHostAndFinish));

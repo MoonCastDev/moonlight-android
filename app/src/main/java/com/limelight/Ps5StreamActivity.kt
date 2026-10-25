@@ -824,9 +824,9 @@ class Ps5StreamActivity : Activity(), SurfaceHolder.Callback, com.limelight.home
         lastShown = -1.0; lastLossPct = 0.0
         if (isFinishing) return
         // handheld only: hand the PS5 over to the last MoonCast TV
-        val move = com.limelight.home.MoveToTv.item(this, com.limelight.home.MoveToTv.Target("ps", "PlayStation 5",
+        val move = com.limelight.home.MoveToTv.playOnTv(this, com.limelight.home.MoveToTv.Target("ps", "PlayStation 5",
             psHost = intent.getStringExtra(EXTRA_HOST), registKey = intent.getStringExtra(EXTRA_REGIST_KEY),
-            morning = intent.getStringExtra(EXTRA_MORNING), isPs5 = intent.getBooleanExtra(EXTRA_PS5, true)))
+            morning = intent.getStringExtra(EXTRA_MORNING), isPs5 = intent.getBooleanExtra(EXTRA_PS5, true)), menu, Runnable { openMenu() })
         menu.show("PlayStation 5",
             (if (streamRemote) "Over PlayStation Network. " else "On your home network. ") + com.limelight.home.QuickMenu.COMBO_LABEL + " opens this menu",
             { liveStats() },

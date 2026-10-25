@@ -152,4 +152,19 @@ object TvSender : MoveToTv.Handler {
         // the old client is gone (the TV still retries a PS5 that isn't free yet)
         open(act, tv, t, when (t.kind) { "pc" -> 500L; "ps" -> 3000L; else -> 1000L })
     }
+
+    override fun tvs(ctx: Context): List<Triple<String, String, Boolean>> {
+        val last = TvFinder.lastTv(ctx)?.id
+        return TvFinder.known(ctx).sortedWith(compareByDescending<TvFinder.Tv> { it.id == last && TvFinder.isHere(it) }.thenByDescending { TvFinder.isHere(it) })
+                .map { Triple(it.id, it.name, TvFinder.isHere(it)) }
+    }
+
+    override fun sweep(ctx: Context, done: Runnable) = TvFinder.sweep(ctx) { done.run() }
+
+    override fun moveTo(act: Activity, t: MoveToTv.Target, tvId: String) {
+        val tv = TvFinder.byId(act, tvId) ?: return
+        TvFinder.setLast(act, tv)
+        Recents.touch(act, t.key)
+        open(act, tv, t, when (t.kind) { "pc" -> 500L; "ps" -> 3000L; else -> 1000L })
+    }
 }

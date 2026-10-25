@@ -518,7 +518,7 @@ class XboxStreamActivity : Activity(), com.limelight.home.MoveToTv.LocalSession 
         if (isFinishing) return
         sendNeutral()
         // handheld only: hand the Xbox over to the last MoonCast TV (it signs in with its own Xbox account)
-        val move = com.limelight.home.MoveToTv.item(this, com.limelight.home.MoveToTv.Target("xb", consoleName, xboxId = consoleId))
+        val move = com.limelight.home.MoveToTv.playOnTv(this, com.limelight.home.MoveToTv.Target("xb", consoleName, xboxId = consoleId), menu, Runnable { openMenu() })
         menu.show(consoleName, "Xbox Remote Play. " + QuickMenu.COMBO_LABEL + " opens this menu", { liveStats() }, listOfNotNull(
             QuickMenu.Item("⊗", "Xbox button", "Opens the guide", false) { tapGuide() }.staysOpen("Sent to the Xbox"),
             QuickMenu.Item("ⓘ", "Streaming status", com.limelight.home.StatsLevel.label(com.limelight.home.StatsLevel.get(this)), false) { corner.toggle() }
