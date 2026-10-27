@@ -264,7 +264,7 @@ public class NvConnection {
         // MoonCast: PyroWave (Settings, Picture) only when the PC offers it; otherwise the stream uses the normal
         // codec setting, and says so once
         if ((context.streamConfig.getSupportedVideoFormats() & MoonBridge.VIDEO_FORMAT_MASK_PYROWAVE) != 0 &&
-                (context.serverCodecModeSupport & (MoonBridge.SCM_PYROWAVE | MoonBridge.SCM_PYROWAVE_10BIT)) == 0) {
+                (context.serverCodecModeSupport & MoonBridge.SCM_PYROWAVE) == 0) {
             context.streamConfig.removeSupportedVideoFormats(MoonBridge.VIDEO_FORMAT_MASK_PYROWAVE);
             MoonBridge.setFecPercentage(-1);  // The FEC choice is PyroWave's
             LimeLog.info("PyroWave asked for, but the PC doesn't offer it (codec modes 0x" +
@@ -430,6 +430,7 @@ public class NvConnection {
         new Thread(new Runnable() {
             public void run() {
                 context.connListener = connectionListener;
+                context.videoCapabilities = videoDecoderRenderer.getCapabilities();
 
                 String appName = context.streamConfig.getApp().getAppName();
 
@@ -452,12 +453,6 @@ public class NvConnection {
                     context.connListener.stageFailed(appName, MoonBridge.ML_PORT_FLAG_TCP_47984 | MoonBridge.ML_PORT_FLAG_TCP_47989, 0);
                     return;
                 }
-
-                // MoonCast: after startApp(), which drops PyroWave from the offer when the PC doesn't have it, so the
-                // renderer only gives up direct submit for a stream that may really be PyroWave
-                videoDecoderRenderer.setPyrowaveOffered(
-                        (context.streamConfig.getSupportedVideoFormats() & MoonBridge.VIDEO_FORMAT_MASK_PYROWAVE) != 0);
-                context.videoCapabilities = videoDecoderRenderer.getCapabilities();
 
                 ByteBuffer ib = ByteBuffer.allocate(16);
                 ib.putInt(context.riKeyId);

@@ -972,7 +972,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
 
     private fun settingsPage(): View {
         hints("A" to "Change", "LB" to "Previous tab", "RB" to "Next tab", "|" to "", "B" to "Back")
-        val groups = listOf("video" to "Video") + (if (com.limelight.home.Pyrowave.knownCan(this) { render(force = true) } == true) listOf("pyrowave" to "PyroWave") else emptyList()) + listOf("audio" to "Audio", "pads" to "Controllers", "ps" to "PlayStation",
+        val groups = listOf("video" to "Video") + (if (com.limelight.home.Pyrowave.deviceCan(this)) listOf("pyrowave" to "PyroWave") else emptyList()) + listOf("audio" to "Audio", "pads" to "Controllers", "ps" to "PlayStation",
                 "xbox" to "Xbox", "mk" to "Mouse and keyboard", "screen" to "Screen", "about" to "About and help")
         val row = tv.row(Gravity.TOP)
         val nav = tv.col()
@@ -1059,8 +1059,8 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                     toggle(list, com.limelight.home.Pyrowave.YUV444_PREF, "YUV 4:4:4",
                             "Full colour detail for every pixel, when the PC offers PyroWave 4:4:4. Needs more bitrate", false)
                     choice(list, "pyrowave_late_frames", "Late frames",
-                            "Balanced shows frames that lost packets from what arrived (a little blur, no stutter). The Cut choices also cut frames running later than usual, sharper to smoothest; try them only on a link with spare room",
-                            listOf("Off (least blur)" to "off", "Balanced: lost packets only" to "balanced", "Cut late: sharper" to "sharp", "Cut late: smoother" to "smooth", "Cut late: smoothest (most blur)" to "smoothest"), "balanced")
+                            "How much blur to accept for a smoother stream: frames that lost packets are shown from what arrived, and frames running late are cut short",
+                            listOf("Off (least blur)" to "off", "Sharper" to "sharp", "Balanced" to "balanced", "Smoother" to "smooth", "Smoothest (most blur)" to "smoothest"), "balanced")
                     // Mirrors of Picture's settings, which PyroWave follows its own way
                     toggle(list, "checkbox_ultra_low_latency", "Ultra low latency",
                             "Same as in Picture. With PyroWave: each frame on screen the moment it's decoded (immediate or mailbox), and the front buffer unless you turned it off below", false)

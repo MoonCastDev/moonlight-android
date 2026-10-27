@@ -125,9 +125,6 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     private boolean connected = false;
     private boolean autoEnterPip = false;
     private boolean surfaceCreated = false;
-    // MoonCast: the "Display does not support HDR10" toast, held back while the stream may be PyroWave (10-bit SDR)
-    private volatile boolean hdrToastIfNotPyrowave;
-
     // MoonCast: Super resolution (FSR 1.0)
     private boolean fsrPlanned = false;
     private float fsrSharpness = 0.6f;
@@ -377,15 +374,10 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                     }
                 }
 
-                // MoonCast: PyroWave still streams 10-bit then, shown as 10-bit SDR (tone mapped if the PC is in HDR). If the
-                // stream turns out not to be PyroWave, the toast comes once it starts (connectionStarted()).
-                if (!willStreamHdr) {
-                    if (com.limelight.home.Pyrowave.wanted(this) && com.limelight.home.Pyrowave.deviceCan(this)) {
-                        hdrToastIfNotPyrowave = true;
-                    } else {
-                        // Nope, no HDR for us :(
-                        Toast.makeText(this, "Display does not support HDR10", Toast.LENGTH_LONG).show();
-                    }
+                // MoonCast: PyroWave still streams 10-bit then, shown as 10-bit SDR (tone mapped if the PC is in HDR)
+                if (!willStreamHdr && !(com.limelight.home.Pyrowave.wanted(this) && com.limelight.home.Pyrowave.deviceCan(this))) {
+                    // Nope, no HDR for us :(
+                    Toast.makeText(this, "Display does not support HDR10", Toast.LENGTH_LONG).show();
                 }
             }
             else {
@@ -2911,12 +2903,6 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     @Override
     public void connectionStarted() {
         com.limelight.home.StreamReport.playing();
-        if (hdrToastIfNotPyrowave) {
-            hdrToastIfNotPyrowave = false;
-            if (decoderRenderer != null && (decoderRenderer.getActiveVideoFormat() & MoonBridge.VIDEO_FORMAT_MASK_PYROWAVE) == 0) {
-                runOnUiThread(() -> Toast.makeText(Game.this, "Display does not support HDR10", Toast.LENGTH_LONG).show());
-            }
-        }
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
@@ -3054,14 +3040,6 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             }
             // MoonCast: a PyroWave stream draws to the screen's surface with Vulkan, so Super resolution (GL on the
             // same surface) lets go of it; it only upscales MediaCodec's frames
-            // MoonCast: PyroWave's GPU failed (device lost): end the stream with a clear message rather than freeze
-            decoderRenderer.setPyrowaveFailureListener(() -> runOnUiThread(() -> {
-                if (displayedFailureDialog || isFinishing()) return;
-                displayedFailureDialog = true;
-                stopConnection();
-                Dialog.displayDialog(Game.this, getResources().getString(R.string.conn_terminated_title),
-                        "The GPU stopped decoding PyroWave (Vulkan device lost). Start the stream again, or turn PyroWave off in Settings.", true);
-            }));
             decoderRenderer.setPyrowaveSurfaceRelease(() -> {
                 com.limelight.binding.video.FsrRenderer f = fsr;
                 if (f != null) {

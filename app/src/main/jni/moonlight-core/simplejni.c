@@ -220,15 +220,7 @@ Java_com_limelight_nvstream_jni_MoonBridge_getLaunchUrlQueryParameters(JNIEnv *e
 // MoonCast: PyroWave (see LiGetHostPyroWaveBitstreamId() in Limelight.h)
 JNIEXPORT jstring JNICALL
 Java_com_limelight_nvstream_jni_MoonBridge_getHostPyroWaveBitstreamId(JNIEnv *env, jclass clazz) {
-    // From the host's SDP: printable ASCII only, so NewStringUTF always gets valid modified UTF-8
-    char clean[32];
-    const char* id = LiGetHostPyroWaveBitstreamId();
-    size_t n = 0;
-    for (; id != NULL && id[n] != '\0' && n + 1 < sizeof(clean); n++) {
-        clean[n] = (id[n] >= 0x20 && id[n] < 0x7F) ? id[n] : '?';
-    }
-    clean[n] = '\0';
-    return (*env)->NewStringUTF(env, clean);
+    return (*env)->NewStringUTF(env, LiGetHostPyroWaveBitstreamId());
 }
 
 JNIEXPORT jbyte JNICALL

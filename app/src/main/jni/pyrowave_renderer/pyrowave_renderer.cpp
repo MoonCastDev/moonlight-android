@@ -33,7 +33,7 @@ namespace {
     constexpr uint32_t kPyrowaveApiVersion = VK_API_VERSION_1_3;
 
     constexpr uint64_t kFenceTimeoutNs = 1'000'000'000;
-    constexpr uint64_t kAcquireTimeoutNs = 100'000'000;  // Mailbox and immediate never wait long
+    constexpr uint64_t kAcquireTimeoutNs = 100'000'000;
 
     int64_t nowNs() {
         timespec ts {};
@@ -512,18 +512,6 @@ void PyrowaveRenderer::createDecodeDevice() {
     ALOGI("PyroWave decodes on a device of its own; rendering at %s", highPriority_ ? "high priority" : "the default priority");
 }
 
-void PyrowaveRenderer::noteGpuResult(VkResult result) {
-    if (result == VK_ERROR_DEVICE_LOST) {
-        // Lost for good: no point trying again
-        gpuFailures_ = kMaxGpuFailures;
-        ALOGE("The GPU device was lost");
-    }
-    else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR && result != VK_ERROR_OUT_OF_DATE_KHR &&
-             result != VK_TIMEOUT && result != VK_NOT_READY) {
-        gpuFailures_++;
-    }
-}
-
 std::string PyrowaveRenderer::presentDescription() {
     std::lock_guard<std::mutex> lock(describeMutex_);
     std::string text = frontBuffer_ ? "front buffer"
@@ -682,8 +670,6 @@ bool PyrowaveRenderer::retireSlot(int slot) {
     VkResult result = vk_.vkWaitForFences(device_, 1, &fences_[slot], VK_TRUE, kFenceTimeoutNs);
     if (result != VK_SUCCESS) {
         ALOGE("Timed out waiting for the GPU: %d", result);
-        // A render that never finishes is as bad as a lost device
-        noteGpuResult(result == VK_TIMEOUT ? VK_ERROR_DEVICE_LOST : result);
         return false;
     }
     if (slotPlanes_[slot]) {
@@ -711,9 +697,6 @@ bool PyrowaveRenderer::submit(const uint8_t* data, size_t size, const PyrowaveGa
         return false;
     };
 
-    if (failed()) {
-        return drop();
-    }
     const int64_t startNs = nowNs();
     uint64_t readyValue = 0;
     PyrowaveDecoder::DecodeTimes times;
@@ -766,7 +749,7 @@ bool PyrowaveRenderer::submit(const uint8_t* data, size_t size, const PyrowaveGa
     }
 
     uint32_t imageIndex = 0;
-    VkResult result = vk_.vkAcquireNextImageKHR(device_, swapchain_, acquireTimeoutNs_, imageAcquired_[slot],
+    VkResult result = vk_.vkAcquireNextImageKHR(device_, swapchain_, kAcquireTimeoutNs, imageAcquired_[slot],
                                                 VK_NULL_HANDLE, &imageIndex);
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
         swapchainDirty_ = true;
@@ -774,13 +757,12 @@ bool PyrowaveRenderer::submit(const uint8_t* data, size_t size, const PyrowaveGa
             releasePlanes(planes);
             return drop();
         }
-        result = vk_.vkAcquireNextImageKHR(device_, swapchain_, acquireTimeoutNs_, imageAcquired_[slot],
+        result = vk_.vkAcquireNextImageKHR(device_, swapchain_, kAcquireTimeoutNs, imageAcquired_[slot],
                                            VK_NULL_HANDLE, &imageIndex);
     }
     if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
         if (result != VK_TIMEOUT && result != VK_NOT_READY) {
             ALOGE("vkAcquireNextImageKHR failed: %d", result);
-            noteGpuResult(result);
             swapchainDirty_ = true;
         }
         releasePlanes(planes);
@@ -904,7 +886,6 @@ bool PyrowaveRenderer::submit(const uint8_t* data, size_t size, const PyrowaveGa
     }
     if (result != VK_SUCCESS) {
         ALOGE("vkQueueSubmit failed: %d", result);
-        noteGpuResult(result);
         // Nothing will signal the fence now, so start over with a signaled one. The acquired
         // image's semaphore is still pending, so the swapchain is made again.
         vk_.vkDestroyFence(device_, fences_[slot], nullptr);
@@ -960,13 +941,11 @@ bool PyrowaveRenderer::submit(const uint8_t* data, size_t size, const PyrowaveGa
     }
     else if (result != VK_SUCCESS) {
         ALOGE("vkQueuePresentKHR failed: %d", result);
-        noteGpuResult(result);
         swapchainDirty_ = true;
     }
     if (result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR) {
         std::lock_guard<std::mutex> lock(statsMutex_);
         stats_.presented++;
-        gpuFailures_ = 0;
     }
     return true;
 }
@@ -1047,16 +1026,9 @@ bool PyrowaveRenderer::createSwapchain() {
     if (config_.ultraLowLatency && hasMode(VK_PRESENT_MODE_IMMEDIATE_KHR)) {
         presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR;
     }
-    else if ((config_.ultraLowLatency || config_.framePacing == 0 ||
-              // FIFO can only keep up when the stream is slower than the screen; at its rate or faster
-              // frames would queue, so the newest wins instead
-              static_cast<float>(config_.streamFps) >= config_.displayHz - 1.0f) && hasMode(VK_PRESENT_MODE_MAILBOX_KHR)) {
+    else if ((config_.ultraLowLatency || config_.framePacing == 0) && hasMode(VK_PRESENT_MODE_MAILBOX_KHR)) {
         presentMode = VK_PRESENT_MODE_MAILBOX_KHR;
     }
-    // FIFO's acquire waits for an image the screen has let go of: never longer than about a frame,
-    // so common-c's decoder thread isn't held up (a frame that would wait longer is dropped)
-    acquireTimeoutNs_ = presentMode == VK_PRESENT_MODE_FIFO_KHR
-            ? static_cast<uint64_t>(1'000'000'000.0 / std::max(config_.streamFps, 1)) : kAcquireTimeoutNs;
     // Front buffer: the compositor takes the image again at every vsync, so whatever was last drawn
     // into it is shown without queueing a new buffer (frames drawn on arrival, so it may tear)
     const bool shared = hasSharedPresentExt_ &&

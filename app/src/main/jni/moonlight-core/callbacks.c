@@ -30,19 +30,15 @@ static jmethodID BridgeDrSubmitPartialFrameMethod;
 #define PARTIAL_KIND_LOST 1 // Packets were lost
 #define PARTIAL_KIND_CUT 2  // Cut short at its deadline (see LiSetPartialFrameDeadline())
 
-// MoonCast: PyroWave late frames (MoonBridge.setPartialFrameDeadline(), opt-in). A frame is due
-// when its first packet would arrive on the quickest recent schedule (the lowest receive time less
-// presentation time seen lately, which takes out the clock difference between host and client
-// without a clock sync) plus how long whole frames normally take to arrive from their first packet
-// to their last (a slowly falling high-water mark of recent ones). It's only cut short when it's
-// later than that by the margin, so a host that paces its packets across the frame, or a stream
-// that nearly fills the link, isn't cut every frame.
+// MoonCast: PyroWave late frames (MoonBridge.setPartialFrameDeadline()). A frame still arriving one
+// frame period, less a margin, after it would have been due on the quickest recent schedule is cut
+// short then. That schedule is the lowest receive time less presentation time seen lately, which
+// takes out the clock difference between host and client without a clock sync.
 static volatile int LateFrameMinPercent = -1;  // -1: off
+static volatile int64_t LateFramePeriodUs;
 static volatile int64_t LateFrameMarginUs;
 static int64_t LateFrameBaseUs;
-static int64_t LateFrameSpreadUs;
 static int LateFrameBaseValid;
-static int LateFrameSamples;
 
 // MoonCast: FEC percentage to ask Sunshine for, -1 for the host's own setting
 static int FecPercentage = -1;
@@ -175,7 +171,6 @@ static void UpdateLateFrameDeadline(PDECODE_UNIT decodeUnit) {
         return;
     }
     int64_t transitUs = (int64_t)decodeUnit->receiveTimeUs - (int64_t)decodeUnit->presentationTimeUs;
-    int64_t spreadUs = (int64_t)decodeUnit->enqueueTimeUs - (int64_t)decodeUnit->receiveTimeUs;
     if (!LateFrameBaseValid || transitUs < LateFrameBaseUs) {
         LateFrameBaseUs = transitUs;
         LateFrameBaseValid = 1;
@@ -184,19 +179,7 @@ static void UpdateLateFrameDeadline(PDECODE_UNIT decodeUnit) {
         // Drifts up slowly, so a clock change or a once-quick frame doesn't hold it down for good
         LateFrameBaseUs += (transitUs - LateFrameBaseUs) / 512 + 1;
     }
-    if (spreadUs >= 0) {
-        if (spreadUs > LateFrameSpreadUs) {
-            LateFrameSpreadUs = spreadUs;
-        }
-        else {
-            LateFrameSpreadUs -= (LateFrameSpreadUs - spreadUs) / 128;
-        }
-    }
-    // Learn the normal arrival first: no cuts in the first second or so of frames
-    if (++LateFrameSamples < 60) {
-        return;
-    }
-    LiSetPartialFrameDeadline(true, LateFrameBaseUs + LateFrameSpreadUs + LateFrameMarginUs, minPercent);
+    LiSetPartialFrameDeadline(true, LateFrameBaseUs + LateFramePeriodUs - LateFrameMarginUs, minPercent);
 }
 
 // MoonCast: a PyroWave frame that lost packets or was cut short (from Moonlight X's
@@ -650,8 +633,6 @@ Java_com_limelight_nvstream_jni_MoonBridge_startConnection(JNIEnv *env, jclass c
             .fecPercentage = FecPercentage
     };
     LateFrameBaseValid = 0;
-    LateFrameSpreadUs = 0;
-    LateFrameSamples = 0;
     LateFrameMinPercent = -1;  // Set again by a PyroWave stream's setup
 
     jbyte* riAesKeyBuf = (*env)->GetByteArrayElements(env, riAesKey, NULL);
@@ -688,31 +669,16 @@ Java_com_limelight_nvstream_jni_MoonBridge_startConnection(JNIEnv *env, jclass c
 
     return ret;
 }
-// MoonCast: PyroWave late frames. minPercent < 0 turns cutting off. Only sets our own state, never
-// moonlight-common-c's: this is also called as the stream stops, when the video stream (and its
-// deadline lock) may already be gone. The video stream starts each stream with no deadline.
+// MoonCast: PyroWave late frames. minPercent < 0 turns cutting off.
 JNIEXPORT void JNICALL
 Java_com_limelight_nvstream_jni_MoonBridge_setPartialFrameDeadline(JNIEnv *env, jclass clazz, jint minPercent,
-                                                                   jint marginUs) {
+                                                                   jint periodUs, jint marginUs) {
+    LateFramePeriodUs = periodUs;
     LateFrameMarginUs = marginUs;
     LateFrameMinPercent = minPercent;
-}
-
-// MoonCast: diagnostics for the PyroWave log
-JNIEXPORT jlong JNICALL
-Java_com_limelight_nvstream_jni_MoonBridge_getVideoBytesReceived(JNIEnv *env, jclass clazz) {
-    const RTP_VIDEO_STATS* stats = LiGetRTPVideoStats();
-    return stats ? (jlong)stats->byteCountReceived : 0;
-}
-
-JNIEXPORT jint JNICALL
-Java_com_limelight_nvstream_jni_MoonBridge_getReceiveBufferSize(JNIEnv *env, jclass clazz) {
-    return LiGetLargestReceiveBufferSize();
-}
-
-JNIEXPORT jboolean JNICALL
-Java_com_limelight_nvstream_jni_MoonBridge_isHostDisplayHdr(JNIEnv *env, jclass clazz) {
-    return LiGetCurrentHostDisplayHdrMode() ? JNI_TRUE : JNI_FALSE;
+    if (minPercent < 0) {
+        LiSetPartialFrameDeadline(false, 0, 0);
+    }
 }
 
 // MoonCast: the FEC percentage the next connection asks Sunshine for, -1 for the host's own

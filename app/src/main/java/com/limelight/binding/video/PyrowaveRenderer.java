@@ -60,12 +60,12 @@ public class PyrowaveRenderer {
     public static PyrowaveRenderer create(Surface surface, int width, int height, int colorspace, boolean centerChroma,
                                           boolean tenBit, boolean chroma444, int ditherMode, boolean frontBuffer,
                                           boolean gpuBoost, boolean ultraLowLatency, int framePacing,
-                                          float lostFrameMinBlocks, int streamFps, float displayHz) {
+                                          float lostFrameMinBlocks) {
         if (!LOADED || surface == null || !surface.isValid()) {
             return null;
         }
         long handle = nativeCreate(surface, width, height, colorspace, centerChroma, tenBit, chroma444, ditherMode,
-                frontBuffer, gpuBoost, ultraLowLatency, framePacing, lostFrameMinBlocks, streamFps, displayHz);
+                frontBuffer, gpuBoost, ultraLowLatency, framePacing, lostFrameMinBlocks);
         return handle != 0 ? new PyrowaveRenderer(handle) : null;
     }
 
@@ -108,11 +108,6 @@ public class PyrowaveRenderer {
         return stats.clone();
     }
 
-    /** The GPU failed (device lost, or renders that keep failing): the stream can't go on. */
-    public synchronized boolean isFailed() {
-        return handle != 0 && nativeFailed(handle);
-    }
-
     /** The GPU and the decoder's path, for the stats. */
     public String getDescription() {
         return description;
@@ -130,8 +125,7 @@ public class PyrowaveRenderer {
     private static native long nativeCreate(Surface surface, int width, int height, int colorspace, boolean centerChroma,
                                             boolean tenBit, boolean chroma444, int ditherMode, boolean frontBuffer,
                                             boolean gpuBoost, boolean ultraLowLatency, int framePacing,
-                                            float lostFrameMinBlocks, int streamFps, float displayHz);
-    private static native boolean nativeFailed(long handle);
+                                            float lostFrameMinBlocks);
     private static native boolean nativeSubmitPartial(long handle, byte[] data, int length, int[] missingRanges,
                                                       int[] recordStarts, int partialKind);
     private static native String nativePresentDescription(long handle);
