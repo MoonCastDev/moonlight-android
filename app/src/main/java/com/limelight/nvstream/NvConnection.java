@@ -266,6 +266,7 @@ public class NvConnection {
         if ((context.streamConfig.getSupportedVideoFormats() & MoonBridge.VIDEO_FORMAT_MASK_PYROWAVE) != 0 &&
                 (context.serverCodecModeSupport & MoonBridge.SCM_PYROWAVE) == 0) {
             context.streamConfig.removeSupportedVideoFormats(MoonBridge.VIDEO_FORMAT_MASK_PYROWAVE);
+            MoonBridge.setFecPercentage(-1);  // The FEC choice is PyroWave's
             LimeLog.info("PyroWave asked for, but the PC doesn't offer it (codec modes 0x" +
                     Integer.toHexString(context.serverCodecModeSupport) + ")");
             context.connListener.displayTransientMessage("This PC doesn't offer PyroWave, so the stream uses your usual codec");

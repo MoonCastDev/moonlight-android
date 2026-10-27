@@ -1487,8 +1487,12 @@ class HandheldHomeActivity : Activity() {
 
     // ---------------------------------------------------------------- Settings
 
-    private val groups = listOf("handheld" to "Handheld", "picture" to "Picture", "sound" to "Sound", "pads" to "Controllers",
-            "ps" to "PlayStation", "xbox" to "Xbox", "theme" to "Theme", "about" to "About")
+    // PyroWave gets its own group where this device can decode it
+    private val groups by lazy {
+        listOf("handheld" to "Handheld", "picture" to "Picture") +
+                (if (com.limelight.home.Pyrowave.deviceCan(this)) listOf("pyrowave" to "PyroWave") else emptyList()) +
+                listOf("sound" to "Sound", "pads" to "Controllers", "ps" to "PlayStation", "xbox" to "Xbox", "theme" to "Theme", "about" to "About")
+    }
 
     private fun settingsPage(): View {
         val row = sw.row(Gravity.TOP)
@@ -1603,29 +1607,10 @@ class HandheldHomeActivity : Activity() {
                             listOf(0, 20, 40, 60, 80, 100), com.limelight.binding.video.FsrRenderer.DEFAULT_SHARPNESS) { "$it%" }
                 choice(list, stream, "video_format", "Video codec", "HEVC and AV1 look better at the same bitrate",
                         listOf("Auto" to "auto", "H.264" to "neverh265", "HEVC" to "forceh265", "AV1" to "forceav1"), "auto")
-                toggle(list, "checkbox_enable_hdr", "HDR", "Only when the PC, the game and this screen support it. With PyroWave: HDR / 10-bit SDR", false)
+                toggle(list, "checkbox_enable_hdr", "HDR", "Only when the PC, the game and this screen support it. With PyroWave: HDR / 10-bit SDR (Settings, PyroWave)", false)
                 toggle(list, com.limelight.home.Yuv444.PREF, "YUV 4:4:4 (HEVC)",
                         if (com.limelight.home.Yuv444.deviceCan()) "Sharper text and colour edges. Needs Sunshine with 4:4:4 on the PC; otherwise it stays 4:2:0"
                         else "This device's decoder can't show 4:4:4, so streams stay 4:2:0", false)
-                // PyroWave: only where this device's GPU can decode it (arm64, Vulkan); hidden elsewhere
-                if (com.limelight.home.Pyrowave.deviceCan(this)) {
-                    val pc = com.limelight.preferences.PreferenceConfiguration.readPreferences(this)
-                    val rec = com.limelight.home.Pyrowave.recommendedKbps(pc.width, pc.height, pc.fps) / 1000
-                    toggle(list, com.limelight.home.Pyrowave.PREF, "PyroWave (wired / fast Wi-Fi only)",
-                            "Lowest delay, with a lot of bitrate: about $rec Mbps at your resolution and frame rate. Needs a PC with PyroWave " +
-                            "in Sunshine; otherwise your codec above is used. HDR and YUV 4:4:4 above apply to it too. No Super resolution", false)
-                    // The PyroWave group: Moonlight X's Vulkan options for its renderer, and the GPU boost
-                    if (com.limelight.home.Pyrowave.wanted(this)) {
-                        choice(list, stream, "spatial_dithering", "PyroWave: spatial dithering",
-                                "Adds fine moving noise that hides colour banding, most visible in HDR gradients",
-                                listOf("Off" to "off", "Low" to "low", "High" to "high"), "off")
-                        toggle(list, "checkbox_front_buffer", "PyroWave: front buffer rendering",
-                                "Draws each frame straight into the image the screen is showing, skipping the system's queue for lower delay. Turn off if you see tearing, flickering or corrupted video", false)
-                        toggle(list, "checkbox_pyrowave_gpu_boost", "PyroWave: GPU boost",
-                                "Gives the GPU light work between frames so it keeps its clock up, making decoding faster and steadier. Uses more power and runs warmer, so drains the battery faster", false)
-                    }
-                }
-                toggle(list, "checkbox_full_range", "Full range colour", "Experimental: deeper blacks and brighter whites. On screens that don't handle it, dark and light detail is lost", false)
                 choice(list, stream, "list_video_scale_mode", "Picture shape", "Fit with bars, fill and crop, or stretch",
                         listOf("Fit" to "fit", "Fill" to "fill", "Stretch" to "stretch"), if (stream.getBoolean("checkbox_stretch_video", false)) "stretch" else "fit")
                 choice(list, stream, "frame_pacing", "Frame pacing", "PC and PS5: trade a little delay for smoother motion. Xbox paces itself",
@@ -1636,6 +1621,40 @@ class HandheldHomeActivity : Activity() {
                 choice(list, stream, com.limelight.home.StatsLevel.PREF, "Stats while playing",
                         "Lite: one row of numbers at the top. Detailed: every number, in a corner",
                         listOf("Off" to "off", "Lite" to "lite", "Detailed" to "detailed"), "off") { com.limelight.home.StatsLevel.set(this, it) }
+            }
+            "pyrowave" -> {
+                val pc = com.limelight.preferences.PreferenceConfiguration.readPreferences(this)
+                val rec = com.limelight.home.Pyrowave.recommendedKbps(pc.width, pc.height, pc.fps) / 1000
+                toggle(list, com.limelight.home.Pyrowave.PREF, "PyroWave (wired / fast Wi-Fi only)",
+                        "Lowest delay, with a lot of bitrate. Needs a PC with PyroWave in Sunshine; otherwise your usual codec is used. No Super resolution", false)
+                info(list, "Recommended bitrate", "$rec Mbps at ${pc.width}x${pc.height} ${pc.fps} fps (now ${pc.bitrate / 1000} Mbps)")
+                if (com.limelight.home.Pyrowave.wanted(this)) {
+                    // The same HDR setting as Picture's: one switch for every codec
+                    toggle(list, "checkbox_enable_hdr", "HDR / 10-bit SDR",
+                            "Same as HDR in Picture. PyroWave streams 10-bit: HDR10 on an HDR screen, 10-bit SDR otherwise (an HDR PC picture is tone mapped)", false)
+                    toggle(list, com.limelight.home.Pyrowave.YUV444_PREF, "YUV 4:4:4",
+                            "Full colour detail for every pixel, when the PC offers PyroWave 4:4:4. Needs more bitrate", false)
+                    choice(list, stream, "pyrowave_late_frames", "Late frames",
+                            "How much blur to accept for a smoother stream: frames that lost packets are shown from what arrived, and frames running late are cut short",
+                            listOf("Off (least blur)" to "off", "Sharper" to "sharp", "Balanced" to "balanced", "Smoother" to "smooth", "Smoothest (most blur)" to "smoothest"), "balanced")
+                    // Mirrors of Picture's settings, which PyroWave follows its own way
+                    toggle(list, "checkbox_ultra_low_latency", "Ultra low latency",
+                            "Same as in Picture. With PyroWave: each frame on screen the moment it's decoded (immediate or mailbox), and the front buffer unless you turned it off below", false)
+                    choice(list, stream, "frame_pacing", "Frame pacing",
+                            "Same as in Picture. With PyroWave: Lowest delay shows frames at once (mailbox), Balanced and Smoothest wait for the screen (vsync)",
+                            listOf("Lowest delay" to "latency", "Balanced" to "balanced", "Smoothest" to "smoothness"), "latency")
+                    choice(list, stream, "spatial_dithering", "Spatial dithering",
+                            "Adds fine moving noise that hides colour banding, most visible in HDR gradients",
+                            listOf("Off" to "off", "Low" to "low", "High" to "high"), "off")
+                    toggle(list, "checkbox_front_buffer", "Front buffer rendering",
+                            "Draws each frame straight into the image the screen is showing, skipping the system's queue for lower delay. Turn off if you see tearing, flickering or corrupted video. On with Ultra low latency unless you set it here",
+                            stream.getBoolean("checkbox_ultra_low_latency", false))
+                    toggle(list, "checkbox_pyrowave_gpu_boost", "GPU boost",
+                            "Gives the GPU light work between frames so it keeps its clock up, making decoding faster and steadier. Uses more power and runs warmer, so drains the battery faster", false)
+                    choice(list, stream, "pyrowave_fec_percent", "Error correction",
+                            "Extra packets that repair losses on the way, as a share of each frame. More survives a lossy link but uses more bitrate. PCs without the setting use their own",
+                            listOf("PC's setting" to "host", "Off" to "0", "10%" to "10", "20%" to "20", "30%" to "30", "50%" to "50"), "host")
+                }
             }
             "sound" -> {
                 choice(list, stream, "list_audio_config", "Speakers", "Stereo for the built-in speakers and headphones",

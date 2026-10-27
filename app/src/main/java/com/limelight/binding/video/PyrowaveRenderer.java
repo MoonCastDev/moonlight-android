@@ -59,12 +59,13 @@ public class PyrowaveRenderer {
      */
     public static PyrowaveRenderer create(Surface surface, int width, int height, int colorspace, boolean centerChroma,
                                           boolean tenBit, boolean chroma444, int ditherMode, boolean frontBuffer,
-                                          boolean gpuBoost) {
+                                          boolean gpuBoost, boolean ultraLowLatency, int framePacing,
+                                          float lostFrameMinBlocks) {
         if (!LOADED || surface == null || !surface.isValid()) {
             return null;
         }
         long handle = nativeCreate(surface, width, height, colorspace, centerChroma, tenBit, chroma444, ditherMode,
-                frontBuffer, gpuBoost);
+                frontBuffer, gpuBoost, ultraLowLatency, framePacing, lostFrameMinBlocks);
         return handle != 0 ? new PyrowaveRenderer(handle) : null;
     }
 
@@ -83,6 +84,16 @@ public class PyrowaveRenderer {
     /** Decodes and shows one whole frame. False if it was dropped. */
     public synchronized boolean submit(byte[] data, int length) {
         return handle != 0 && nativeSubmit(handle, data, length);
+    }
+
+    /** A frame that lost packets or was cut short (MoonBridge.PARTIAL_KIND_*): shown from what arrived, or dropped. */
+    public synchronized boolean submitPartial(byte[] data, int length, int[] missingRanges, int[] recordStarts, int partialKind) {
+        return handle != 0 && nativeSubmitPartial(handle, data, length, missingRanges, recordStarts, partialKind);
+    }
+
+    /** How frames reach the screen: "mailbox", "immediate", "FIFO" or "front buffer" (and "own decode device"). */
+    public synchronized String getPresentDescription() {
+        return handle != 0 ? nativePresentDescription(handle) : "";
     }
 
     /**
@@ -113,7 +124,11 @@ public class PyrowaveRenderer {
     private static native boolean nativeProbe();
     private static native long nativeCreate(Surface surface, int width, int height, int colorspace, boolean centerChroma,
                                             boolean tenBit, boolean chroma444, int ditherMode, boolean frontBuffer,
-                                            boolean gpuBoost);
+                                            boolean gpuBoost, boolean ultraLowLatency, int framePacing,
+                                            float lostFrameMinBlocks);
+    private static native boolean nativeSubmitPartial(long handle, byte[] data, int length, int[] missingRanges,
+                                                      int[] recordStarts, int partialKind);
+    private static native String nativePresentDescription(long handle);
     private static native void nativeSetHdrMode(long handle, boolean enabled, byte[] metadata);
     private static native int nativeFrontBufferState(long handle);
     private static native boolean nativeSubmit(long handle, byte[] data, int length);

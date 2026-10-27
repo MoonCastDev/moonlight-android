@@ -309,12 +309,35 @@ bool PyrowaveRenderer::init(ANativeWindow* window, const PyrowaveConfig& config)
     info.timestampValidBits = timestampValidBits_;
     info.timestampPeriodNs = timestampPeriodNs_;
     info.timelineSemaphores = deviceSetup_.pyrowave.timelineSemaphores;
-    decoder_ = PyrowaveDecoder::create(vk_, info, width, height, config.tenBit, config.chroma444);
+    if (decodeDevice_) {
+        info.device = decodeDevice_;
+        info.deviceInfo = &decodeDeviceSetup_.info;
+        info.queue = decodeQueue_;
+        info.queueMutex = &decodeQueueMutex_;
+        info.timelineSemaphores = decodeDeviceSetup_.pyrowave.timelineSemaphores;
+        info.renderDevice = device_;
+        info.renderVk = &vk_;
+    }
+    decoder_ = PyrowaveDecoder::create(decodeDevice_ ? decodeVk_ : vk_, info, width, height, config.tenBit, config.chroma444);
+    if (!decoder_ && decodeDevice_) {
+        ALOGW("No PyroWave decoder on its own device; decoding on the render device");
+        decodeVk_.vkDestroyDevice(decodeDevice_, nullptr);
+        decodeDevice_ = VK_NULL_HANDLE;
+        info.device = device_;
+        info.deviceInfo = &deviceSetup_.info;
+        info.queue = queue_;
+        info.queueMutex = &queueMutex_;
+        info.timelineSemaphores = deviceSetup_.pyrowave.timelineSemaphores;
+        info.renderDevice = VK_NULL_HANDLE;
+        info.renderVk = nullptr;
+        decoder_ = PyrowaveDecoder::create(vk_, info, width, height, config.tenBit, config.chroma444);
+    }
     if (!decoder_) {
         ALOGE("No PyroWave decoder for %dx%d%s%s", width, height, config.tenBit ? " 10-bit" : "",
               config.chroma444 ? " 4:4:4" : "");
         return false;
     }
+    decoder_->setLostFrameMinBlocks(config.lostFrameMinBlocks);
 
     const VkDescriptorSetLayout setLayout = decoder_->setLayout();
     VkPushConstantRange range {VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstants)};
@@ -388,6 +411,7 @@ bool PyrowaveRenderer::pickDevice() {
                         std::any_of(instanceSetup_.extensions.begin(), instanceSetup_.extensions.end(), [](const char* name) {
                             return strcmp(name, VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME) == 0;
                         });
+                hasExternalMemoryFdExt_ = hasExtension(extensions, VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME);
                 globalPriorityExt_ = hasExtension(extensions, VK_KHR_GLOBAL_PRIORITY_EXTENSION_NAME)
                         ? VK_KHR_GLOBAL_PRIORITY_EXTENSION_NAME
                         : hasExtension(extensions, VK_EXT_GLOBAL_PRIORITY_EXTENSION_NAME)
@@ -416,10 +440,35 @@ bool PyrowaveRenderer::createDevice() {
     else if (config_.frontBuffer) {
         ALOGW("Front buffer asked for, but the device has no shared presentable images");
     }
+    const bool ownDecodeDevice = hasSharedPresentExt_ && hasExternalMemoryFdExt_;
+    if (ownDecodeDevice) {
+        deviceSetup_.extensions.push_back(VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME);
+    }
     deviceSetup_.info.enabledExtensionCount = static_cast<uint32_t>(deviceSetup_.extensions.size());
     deviceSetup_.info.ppEnabledExtensionNames = deviceSetup_.extensions.data();
     VkDevice device = VK_NULL_HANDLE;
-    VkResult result = vk_.vkCreateDevice(physicalDevice_, &deviceSetup_.info, nullptr, &device);
+    VkResult result = VK_ERROR_INITIALIZATION_FAILED;
+    // With the decodes on a device of their own, the draws ask for a high priority queue (Android
+    // only lets some apps have it; dropped if refused). Decodes stay at the default priority.
+    VkDeviceQueueGlobalPriorityCreateInfoKHR globalPriority {VK_STRUCTURE_TYPE_DEVICE_QUEUE_GLOBAL_PRIORITY_CREATE_INFO_KHR};
+    globalPriority.globalPriority = VK_QUEUE_GLOBAL_PRIORITY_HIGH_KHR;
+    if (ownDecodeDevice && globalPriorityExt_) {
+        deviceSetup_.queue.pNext = &globalPriority;
+        deviceSetup_.extensions.push_back(globalPriorityExt_);
+        deviceSetup_.info.enabledExtensionCount = static_cast<uint32_t>(deviceSetup_.extensions.size());
+        deviceSetup_.info.ppEnabledExtensionNames = deviceSetup_.extensions.data();
+        result = vk_.vkCreateDevice(physicalDevice_, &deviceSetup_.info, nullptr, &device);
+        highPriority_ = result == VK_SUCCESS;
+        if (result != VK_SUCCESS) {
+            deviceSetup_.queue.pNext = nullptr;
+            deviceSetup_.extensions.pop_back();
+            deviceSetup_.info.enabledExtensionCount = static_cast<uint32_t>(deviceSetup_.extensions.size());
+            deviceSetup_.info.ppEnabledExtensionNames = deviceSetup_.extensions.data();
+        }
+    }
+    if (result != VK_SUCCESS) {
+        result = vk_.vkCreateDevice(physicalDevice_, &deviceSetup_.info, nullptr, &device);
+    }
     if (result != VK_SUCCESS) {
         ALOGE("vkCreateDevice failed: %d", result);
         return false;
@@ -433,7 +482,45 @@ bool PyrowaveRenderer::createDevice() {
         hasHdrMetadataExt_ = false;
     }
     vk_.vkGetDeviceQueue(device_, queueFamily_, 0, &queue_);
+    if (ownDecodeDevice) {
+        createDecodeDevice();
+    }
     return true;
+}
+
+// From Moonlight X's VulkanRenderer::createDecodeDevice()
+void PyrowaveRenderer::createDecodeDevice() {
+    if (!prepareDevice(vk_, physicalDevice_, queueFamily_, instanceSetup_.apiVersion, decodeDeviceSetup_)) {
+        return;
+    }
+    decodeDeviceSetup_.extensions.push_back(VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME);
+    decodeDeviceSetup_.info.enabledExtensionCount = static_cast<uint32_t>(decodeDeviceSetup_.extensions.size());
+    decodeDeviceSetup_.info.ppEnabledExtensionNames = decodeDeviceSetup_.extensions.data();
+    VkDevice device = VK_NULL_HANDLE;
+    const VkResult result = vk_.vkCreateDevice(physicalDevice_, &decodeDeviceSetup_.info, nullptr, &device);
+    if (result != VK_SUCCESS) {
+        ALOGW("Couldn't make a device for PyroWave to decode on (%d); decoding on the render device", result);
+        return;
+    }
+    decodeVk_ = vk_;
+    if (!decodeVk_.loadDevice(device)) {
+        destroyDeviceThroughInstance(vk_, instance_, device);
+        return;
+    }
+    decodeDevice_ = device;
+    decodeVk_.vkGetDeviceQueue(decodeDevice_, queueFamily_, 0, &decodeQueue_);
+    ALOGI("PyroWave decodes on a device of its own; rendering at %s", highPriority_ ? "high priority" : "the default priority");
+}
+
+std::string PyrowaveRenderer::presentDescription() {
+    std::lock_guard<std::mutex> lock(describeMutex_);
+    std::string text = frontBuffer_ ? "front buffer"
+            : presentMode_ == VK_PRESENT_MODE_IMMEDIATE_KHR ? "immediate"
+            : presentMode_ == VK_PRESENT_MODE_MAILBOX_KHR ? "mailbox" : "FIFO";
+    if (decodeDevice_) {
+        text += ", own decode device";
+    }
+    return text;
 }
 
 bool PyrowaveRenderer::createFrameResources() {
@@ -473,8 +560,16 @@ PyrowaveRenderer::~PyrowaveRenderer() {
             releasePlanes(slotPlanes_[i]);
             slotPlanes_[i] = nullptr;
         }
+        if (decodeDevice_) {
+            std::lock_guard<std::mutex> lock(decodeQueueMutex_);
+            decodeVk_.vkDeviceWaitIdle(decodeDevice_);
+        }
         // Its planes and descriptor sets, before the device goes
         decoder_.reset();
+        if (decodeDevice_) {
+            decodeVk_.vkDestroyDevice(decodeDevice_, nullptr);
+            decodeDevice_ = VK_NULL_HANDLE;
+        }
         destroySwapchain();
         if (pipeline_) vk_.vkDestroyPipeline(device_, pipeline_, nullptr);
         if (renderPass_) vk_.vkDestroyRenderPass(device_, renderPass_, nullptr);
@@ -594,7 +689,8 @@ bool PyrowaveRenderer::retireSlot(int slot) {
     return true;
 }
 
-bool PyrowaveRenderer::submit(const uint8_t* data, size_t size) {
+bool PyrowaveRenderer::submit(const uint8_t* data, size_t size, const PyrowaveGap* gaps, size_t gapCount,
+                              const std::vector<size_t>* recordStarts, PyrowaveDecoder::Partial partial) {
     const auto drop = [this]() {
         std::lock_guard<std::mutex> lock(statsMutex_);
         stats_.dropped++;
@@ -604,8 +700,7 @@ bool PyrowaveRenderer::submit(const uint8_t* data, size_t size) {
     const int64_t startNs = nowNs();
     uint64_t readyValue = 0;
     PyrowaveDecoder::DecodeTimes times;
-    PyrowavePlanes* planes = decoder_->decode(data, size, nullptr, 0, nullptr, PyrowaveDecoder::Partial::None,
-                                              &readyValue, &times);
+    PyrowavePlanes* planes = decoder_->decode(data, size, gaps, gapCount, recordStarts, partial, &readyValue, &times);
     if (!planes) {
         return drop();
     }
@@ -614,6 +709,15 @@ bool PyrowaveRenderer::submit(const uint8_t* data, size_t size) {
         std::lock_guard<std::mutex> lock(statsMutex_);
         stats_.decodeNs += std::max<int64_t>(nowNs() - startNs - times.waitedNs, 0);
         stats_.decoded++;
+    }
+    if (decoder_->ownDevice()) {
+        // Its timeline is on the decode device, so the render waits for it here
+        const VkResult waited = decoder_->waitDecoded(readyValue, kFenceTimeoutNs);
+        if (waited != VK_SUCCESS) {
+            ALOGE("PyroWave decode didn't finish: %d", waited);
+            releasePlanes(planes);
+            return drop();
+        }
     }
 
     float contentPeakNits;
@@ -697,10 +801,29 @@ bool PyrowaveRenderer::submit(const uint8_t* data, size_t size) {
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     vk_.vkBeginCommandBuffer(cmd, &beginInfo);
 
+    // Decoding on a device of its own: the decode was waited for above, and its planes are taken
+    // over from that device (Moonlight X's renderFrame())
+    const bool ownDecodeDevice = decoder_->ownDevice();
+    VkImageMemoryBarrier planeBarriers[3] {};
+    if (ownDecodeDevice) {
+        for (int i = 0; i < 3; i++) {
+            planeBarriers[i].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            planeBarriers[i].srcAccessMask = 0;
+            planeBarriers[i].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            planeBarriers[i].oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+            planeBarriers[i].newLayout = VK_IMAGE_LAYOUT_GENERAL;
+            planeBarriers[i].srcQueueFamilyIndex = VK_QUEUE_FAMILY_EXTERNAL;
+            planeBarriers[i].dstQueueFamilyIndex = queueFamily_;
+            planeBarriers[i].image = planes->renderImages[i];
+            planeBarriers[i].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        }
+        vk_.vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                 0, 0, nullptr, 0, nullptr, 3, planeBarriers);
+    }
     // Without timeline semaphores nothing below waits for the decode on the GPU, but it's ahead of
     // this on the same queue: this barrier waits for it and makes its writes visible
-    const bool waitDecode = decoder_->timeline() != VK_NULL_HANDLE;
-    if (!waitDecode) {
+    const bool waitDecode = !ownDecodeDevice && decoder_->timeline() != VK_NULL_HANDLE;
+    if (!waitDecode && !ownDecodeDevice) {
         VkMemoryBarrier decoded {VK_STRUCTURE_TYPE_MEMORY_BARRIER};
         decoded.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
         decoded.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
@@ -724,6 +847,17 @@ bool PyrowaveRenderer::submit(const uint8_t* data, size_t size) {
                            sizeof(pc), &pc);
     vk_.vkCmdDraw(cmd, 3, 1, 0, 0);
     vk_.vkCmdEndRenderPass(cmd);
+    // And back to the decode device, which only gets these planes again once this render is done
+    if (ownDecodeDevice) {
+        for (int i = 0; i < 3; i++) {
+            planeBarriers[i].srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            planeBarriers[i].dstAccessMask = 0;
+            planeBarriers[i].srcQueueFamilyIndex = queueFamily_;
+            planeBarriers[i].dstQueueFamilyIndex = VK_QUEUE_FAMILY_EXTERNAL;
+        }
+        vk_.vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+                                 0, 0, nullptr, 0, nullptr, 3, planeBarriers);
+    }
     vk_.vkEndCommandBuffer(cmd);
 
     // The swapchain image, and the decode into the planes
@@ -885,8 +1019,16 @@ bool PyrowaveRenderer::createSwapchain() {
     vk_.vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice_, surface_, &modeCount, nullptr);
     std::vector<VkPresentModeKHR> modes(modeCount);
     vk_.vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice_, surface_, &modeCount, modes.data());
-    VkPresentModeKHR presentMode = std::find(modes.begin(), modes.end(), VK_PRESENT_MODE_MAILBOX_KHR) != modes.end()
-            ? VK_PRESENT_MODE_MAILBOX_KHR : VK_PRESENT_MODE_FIFO_KHR;
+    const auto hasMode = [&](VkPresentModeKHR mode) { return std::find(modes.begin(), modes.end(), mode) != modes.end(); };
+    // Ultra low latency: immediate (no wait for vsync, may tear), else mailbox. Lowest delay:
+    // mailbox. Balanced and Smoothest: FIFO, each frame waits its turn for a vsync.
+    VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
+    if (config_.ultraLowLatency && hasMode(VK_PRESENT_MODE_IMMEDIATE_KHR)) {
+        presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR;
+    }
+    else if ((config_.ultraLowLatency || config_.framePacing == 0) && hasMode(VK_PRESENT_MODE_MAILBOX_KHR)) {
+        presentMode = VK_PRESENT_MODE_MAILBOX_KHR;
+    }
     // Front buffer: the compositor takes the image again at every vsync, so whatever was last drawn
     // into it is shown without queueing a new buffer (frames drawn on arrival, so it may tear)
     const bool shared = hasSharedPresentExt_ &&
@@ -898,7 +1040,11 @@ bool PyrowaveRenderer::createSwapchain() {
         ALOGW("Front buffer asked for, but the surface has no shared present mode");
     }
 
-    uint32_t imageCount = std::max(caps.minImageCount, 3u);
+    // The fewest images with ultra low latency (mailbox still needs three to never wait), one more
+    // for Smoothest
+    uint32_t imageCount = config_.ultraLowLatency
+            ? std::max(caps.minImageCount, presentMode == VK_PRESENT_MODE_MAILBOX_KHR ? 3u : 2u)
+            : std::max(caps.minImageCount, config_.framePacing == 2 ? 4u : 3u);
     if (caps.maxImageCount != 0) {
         imageCount = std::min(imageCount, caps.maxImageCount);
     }
@@ -953,7 +1099,11 @@ bool PyrowaveRenderer::createSwapchain() {
     preTransform_ = transform;
     outputPq_ = pq;
     outputBits_ = chosen.format == VK_FORMAT_A2B10G10R10_UNORM_PACK32 ? 10 : 8;
-    frontBuffer_ = shared;
+    {
+        std::lock_guard<std::mutex> lock(describeMutex_);
+        frontBuffer_ = shared;
+        presentMode_ = presentMode;
+    }
     frontBufferUnavailable_ = config_.frontBuffer && !shared;
 
     // A shared image stays in its own layout, in which the display reads it
@@ -1053,7 +1203,8 @@ bool PyrowaveRenderer::createSwapchain() {
     ALOGI("Swapchain %ux%u, format %d, color space %d (%s%s), %u images, %s, pre-rotated %d degrees", extent.width,
           extent.height, chosen.format, chosen.colorSpace, outputPq_ ? "HDR10" : outputBits_ == 10 ? "10-bit SDR" : "8-bit SDR",
           (hdrActive_ && !outputPq_) ? ", tone mapped" : "", count,
-          shared ? "front buffer" : presentMode == VK_PRESENT_MODE_MAILBOX_KHR ? "mailbox" : "FIFO",
+          shared ? "front buffer" : presentMode == VK_PRESENT_MODE_IMMEDIATE_KHR ? "immediate"
+                 : presentMode == VK_PRESENT_MODE_MAILBOX_KHR ? "mailbox" : "FIFO",
           std::max(quarterTurns(transform), 0) * 90);
     return true;
 }

@@ -41,6 +41,11 @@ struct PyrowaveConfig {
     int ditherMode = 0;         // 0 off, 1 low (the output's precision), 2 high (8-bit precision)
     bool frontBuffer = false;   // Draw into the image on screen (VK_KHR_shared_presentable_image)
     bool gpuBoost = false;      // Keep the GPU's clock up between decodes (GpuKeepBusy)
+    // Ultra low latency: each frame on screen the moment it's decoded (immediate, else mailbox, the
+    // fewest swapchain images), whatever the pacing
+    bool ultraLowLatency = false;
+    int framePacing = 0;        // 0 lowest delay (mailbox), 1 balanced (FIFO), 2 smoothest (FIFO, one more image)
+    float lostFrameMinBlocks = 0.75f;  // Share of its blocks a frame that lost packets needs to be shown
 };
 
 class PyrowaveRenderer {
@@ -57,8 +62,15 @@ public:
     PyrowaveRenderer(const PyrowaveRenderer&) = delete;
     PyrowaveRenderer& operator=(const PyrowaveRenderer&) = delete;
 
-    // Decodes a whole frame and shows it. Frames come from one thread. False if it was dropped.
-    bool submit(const uint8_t* data, size_t size);
+    // Decodes a frame and shows it. Frames come from one thread. False if it was dropped. A partial
+    // frame (PyrowaveDecoder::Partial) comes with its gaps and, in record framing, where its
+    // records start (recordStarts non-null).
+    bool submit(const uint8_t* data, size_t size, const PyrowaveGap* gaps = nullptr, size_t gapCount = 0,
+                const std::vector<size_t>* recordStarts = nullptr,
+                PyrowaveDecoder::Partial partial = PyrowaveDecoder::Partial::None);
+
+    // "mailbox", "immediate", "FIFO" or "front buffer", plus ", own decode device"
+    std::string presentDescription();
 
     // The counts since the last call. Thread safe.
     PyrowaveStats takeStats();
@@ -146,6 +158,18 @@ private:
     bool outputPq_ = false;
     int outputBits_ = 8;
     bool frontBuffer_ = false;
+    VkPresentModeKHR presentMode_ = VK_PRESENT_MODE_FIFO_KHR;
+    std::mutex describeMutex_;
+    // PyroWave on a device of its own with the front buffer (Moonlight X), so the draws, at high
+    // priority where allowed, can interrupt decodes; the planes' memory is shared between them
+    bool hasExternalMemoryFdExt_ = false;
+    bool highPriority_ = false;
+    DeviceSetup decodeDeviceSetup_;
+    VkApi decodeVk_;
+    VkDevice decodeDevice_ = VK_NULL_HANDLE;
+    VkQueue decodeQueue_ = VK_NULL_HANDLE;
+    std::mutex decodeQueueMutex_;
+    void createDecodeDevice();
     bool frontBufferUnavailable_ = false;
     VkImageLayout renderPassFinalLayout_ = VK_IMAGE_LAYOUT_UNDEFINED;
 
