@@ -57,12 +57,6 @@ public class MoonBridge {
     public static final int CAPABILITY_REFERENCE_FRAME_INVALIDATION_AVC = 2;
     public static final int CAPABILITY_REFERENCE_FRAME_INVALIDATION_HEVC = 4;
     public static final int CAPABILITY_REFERENCE_FRAME_INVALIDATION_AV1 = 0x40;
-    // MoonCast: PyroWave frames that lost packets are delivered with their gaps (bridgeDrSubmitPartialFrame)
-    public static final int CAPABILITY_PARTIAL_FRAMES = 0x80;
-
-    public static final int PARTIAL_KIND_NONE = 0;
-    public static final int PARTIAL_KIND_LOST = 1;
-    public static final int PARTIAL_KIND_CUT = 2;
 
     public static final int DR_OK = 0;
     public static final int DR_NEED_IDR = -1;
@@ -251,18 +245,6 @@ public class MoonBridge {
         }
     }
 
-    // MoonCast: a PyroWave frame that lost packets (or was cut short at its deadline), with its gaps as offset and
-    // length pairs and, in record framing, where records start (null otherwise). Only with CAPABILITY_PARTIAL_FRAMES.
-    public static int bridgeDrSubmitPartialFrame(byte[] decodeUnitData, int decodeUnitLength, int frameNumber, int frameType,
-                                                 char frameHostProcessingLatency, long receiveTimeUs, long enqueueTimeUs,
-                                                 int[] missingRanges, int[] recordStarts, int partialKind) {
-        if (videoRenderer != null) {
-            return videoRenderer.submitPartialFrame(decodeUnitData, decodeUnitLength, frameNumber, frameType,
-                    frameHostProcessingLatency, receiveTimeUs, enqueueTimeUs, missingRanges, recordStarts, partialKind);
-        }
-        return DR_OK;
-    }
-
     public static int bridgeArInit(int audioConfiguration, int sampleRate, int samplesPerFrame) {
         if (audioRenderer != null) {
             return audioRenderer.setup(new AudioConfiguration(audioConfiguration), sampleRate, samplesPerFrame);
@@ -449,13 +431,6 @@ public class MoonBridge {
     // MoonCast: the PyroWave bitstream revision the host sent in its RTSP DESCRIBE reply (x-ss-pyrowave.bitstream),
     // or empty. Hosts that send it (vibeshine) site 4:2:0 chroma at the center. Valid once the stream has started.
     public static native String getHostPyroWaveBitstreamId();
-
-    // MoonCast: PyroWave late frames. A frame still arriving periodUs - marginUs after it was due on the quickest
-    // recent schedule is cut short then, if minPercent of it has arrived. minPercent < 0 turns it off.
-    public static native void setPartialFrameDeadline(int minPercent, int periodUs, int marginUs);
-
-    // MoonCast: the FEC percentage the next stream asks Sunshine for (x-ml-video.fecPercent), -1 for the host's own
-    public static native void setFecPercentage(int percentage);
 
     public static native byte guessControllerType(int vendorId, int productId);
 

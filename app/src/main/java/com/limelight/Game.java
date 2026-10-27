@@ -469,7 +469,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         if (com.limelight.home.Pyrowave.wanted(this) && com.limelight.home.Pyrowave.deviceCan(this)) {
             supportedVideoFormats |= MoonBridge.VIDEO_FORMAT_PYROWAVE;
             boolean pyrowaveTenBit = prefConfig.enableHdr;
-            boolean pyrowave444 = com.limelight.home.Pyrowave.yuv444(this);
+            boolean pyrowave444 = com.limelight.home.Yuv444.wanted(this);
             if (pyrowaveTenBit) supportedVideoFormats |= MoonBridge.VIDEO_FORMAT_PYROWAVE_10BIT;
             if (pyrowave444) supportedVideoFormats |= MoonBridge.VIDEO_FORMAT_PYROWAVE_444;
             if (pyrowaveTenBit && pyrowave444) supportedVideoFormats |= MoonBridge.VIDEO_FORMAT_PYROWAVE_10BIT_444;
@@ -477,10 +477,6 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                     + prefConfig.fps + " fps: " + com.limelight.home.Pyrowave.recommendedKbps(prefConfig.width, prefConfig.height, prefConfig.fps) / 1000
                     + " Mbps, set " + prefConfig.bitrate / 1000 + " Mbps)");
         }
-
-        // MoonCast: Settings, PyroWave, Error correction: only asked for with PyroWave on (-1 leaves it to the PC)
-        MoonBridge.setFecPercentage((supportedVideoFormats & MoonBridge.VIDEO_FORMAT_MASK_PYROWAVE) != 0
-                ? com.limelight.home.Pyrowave.fecPercent(this) : -1);
 
         int gamepadMask = ControllerHandler.getAttachedControllerMask(this);
         if (!prefConfig.multiController) {

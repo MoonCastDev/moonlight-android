@@ -55,7 +55,7 @@ object Profile {
     /** Streaming settings that belong to a profile (PC, audio and Xbox picture). A switch saves and restores these. */
     private val PC_KEYS = listOf(
         // Moonlight video
-        "list_resolution", "list_fps", "seekbar_bitrate_kbps", "video_format", "checkbox_enable_hdr", "checkbox_full_range", "checkbox_yuv444", "checkbox_pyrowave", "spatial_dithering", "checkbox_front_buffer", "checkbox_pyrowave_gpu_boost", "checkbox_pyrowave_444", "pyrowave_late_frames", "pyrowave_fec_percent",
+        "list_resolution", "list_fps", "seekbar_bitrate_kbps", "video_format", "checkbox_enable_hdr", "checkbox_full_range", "checkbox_yuv444", "checkbox_pyrowave", "spatial_dithering", "checkbox_front_buffer", "checkbox_pyrowave_gpu_boost",
         "list_video_scale_mode", "checkbox_stretch_video", "seekbar_video_zoom", "frame_pacing", "checkbox_ultra_low_latency",
         "checkbox_enable_sops", "checkbox_unlock_fps", "checkbox_reduce_refresh_rate",
         // audio

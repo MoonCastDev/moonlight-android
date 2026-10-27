@@ -764,8 +764,7 @@ VkResult PyrowaveDecoder::waitDecoded(uint64_t value, uint64_t timeoutNs) {
 }
 
 bool PyrowaveDecoder::pushPartialFrame(const uint8_t* data, size_t size, const Gap* gaps, size_t gapCount) {
-    // MoonCast: 4:4:4 has twice the blocks of 4:2:0 at most; a doubled height covers them
-    return pushArrivedBlocks(data, size, gaps, gapCount, width_, chroma444_ ? height_ * 2 : height_, lostBlocks_, [&](size_t offset, size_t length) {
+    return pushArrivedBlocks(data, size, gaps, gapCount, width_, height_, lostBlocks_, [&](size_t offset, size_t length) {
         return api.decoderPushPacket(decoder_, data + offset, length) == PYROWAVE_SUCCESS;
     });
 }

@@ -24,32 +24,7 @@ object Pyrowave {
     const val DITHER_PREF = "spatial_dithering"            // off / low / high
     const val FRONT_BUFFER_PREF = "checkbox_front_buffer"
     const val GPU_BOOST_PREF = "checkbox_pyrowave_gpu_boost"
-    const val YUV444_PREF = "checkbox_pyrowave_444"
-    const val LATE_FRAMES_PREF = "pyrowave_late_frames"   // off / sharp / balanced / smooth / smoothest
-    const val FEC_PREF = "pyrowave_fec_percent"           // "host" or a percentage
-    @JvmField val KEYS = listOf(PREF, DITHER_PREF, FRONT_BUFFER_PREF, GPU_BOOST_PREF, YUV444_PREF, LATE_FRAMES_PREF, FEC_PREF)
-
-    /** PyroWave 4:4:4 (Settings, PyroWave): full colour detail, when the PC offers it. Its own setting, as it needs no HEVC decoder. */
-    @JvmStatic
-    fun yuv444(ctx: Context): Boolean = PreferenceManager.getDefaultSharedPreferences(ctx).getBoolean(YUV444_PREF, false)
-
-    /**
-     * PyroWave late frames (Moonlight X's presets): [cut minimum % of a late frame that must have arrived (-1: frames
-     * aren't cut), cut margin in us, minimum % of blocks a frame that lost packets needs to be shown].
-     */
-    @JvmStatic
-    fun lateFrames(ctx: Context): IntArray = when (PreferenceManager.getDefaultSharedPreferences(ctx).getString(LATE_FRAMES_PREF, "balanced")) {
-        "off" -> intArrayOf(-1, 0, 90)
-        "sharp" -> intArrayOf(50, 1000, 90)
-        "smooth" -> intArrayOf(25, 3000, 50)
-        "smoothest" -> intArrayOf(10, 5000, 0)
-        else -> intArrayOf(30, 2000, 75)
-    }
-
-    /** The FEC percentage to ask the PC for (x-ml-video.fecPercent), or -1 for the PC's own setting. */
-    @JvmStatic
-    fun fecPercent(ctx: Context): Int =
-        PreferenceManager.getDefaultSharedPreferences(ctx).getString(FEC_PREF, "host")?.toIntOrNull()?.coerceIn(0, 255) ?: -1
+    @JvmField val KEYS = listOf(PREF, DITHER_PREF, FRONT_BUFFER_PREF, GPU_BOOST_PREF)
 
     @JvmStatic
     fun wanted(ctx: Context): Boolean = PreferenceManager.getDefaultSharedPreferences(ctx).getBoolean(PREF, false)
@@ -62,17 +37,9 @@ object Pyrowave {
         else -> PyrowaveRenderer.DITHER_OFF
     }
 
-    /**
-     * Draw each frame into the image on screen (lower delay; may tear). Off by default, except with Ultra low latency,
-     * which turns it on unless the front buffer setting was switched off by hand (the rule: an explicit choice wins,
-     * ULL decides when there's none).
-     */
+    /** Draw each frame into the image on screen (lower delay; may tear). Off by default in MoonCast. */
     @JvmStatic
-    fun frontBuffer(ctx: Context): Boolean {
-        val prefs = PreferenceManager.getDefaultSharedPreferences(ctx)
-        if (prefs.contains(FRONT_BUFFER_PREF)) return prefs.getBoolean(FRONT_BUFFER_PREF, false)
-        return prefs.getBoolean("checkbox_ultra_low_latency", false)
-    }
+    fun frontBuffer(ctx: Context): Boolean = PreferenceManager.getDefaultSharedPreferences(ctx).getBoolean(FRONT_BUFFER_PREF, false)
 
     /** Light GPU work between frames so its clock stays up. Costs battery and heat. */
     @JvmStatic

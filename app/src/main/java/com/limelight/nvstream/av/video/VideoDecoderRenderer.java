@@ -13,14 +13,6 @@ public abstract class VideoDecoderRenderer {
                                          int frameNumber, int frameType, char frameHostProcessingLatency,
                                          long receiveTimeUs, long enqueueTimeUs);
     
-    // MoonCast: PyroWave frames that lost packets (see MoonBridge.bridgeDrSubmitPartialFrame). Only renderers that ask
-    // for CAPABILITY_PARTIAL_FRAMES get them.
-    public int submitPartialFrame(byte[] decodeUnitData, int decodeUnitLength, int frameNumber, int frameType,
-                                  char frameHostProcessingLatency, long receiveTimeUs, long enqueueTimeUs,
-                                  int[] missingRanges, int[] recordStarts, int partialKind) {
-        return 0;
-    }
-
     public abstract void cleanup();
 
     public abstract int getCapabilities();

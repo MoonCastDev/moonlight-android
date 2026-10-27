@@ -754,14 +754,8 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         int dither = com.limelight.home.Pyrowave.ditherMode(context);
         boolean frontBuffer = com.limelight.home.Pyrowave.frontBuffer(context);
         boolean gpuBoost = com.limelight.home.Pyrowave.gpuBoost(context);
-        // Ultra low latency: frames on screen the moment they're decoded. Otherwise Picture's frame pacing.
-        int pacing = prefs.framePacing == PreferenceConfiguration.FRAME_PACING_MIN_LATENCY ? 0
-                : prefs.framePacing == PreferenceConfiguration.FRAME_PACING_MAX_SMOOTHNESS ? 2 : 1;
-        // PyroWave late frames: frames that lost packets shown from what arrived, and late ones cut short
-        int[] late = com.limelight.home.Pyrowave.lateFrames(context);
         pyrowave = PyrowaveRenderer.create(renderTarget.getSurface(), initialWidth, initialHeight,
-                getPreferredColorSpace(), centerChroma, tenBit, chroma444, dither, frontBuffer, gpuBoost,
-                prefs.ultraLowLatency, pacing, late[2] / 100f);
+                getPreferredColorSpace(), centerChroma, tenBit, chroma444, dither, frontBuffer, gpuBoost);
         if (pyrowave == null) {
             LimeLog.severe("PyroWave decoding failed to start");
             return -4;
@@ -769,9 +763,6 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         if (pyrowaveHdr) {
             pyrowave.setHdrMode(true, pyrowaveHdrMetadata);
         }
-        MoonBridge.setPartialFrameDeadline(late[0], refreshRate > 0 ? 1_000_000 / refreshRate : 16_666, late[1]);
-        LimeLog.info("PyroWave late frames: cut at " + late[0] + "% (" + late[1] + " us margin), lost frames shown with "
-                + late[2] + "% of their blocks; ULL " + prefs.ultraLowLatency + ", pacing " + pacing);
         pyrowaveDescription = pyrowave.getDescription();
         LimeLog.info("Decoding PyroWave " + initialWidth + "x" + initialHeight + (tenBit ? " 10-bit" : "")
                 + (chroma444 ? " 4:4:4" : "") + " on " + pyrowaveDescription + ", dither " + dither
@@ -801,31 +792,8 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         numFramesOut += (int) st[2];
     }
 
-    @Override
-    public int submitPartialFrame(byte[] decodeUnitData, int decodeUnitLength, int frameNumber, int frameType,
-                                  char frameHostProcessingLatency, long receiveTimeUs, long enqueueTimeUs,
-                                  int[] missingRanges, int[] recordStarts, int partialKind) {
-        if (stopping || !pyrowaveActive) {
-            return MoonBridge.DR_OK;
-        }
-        // Counted as received in sequence, not lost
-        lastFrameNumber = frameNumber;
-        pyrowavePartialFrames++;
-        return submitPyrowaveFrame(decodeUnitData, decodeUnitLength, frameHostProcessingLatency, receiveTimeUs,
-                enqueueTimeUs, missingRanges, recordStarts, partialKind);
-    }
-
-    private int pyrowavePartialFrames;
-
     private int submitPyrowaveFrame(byte[] decodeUnitData, int decodeUnitLength, char frameHostProcessingLatency,
                                     long receiveTimeUs, long enqueueTimeUs) {
-        return submitPyrowaveFrame(decodeUnitData, decodeUnitLength, frameHostProcessingLatency, receiveTimeUs,
-                enqueueTimeUs, null, null, MoonBridge.PARTIAL_KIND_NONE);
-    }
-
-    private int submitPyrowaveFrame(byte[] decodeUnitData, int decodeUnitLength, char frameHostProcessingLatency,
-                                    long receiveTimeUs, long enqueueTimeUs, int[] missingRanges, int[] recordStarts,
-                                    int partialKind) {
         if (frameHostProcessingLatency != 0) {
             if (activeWindowVideoStats.minHostProcessingLatency != 0) {
                 activeWindowVideoStats.minHostProcessingLatency = (char) Math.min(activeWindowVideoStats.minHostProcessingLatency, frameHostProcessingLatency);
@@ -843,11 +811,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
         PyrowaveRenderer r = pyrowave;
         if (r != null) {
-            if (partialKind != MoonBridge.PARTIAL_KIND_NONE) {
-                r.submitPartial(decodeUnitData, decodeUnitLength, missingRanges, recordStarts, partialKind);
-            } else {
-                r.submit(decodeUnitData, decodeUnitLength);
-            }
+            r.submit(decodeUnitData, decodeUnitLength);
         }
 
         // Every PyroWave frame decodes on its own, so one that couldn't be decoded needs no IDR frame to recover from
@@ -1364,9 +1328,6 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         stopping = true;
 
         // PyroWave lets go of the surface now: this is also called as the surface goes away
-        if (pyrowaveActive) {
-            MoonBridge.setPartialFrameDeadline(-1, 0, 0);
-        }
         PyrowaveRenderer r = pyrowave;
         if (r != null) {
             r.destroy();
@@ -1617,11 +1578,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                 String decoder;
 
                 if (pyrowaveActive) {
-                    PyrowaveRenderer pr = pyrowave;
-                    String present = pr != null ? pr.getPresentDescription() : "";
-                    decoder = "PyroWave (" + pyrowaveDescription + (present.isEmpty() ? "" : ", " + present)
-                            + (pyrowavePartialFrames > 0 ? ", " + pyrowavePartialFrames + " partial" : "") + ")";
-                    pyrowavePartialFrames = 0;
+                    decoder = "PyroWave (" + pyrowaveDescription + ")";
                 } else if ((videoFormat & MoonBridge.VIDEO_FORMAT_MASK_H264) != 0) {
                     decoder = avcDecoder.getName();
                 } else if ((videoFormat & MoonBridge.VIDEO_FORMAT_MASK_H265) != 0) {
@@ -2005,12 +1962,6 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         // Enable direct submit on supported hardware
         if (directSubmit) {
             capabilities |= MoonBridge.CAPABILITY_DIRECT_SUBMIT;
-        }
-
-        // MoonCast: PyroWave frames stand alone, so one that lost packets can still be shown from what arrived. Only
-        // PyroWave streams get partial frames, so this changes nothing for the other codecs.
-        if (com.limelight.home.Pyrowave.wanted(context) && com.limelight.home.Pyrowave.deviceCan(context)) {
-            capabilities |= MoonBridge.CAPABILITY_PARTIAL_FRAMES;
         }
 
         return capabilities;
