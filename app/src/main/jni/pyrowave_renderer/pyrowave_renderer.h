@@ -10,6 +10,7 @@
 // jitter buffer. HDR10 output, 10-bit SDR, PQ to SDR tone mapping, dithering and the GPU boost
 // (GpuKeepBusy) are Moonlight X's.
 
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -46,6 +47,8 @@ struct PyrowaveConfig {
     bool ultraLowLatency = false;
     int framePacing = 0;        // 0 lowest delay (mailbox), 1 balanced (FIFO), 2 smoothest (FIFO, one more image)
     float lostFrameMinBlocks = 0.75f;  // Share of its blocks a frame that lost packets needs to be shown
+    int streamFps = 60;
+    float displayHz = 60.0f;
 };
 
 class PyrowaveRenderer {
@@ -71,6 +74,9 @@ public:
 
     // "mailbox", "immediate", "FIFO" or "front buffer", plus ", own decode device"
     std::string presentDescription();
+
+    // The GPU failed (device lost, or several renders in a row that never finished): the stream should end
+    bool failed() const { return gpuFailures_ >= kMaxGpuFailures; }
 
     // The counts since the last call. Thread safe.
     PyrowaveStats takeStats();
@@ -200,6 +206,12 @@ private:
     // When the last decode counted ended on the GPU: one can start before the one before ends,
     // so its run is counted from then
     int64_t lastGpuEndNs_ = 0;
+
+    // Renders in a row that failed on the GPU's side
+    static constexpr int kMaxGpuFailures = 3;
+    std::atomic<int> gpuFailures_ {0};
+    void noteGpuResult(VkResult result);
+    uint64_t acquireTimeoutNs_ = 100'000'000;
 
     std::mutex statsMutex_;
     PyrowaveStats stats_;

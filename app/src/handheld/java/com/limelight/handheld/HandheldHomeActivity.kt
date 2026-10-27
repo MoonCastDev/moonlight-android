@@ -1488,11 +1488,11 @@ class HandheldHomeActivity : Activity() {
     // ---------------------------------------------------------------- Settings
 
     // PyroWave gets its own group where this device can decode it
-    private val groups by lazy {
+    // (the Vulkan probe runs off the main thread the first time; the group shows once it's known)
+    private val groups get() =
         listOf("handheld" to "Handheld", "picture" to "Picture") +
-                (if (com.limelight.home.Pyrowave.deviceCan(this)) listOf("pyrowave" to "PyroWave") else emptyList()) +
+                (if (com.limelight.home.Pyrowave.knownCan(this) { render(force = true) } == true) listOf("pyrowave" to "PyroWave") else emptyList()) +
                 listOf("sound" to "Sound", "pads" to "Controllers", "ps" to "PlayStation", "xbox" to "Xbox", "theme" to "Theme", "about" to "About")
-    }
 
     private fun settingsPage(): View {
         val row = sw.row(Gravity.TOP)
@@ -1611,6 +1611,7 @@ class HandheldHomeActivity : Activity() {
                 toggle(list, com.limelight.home.Yuv444.PREF, "YUV 4:4:4 (HEVC)",
                         if (com.limelight.home.Yuv444.deviceCan()) "Sharper text and colour edges. Needs Sunshine with 4:4:4 on the PC; otherwise it stays 4:2:0"
                         else "This device's decoder can't show 4:4:4, so streams stay 4:2:0", false)
+                toggle(list, "checkbox_full_range", "Full range colour", "Experimental: deeper blacks and brighter whites. On screens that don't handle it, dark and light detail is lost", false)
                 choice(list, stream, "list_video_scale_mode", "Picture shape", "Fit with bars, fill and crop, or stretch",
                         listOf("Fit" to "fit", "Fill" to "fill", "Stretch" to "stretch"), if (stream.getBoolean("checkbox_stretch_video", false)) "stretch" else "fit")
                 choice(list, stream, "frame_pacing", "Frame pacing", "PC and PS5: trade a little delay for smoother motion. Xbox paces itself",
@@ -1635,8 +1636,8 @@ class HandheldHomeActivity : Activity() {
                     toggle(list, com.limelight.home.Pyrowave.YUV444_PREF, "YUV 4:4:4",
                             "Full colour detail for every pixel, when the PC offers PyroWave 4:4:4. Needs more bitrate", false)
                     choice(list, stream, "pyrowave_late_frames", "Late frames",
-                            "How much blur to accept for a smoother stream: frames that lost packets are shown from what arrived, and frames running late are cut short",
-                            listOf("Off (least blur)" to "off", "Sharper" to "sharp", "Balanced" to "balanced", "Smoother" to "smooth", "Smoothest (most blur)" to "smoothest"), "balanced")
+                            "Balanced shows frames that lost packets from what arrived (a little blur, no stutter). The Cut choices also cut frames running later than usual, sharper to smoothest; try them only on a link with spare room",
+                            listOf("Off (least blur)" to "off", "Balanced: lost packets only" to "balanced", "Cut late: sharper" to "sharp", "Cut late: smoother" to "smooth", "Cut late: smoothest (most blur)" to "smoothest"), "balanced")
                     // Mirrors of Picture's settings, which PyroWave follows its own way
                     toggle(list, "checkbox_ultra_low_latency", "Ultra low latency",
                             "Same as in Picture. With PyroWave: each frame on screen the moment it's decoded (immediate or mailbox), and the front buffer unless you turned it off below", false)

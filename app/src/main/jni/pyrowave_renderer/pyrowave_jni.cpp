@@ -23,7 +23,8 @@ Java_com_limelight_binding_video_PyrowaveRenderer_nativeCreate(JNIEnv* env, jcla
                                                                jboolean tenBit, jboolean chroma444, jint ditherMode,
                                                                jboolean frontBuffer, jboolean gpuBoost,
                                                                jboolean ultraLowLatency, jint framePacing,
-                                                               jfloat lostFrameMinBlocks) {
+                                                               jfloat lostFrameMinBlocks, jint streamFps,
+                                                               jfloat displayHz) {
     ANativeWindow* window = ANativeWindow_fromSurface(env, surface);
     if (!window) {
         return 0;
@@ -41,6 +42,8 @@ Java_com_limelight_binding_video_PyrowaveRenderer_nativeCreate(JNIEnv* env, jcla
     config.ultraLowLatency = ultraLowLatency == JNI_TRUE;
     config.framePacing = framePacing;
     config.lostFrameMinBlocks = lostFrameMinBlocks;
+    config.streamFps = streamFps;
+    config.displayHz = displayHz;
     std::unique_ptr<PyrowaveRenderer> renderer = PyrowaveRenderer::create(window, config);
     // The renderer holds its own reference
     ANativeWindow_release(window);
@@ -155,4 +158,10 @@ extern "C" JNIEXPORT jstring JNICALL
 Java_com_limelight_binding_video_PyrowaveRenderer_nativePresentDescription(JNIEnv* env, jclass, jlong handle) {
     PyrowaveRenderer* renderer = fromHandle(handle);
     return env->NewStringUTF(renderer ? renderer->presentDescription().c_str() : "");
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_limelight_binding_video_PyrowaveRenderer_nativeFailed(JNIEnv*, jclass, jlong handle) {
+    PyrowaveRenderer* renderer = fromHandle(handle);
+    return renderer && renderer->failed() ? JNI_TRUE : JNI_FALSE;
 }

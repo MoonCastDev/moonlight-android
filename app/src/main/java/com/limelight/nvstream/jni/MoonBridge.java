@@ -450,9 +450,15 @@ public class MoonBridge {
     // or empty. Hosts that send it (vibeshine) site 4:2:0 chroma at the center. Valid once the stream has started.
     public static native String getHostPyroWaveBitstreamId();
 
-    // MoonCast: PyroWave late frames. A frame still arriving periodUs - marginUs after it was due on the quickest
-    // recent schedule is cut short then, if minPercent of it has arrived. minPercent < 0 turns it off.
-    public static native void setPartialFrameDeadline(int minPercent, int periodUs, int marginUs);
+    // MoonCast: PyroWave late frames (opt-in). A frame arriving marginUs later than whole frames normally do is cut
+    // short then, if minPercent of it has arrived. minPercent < 0 turns it off. Safe to call as the stream stops.
+    public static native void setPartialFrameDeadline(int minPercent, int marginUs);
+
+    // MoonCast: diagnostics for the PyroWave log. Bytes on the video socket (wraps, take differences as int), the
+    // largest SO_RCVBUF the OS granted, and whether the PC's display is in HDR now.
+    public static native long getVideoBytesReceived();
+    public static native int getReceiveBufferSize();
+    public static native boolean isHostDisplayHdr();
 
     // MoonCast: the FEC percentage the next stream asks Sunshine for (x-ml-video.fecPercent), -1 for the host's own
     public static native void setFecPercentage(int percentage);

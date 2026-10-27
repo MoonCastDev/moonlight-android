@@ -21,6 +21,10 @@ public abstract class VideoDecoderRenderer {
         return 0;
     }
 
+    // MoonCast: whether PyroWave is still in the offer after the PC's codec check (before getCapabilities())
+    public void setPyrowaveOffered(boolean offered) {
+    }
+
     public abstract void cleanup();
 
     public abstract int getCapabilities();

@@ -34,16 +34,18 @@ object Pyrowave {
     fun yuv444(ctx: Context): Boolean = PreferenceManager.getDefaultSharedPreferences(ctx).getBoolean(YUV444_PREF, false)
 
     /**
-     * PyroWave late frames (Moonlight X's presets): [cut minimum % of a late frame that must have arrived (-1: frames
-     * aren't cut), cut margin in us, minimum % of blocks a frame that lost packets needs to be shown].
+     * PyroWave late frames: [cut minimum % of a late frame that must have arrived (-1: frames aren't cut), how much
+     * later than whole frames normally arrive a frame must be to be cut (us), minimum % of blocks a frame that lost
+     * packets needs to be shown]. Frames that lost packets are always shown from what arrived unless Off; cutting
+     * late frames is opt-in (the Cut choices), since on a busy link it can cut more than it saves.
      */
     @JvmStatic
     fun lateFrames(ctx: Context): IntArray = when (PreferenceManager.getDefaultSharedPreferences(ctx).getString(LATE_FRAMES_PREF, "balanced")) {
         "off" -> intArrayOf(-1, 0, 90)
-        "sharp" -> intArrayOf(50, 1000, 90)
-        "smooth" -> intArrayOf(25, 3000, 50)
-        "smoothest" -> intArrayOf(10, 5000, 0)
-        else -> intArrayOf(30, 2000, 75)
+        "sharp" -> intArrayOf(50, 4000, 90)
+        "smooth" -> intArrayOf(25, 2000, 50)
+        "smoothest" -> intArrayOf(10, 1000, 0)
+        else -> intArrayOf(-1, 0, 75)   // Balanced: lost-packet frames only
     }
 
     /** The FEC percentage to ask the PC for (x-ml-video.fecPercent), or -1 for the PC's own setting. */
@@ -96,6 +98,31 @@ object Pyrowave {
         }
         able = result
         return result
+    }
+
+    @Volatile private var probing = false
+
+    /**
+     * For menus: the answer if it's known (cached, or probed already), otherwise null while the probe runs on a
+     * background thread; then [done] runs on the main thread, once.
+     */
+    @JvmStatic
+    fun knownCan(ctx: android.app.Activity, done: () -> Unit): Boolean? {
+        able?.let { return it }
+        val prefs = PreferenceManager.getDefaultSharedPreferences(ctx)
+        val key = "${com.limelight.BuildConfig.VERSION_CODE}/${Build.FINGERPRINT}"
+        val cached = prefs.getString(CACHE_PREF, null)
+        if (cached != null && cached.substringBeforeLast('|') == key) return deviceCan(ctx)
+        synchronized(this) {
+            if (probing) return null
+            probing = true
+        }
+        val app = ctx.applicationContext
+        Thread({
+            deviceCan(app)
+            ctx.runOnUiThread { if (!ctx.isFinishing) done() }
+        }, "pyrowave-probe").start()
+        return null
     }
 
     /**
