@@ -1005,8 +1005,16 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         when (settingsGroup) {
             "video" -> {
                 // Home and Away: one switch for PC, PlayStation and Xbox. Each profile keeps its own settings.
-                choice(list, Profile.PREF, "Streaming profile", "Home: best quality on your network. Away: lighter settings for PlayStation Network and slower links. Custom: your own sets (rename them on the handheld app)",
+                choice(list, Profile.PREF, "Streaming profile", "Home: best quality on your network. Away: lighter settings for PlayStation Network and slower links. Custom: your own sets",
                         Profile.choices(this), "home")
+                // a custom profile can be renamed, as on the handheld; the name shows wherever the profile does
+                if (Profile.isCustom(this)) {
+                    val m = Profile.mode(this)
+                    action(list, "set:profilename", "Rename this profile", "Its name shows wherever the profile does", Profile.name(this, m)) {
+                        entryDialog("Rename this profile", "Up to 24 letters.", "A name", Profile.name(this, m), false, maxLength = 24, onSave = { v ->
+                            if (v.isBlank()) "Type a name" else { Profile.rename(this, m, v); render(force = true); null } })
+                    }
+                }
                 // Native: this screen's real panel size (its display mode), as in Moonlight/Artemis' "Native (WxH)"
                 val native = nativeResolution()
                 val presets = listOf("720p" to "1280x720", "1080p" to "1920x1080", "1440p" to "2560x1440", "4K" to "3840x2160")
@@ -1839,12 +1847,13 @@ class HomeActivity : Activity(), PhoneLink.Listener {
     private var entryCancel: (() -> Unit)? = null
 
     private fun entryDialog(title: String, sub: String, hint: String, value: String, numbers: Boolean, onSave: (String) -> String?,
-                            clear: (() -> Unit)? = null, onCancel: (() -> Unit)? = null) {
+                            clear: (() -> Unit)? = null, onCancel: (() -> Unit)? = null, maxLength: Int = 0) {
         val card = dialogCard()
         card.addView(tv.text(title, 40, tv.p.moon, tv.display(700)))
         card.addView(tv.text(sub, 22, tv.p.dust, tv.ui(500), 3), tv.lp(-1, -2).apply { topMargin = tv.px(12) })
         val field = textField(hint, value)
         if (numbers) field.inputType = android.text.InputType.TYPE_CLASS_NUMBER
+        if (maxLength > 0) field.filters = arrayOf(android.text.InputFilter.LengthFilter(maxLength))
         card.addView(field, tv.lp(-1, 84).apply { topMargin = tv.px(24) })
         val status = tv.text("", 21, tv.p.dust, tv.ui(600), 2)
         card.addView(status, tv.lp(-1, -2).apply { topMargin = tv.px(16) })
