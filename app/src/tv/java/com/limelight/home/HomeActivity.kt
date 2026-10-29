@@ -45,7 +45,6 @@ import com.limelight.nvstream.http.ComputerDetails
 import com.limelight.nvstream.http.NvApp
 import com.limelight.nvstream.http.NvHTTP
 import com.limelight.nvstream.http.PairingManager
-import com.limelight.nvstream.wol.WakeOnLanSender
 import com.limelight.preferences.AddComputerManually
 import com.limelight.preferences.StreamSettings
 import com.limelight.utils.CacheHelper
@@ -150,6 +149,9 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         startPolling()
         ui.post(tick)
         render(force = true)
+        // back from a stream that ended with the PC going down (Quick menu, Power): drop its old state at once, and
+        // after Restart wait for it to come back (shared with the handheld: PcWake)
+        pcWake.backFromStream(ui)
     }
 
     override fun onPause() {
@@ -476,6 +478,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
     private fun pcCardInfo(d: ComputerDetails): CardInfo {
         val n = apps[d.uuid]?.size ?: 0
         return when {
+            !online(d) && isWaking(d) -> CardInfo("PC", 0, d.name, "Waking up…", listOf("Waking up" to "rest"))
             !online(d) -> CardInfo("PC", 0, d.name, "Offline. Wake it to play", listOf("Offline" to "rest"))
             !paired(d) -> CardInfo("PC", 0, d.name, "Found on your network. Pair it to play", listOf("Not paired" to "rest"))
             else -> CardInfo("PC", 0, d.name, if (n > 0) "$n games" else "Paired",
@@ -793,8 +796,9 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         val states: List<Pair<String, String>>
         when {
             !online(d) -> {
-                line = "This PC is off or asleep. Wake it, then it shows its games here."
-                states = listOf("Offline" to "rest", (if (paired(d)) "Paired" else "Not paired") to "")
+                line = if (isWaking(d)) "Waking up… it shows as online as soon as it answers."
+                       else "This PC is off or asleep. Wake it, then it shows its games here."
+                states = listOf((if (isWaking(d)) "Waking up" else "Offline") to "rest", (if (paired(d)) "Paired" else "Not paired") to "")
                 actions += tv.pill("Wake it", "A", true) { wake(d) }.apply { tag = "primary" }
             }
             !paired(d) -> {
@@ -1423,6 +1427,17 @@ class HomeActivity : Activity(), PhoneLink.Listener {
 
     private fun start(pc: ComputerDetails, app: NvApp) {
         val b = binder ?: return toast(getString(R.string.error_manager_not_running))
+        val uuid = pc.uuid
+        if (!online(pc) && isWaking(pc)) {   // waking: start it once the PC answers
+            pcWake.after(uuid ?: "") { pcs[uuid]?.let { start(it, app) } }
+            toast("${app.appName} starts once ${pc.name} is awake")
+            return
+        }
+        if (pc.state == ComputerDetails.State.OFFLINE) {   // only when a poll says so (UNKNOWN = not asked yet)
+            confirm("${pc.name} is offline", "Wake it, then start ${app.appName} once it's online.", "Wake it") {
+                wake(pc) { pcs[uuid]?.let { start(it, app) } } }
+            return
+        }
         val other = runningApp(pc)
         if (other != null && other.appId != app.appId) {
             confirm("Quit ${other.appName}?", "${pc.name} is running ${other.appName}. Quit it and start ${app.appName}?",
@@ -1443,14 +1458,15 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         }
     }
 
-    private fun wake(d: ComputerDetails) {
-        if (d.macAddress == null || d.macAddress == "00:00:00:00:00:00") return toast(getString(R.string.wol_no_mac))
-        Thread {
-            val msg = try { WakeOnLanSender.sendWolPacket(d); "Waking ${d.name}. It shows as online when it's ready." }
-                      catch (e: Exception) { getString(R.string.wol_fail) }
-            runOnUiThread { toast(msg) }
-        }.start()
-    }
+    /**
+     * Wake and wait for a PC, as on the handheld (home/PcWake.kt): Wake-on-LAN goes again every 3 s until the PC
+     * answers (one packet sent while a PC was still hibernating was lost, and MoonCast had to be restarted), and a
+     * game pressed meanwhile starts once it's up.
+     */
+    private val pcWake by lazy { PcWake(this, { binder }, { pcs[it] }, { toast(it) }, { render(force = true) }) }
+
+    private fun wake(d: ComputerDetails, then: (() -> Unit)? = null) = pcWake.wake(d, then)
+    private fun isWaking(d: ComputerDetails) = pcWake.isWaking(d)
 
     private fun pair(d: ComputerDetails) {
         val b = binder ?: return toast(getString(R.string.error_manager_not_running))
