@@ -68,6 +68,23 @@ object Profile {
     private const val APPLIED = "pc_profile_applied"
 
     /**
+     * Saves the settings in use now into [mode] (one of your own profiles) without switching to it: picking that
+     * profile later brings them back. Nothing to do when [mode] is the profile in use (its settings are the live ones).
+     */
+    @JvmStatic
+    fun saveInto(ctx: Context, mode: String) {
+        val p = PreferenceManager.getDefaultSharedPreferences(ctx)
+        if (mode !in MODES || mode == (p.getString(APPLIED, "home") ?: "home")) return
+        val all = p.all
+        val ed = p.edit()
+        for (k in PC_KEYS) {
+            val v = all[k]
+            ed.putString("pcprof_${mode}_$k", when (v) { is Int -> "i:$v"; is Boolean -> "b:$v"; is String -> "s:$v"; else -> "" })
+        }
+        ed.apply()
+    }
+
+    /**
      * Keeps the PC's video settings in step with the General profile. Leaving a profile saves its values; entering one
      * restores the values saved for it (or Moonlight's defaults the first time). The PC has no PlayStation-style route,
      * so Auto means Home here, and Away only when it is chosen.

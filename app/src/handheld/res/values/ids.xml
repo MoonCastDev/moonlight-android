@@ -5,4 +5,5 @@
     <item name="hh_tint" type="id" />
     <!-- a rounded dialog button: the focus ring goes round it -->
     <item name="hh_pill" type="id" />
+    <item name="hh_in_use" type="id" />
 </resources>

@@ -89,10 +89,10 @@ class HandheldHomeActivity : Activity() {
                        val ps: Ps5Store.Console? = null, val xb: Xbox.Console? = null,
                        val dev: com.limelight.home.DeviceApps.App? = null)
 
-    private class Opt(val icon: String?, val iconColor: Int, val title: String, val sub: String? = null, val right: String? = null,
+    internal class Opt(val icon: String?, val iconColor: Int, val title: String, val sub: String? = null, val right: String? = null,
                       val enabled: Boolean = true, val onClick: () -> Unit = {})
 
-    private lateinit var sw: Sw
+    internal lateinit var sw: Sw
     private lateinit var root: FrameLayout
     private lateinit var wash: Wash
     private lateinit var main: LinearLayout
@@ -110,16 +110,16 @@ class HandheldHomeActivity : Activity() {
     private var binder: ComputerManagerService.ComputerManagerBinder? = null
     private var polling = false
     private var resumed = false
-    private val pcs = LinkedHashMap<String, ComputerDetails>()
+    internal val pcs = LinkedHashMap<String, ComputerDetails>()
     private val apps = HashMap<String, List<NvApp>>()
     private val rawLists = HashMap<String, String>()
     private val loaders = HashMap<String, CachedAppAssetLoader>()
     private val appPollers = HashMap<String, ComputerManagerService.ApplistPoller>()
 
-    private var consoles = listOf<Ps5Store.Console>()
+    internal var consoles = listOf<Ps5Store.Console>()
     private val psStatus = HashMap<String, Ps5Store.Status>()
     private val probes = Executors.newSingleThreadExecutor()
-    private var xboxes: List<Xbox.Console> = emptyList()
+    internal var xboxes: List<Xbox.Console> = emptyList()
 
     private var page = Page.HOME
     private var lastPage: Page? = null
@@ -135,8 +135,11 @@ class HandheldHomeActivity : Activity() {
     private var gnameBox: View? = null
     private var gnameTarget: View? = null
 
-    private val prefs: SharedPreferences by lazy { getSharedPreferences("mc_tv", Context.MODE_PRIVATE) }
-    private val stream: SharedPreferences by lazy { android.preference.PreferenceManager.getDefaultSharedPreferences(this) }
+    /** Settings as one card per device (the classic list is one chip away). */
+    private val cards by lazy { SettingsCards(this) }
+
+    internal val prefs: SharedPreferences by lazy { getSharedPreferences("mc_tv", Context.MODE_PRIVATE) }
+    internal val stream: SharedPreferences by lazy { android.preference.PreferenceManager.getDefaultSharedPreferences(this) }
 
     // ---------------------------------------------------------------- lifecycle
 
@@ -162,6 +165,7 @@ class HandheldHomeActivity : Activity() {
         // Rebuilt for a theme change (recreate): come back to the same page, not Home (#44)
         b?.getString(STATE_PAGE)?.let { n -> Page.values().firstOrNull { it.name == n }?.let { page = it } }
         b?.getString(STATE_GROUP)?.let { settingsGroup = it }
+        b?.getString(STATE_CARDS)?.let { cards.restore(it) }
         buildShell()
         bindService(Intent(this, ComputerManagerService::class.java), conn, Context.BIND_AUTO_CREATE)
         takeIntent(intent)
@@ -172,6 +176,7 @@ class HandheldHomeActivity : Activity() {
         super.onSaveInstanceState(out)
         out.putString(STATE_PAGE, page.name)
         out.putString(STATE_GROUP, settingsGroup)
+        out.putString(STATE_CARDS, cards.save())
     }
 
     override fun onNewIntent(i: Intent) {
@@ -448,8 +453,8 @@ class HandheldHomeActivity : Activity() {
         }.start()
     }
 
-    private fun paired(d: ComputerDetails) = d.pairState == PairingManager.PairState.PAIRED
-    private fun online(d: ComputerDetails) = d.state == ComputerDetails.State.ONLINE
+    internal fun paired(d: ComputerDetails) = d.pairState == PairingManager.PairState.PAIRED
+    internal fun online(d: ComputerDetails) = d.state == ComputerDetails.State.ONLINE
     private fun runningApp(d: ComputerDetails): NvApp? {
         if (d.runningGameId == 0) return null
         return apps[d.uuid]?.firstOrNull { it.appId == d.runningGameId } ?: NvApp("Your game", d.runningGameId, false)
@@ -583,6 +588,7 @@ class HandheldHomeActivity : Activity() {
                     t != null && t.startsWith("app:") -> sw.pxf(13 + 22)
                     t != null && t.startsWith("group:") -> sw.pxf(13 + 16)
                     t != null && t.startsWith("g:") -> sw.pxf(13 + sw.tileCorner)
+                    t != null && (t.startsWith("card:") || t.startsWith("style:") || t.startsWith("tile:")) -> sw.pxf(13 + SettingsCards.CORNER)
                     else -> null
                 }
             }
@@ -609,6 +615,7 @@ class HandheldHomeActivity : Activity() {
 
     private fun signature(): String = buildString {
         append(page).append(gamesTab).append(sortAz).append(settingsGroup).append(portrait)
+        if (page == Page.SETTINGS) append(cards.sig())
         pcs.values.forEach { append(it.uuid).append(it.state).append(it.pairState).append(it.runningGameId).append(apps[it.uuid]?.size) }
         consoles.forEach { append(it.host).append(it.name).append(psStatus[it.host]?.power).append(psStatus[it.host]?.runningApp) }
         xboxes.forEach { append(it.id).append(it.name).append(it.powerState) }
@@ -617,7 +624,7 @@ class HandheldHomeActivity : Activity() {
     }
 
     /** Rebuild the page when something visible changed, keeping focus on the same item. */
-    private fun render(force: Boolean = false) {
+    internal fun render(force: Boolean = false) {
         Profile.syncPcSettings(this)
         val sig = signature()
         if (!force && sig == lastSig) return
@@ -631,7 +638,8 @@ class HandheldHomeActivity : Activity() {
 
     private fun renderPage(sig: String) {
         lastSig = sig
-        val entering = lastPage != page
+        // a Settings card opening, or going back from one, builds in like a new page
+        val entering = (lastPage != page) or (page == Page.SETTINGS && cards.takeFresh())
         lastPage = page
         val focusTag = currentFocus?.tag as? String
         stagger = ArrayList()
@@ -645,7 +653,7 @@ class HandheldHomeActivity : Activity() {
             Page.HOME -> homeLandscape()   // one Home for both ways round, fitted to the screen
             Page.GAMES -> gamesPage()
             Page.CONSOLES -> consolesPage()
-            Page.SETTINGS -> settingsPage()
+            Page.SETTINGS -> if (cards.classic) settingsPage() else cards.page()
         }
         content.addView(pg, FrameLayout.LayoutParams(-1, -1))
         // what a pad's first press lands on when the screen was last touched (Android restores the default focus)
@@ -682,7 +690,7 @@ class HandheldHomeActivity : Activity() {
         }
     }
 
-    private fun <T : View> part(v: T): T { stagger.add(v); return v }
+    internal fun <T : View> part(v: T): T { stagger.add(v); return v }
 
     // ---- top bar and foot ----
 
@@ -708,7 +716,8 @@ class HandheldHomeActivity : Activity() {
             // a back button you can tap: a touch screen has no B (the same as B / the system back)
             topBar.addView(roundButton("top:back", "back", sw.ink, 84, sw.panel) { onBackPressed() }.apply { isFocusable = false; contentDescription = "Back" },
                     LinearLayout.LayoutParams(sw.tap(84), sw.tap(84)).apply { rightMargin = sw.px(24) })
-            topBar.addView(sw.text(page.title, 44, sw.ink, 800))
+            topBar.addView(sw.text(if (page == Page.SETTINGS) cards.title() else page.title, 44, sw.ink, 800).apply {
+                maxWidth = resources.displayMetrics.widthPixels * 2 / 3 })
         }
         topBar.addView(sw.grow())
         // the clock and battery are the phone's own status bar now
@@ -737,7 +746,7 @@ class HandheldHomeActivity : Activity() {
             Page.HOME -> listOf("Y" to (if (TvFinder.target(this) != null) "Play here" else "Play on TV"), "A" to "Start")
             Page.GAMES -> listOf("L R" to "Tabs", "X" to (if (sortAz) "Recent first" else "A to Z"), "B" to "Back", "A" to "Start")
             Page.CONSOLES -> listOf("B" to "Back", "A" to "Open")
-            Page.SETTINGS -> listOf("B" to "Back", "A" to "OK")
+            Page.SETTINGS -> if (cards.classic) listOf("B" to "Back", "A" to "OK") else cards.hints()
         }
         h.forEach { (k, l) ->
             foot.addView((if (k.length > 1) sw.row().apply {
@@ -865,7 +874,7 @@ class HandheldHomeActivity : Activity() {
     private var labelsShown = false
 
     /** Where focus lands when a page opens (each page sets it while it builds). */
-    private var primaryView: View? = null
+    internal var primaryView: View? = null
 
     private fun roundAction(icon: String) {
         when (icon) {
@@ -873,7 +882,7 @@ class HandheldHomeActivity : Activity() {
             "tv" -> playWhere(null)
             "pad" -> controllers()
             "net" -> networkTest()
-            "gear" -> go(Page.SETTINGS)
+            "gear" -> { cards.reset(); go(Page.SETTINGS) }
             "power" -> { FeelSounds.play(this, FeelSounds.Cue.BACK); PadLink.stop(); finishAndRemoveTask() }
         }
     }
@@ -1201,7 +1210,7 @@ class HandheldHomeActivity : Activity() {
     private fun hostPort(a: ComputerDetails.AddressTuple) = if (a.port == NvHTTP.DEFAULT_HTTP_PORT) a.address else "${a.address}:${a.port}"
 
     /** Where this device looks for the PC: its home address and the one for away, and which it reached. */
-    private fun pcAddresses(d: ComputerDetails): String? {
+    internal fun pcAddresses(d: ComputerDetails): String? {
         val lines = ArrayList<String>()
         val used = d.activeAddress
         fun line(label: String, a: ComputerDetails.AddressTuple?) {
@@ -1219,7 +1228,7 @@ class HandheldHomeActivity : Activity() {
      * kept next to its home address: this device tries both and uses whichever answers. Saved without trying it,
      * since at home an internet address usually can't be reached.
      */
-    private fun awayAddress(d: ComputerDetails) {
+    internal fun awayAddress(d: ComputerDetails) {
         entry("Address for away", "A name or IP that reaches ${d.name} from the internet. Its home address stays too, and this device uses whichever answers. Sunshine's ports must be open to the internet, or connect a VPN to home. Leave it empty to remove it.",
                 "For example home.example.com", d.manualAddress?.let { hostPort(it) } ?: "", "address") { raw ->
             val b = binder ?: return@entry "Still starting, try again in a moment."
@@ -1523,7 +1532,7 @@ class HandheldHomeActivity : Activity() {
         return row
     }
 
-    private fun settingsRows(list: LinearLayout, group: String) {
+    internal fun settingsRows(list: LinearLayout, group: String) {
         when (group) {
             "handheld" -> {
                 // Auto picks Compact on a small or square screen; the others force a size (recreate redraws the app)
@@ -1539,16 +1548,7 @@ class HandheldHomeActivity : Activity() {
                 appToggle(list, "hh_dim_on_tv", "Dim the screen on a TV", "While this ${deviceShort()} is the controller for a TV", true)
             }
             "picture" -> {
-                // Home and Away: one switch for PC, PlayStation and Xbox. Each profile keeps its own settings.
-                choice(list, stream, Profile.PREF, "Streaming profile", "Home: best quality on your network. Away: lighter settings for PlayStation Network and slower links. Custom: your own sets",
-                        Profile.choices(this), "home")
-                if (Profile.isCustom(this)) {
-                    val m = Profile.mode(this)
-                    action(list, "profile:rename", "Rename this profile", "Its name shows wherever the profile does", Profile.name(this, m)) {
-                        entry("Rename this profile", "Up to 24 letters.", "A name", Profile.name(this, m), "text") { v ->
-                            if (v.isBlank()) "Type a name" else { Profile.rename(this, m, v); render(force = true); null } }
-                    }
-                }
+                profileRows(list)
                 syncNativeRes()
                 // Native is this screen's own size and shape (no bars), whichever screen a stream starts on
                 // (a foldable's cover or inner screen)
@@ -1671,37 +1671,11 @@ class HandheldHomeActivity : Activity() {
                 info(list, "Quick menu", QuickMenu.COMBO_LABEL)
             }
             "ps" -> {
-                if (Psn.signedIn(this)) action(list, "psn", "PlayStation Network",
-                        "Signed in" + (Psn.onlineId(this)?.takeIf { it.isNotBlank() }?.let { " as $it" } ?: ""), "Sign out") {
-                    confirm("Sign out of PlayStation Network?", "You'll sign in again to register a PS5 or reach it away from home.", "Sign out") {
-                        Psn.signOut(this); render(force = true) } }
-                else action(list, "psn", "PlayStation Network", "Sign in once to register a PS5 and play it away from home", "Sign in") {
-                    startActivityForResult(Intent(this, PsnSignInActivity::class.java), REQ_PSN) }
+                psnRow(list)
                 // Same four rows for each profile; the General profile decides which set they edit. Auto shows both sets.
                 val mode = Profile.mode(this)
-                if (mode != "away") {
-                    choice(list, stream, "ps5_resolution", "Resolution", "The PS5 streams up to 1080p", listOf("720p" to "720", "1080p" to "1080"), "1080")
-                    choice(list, stream, "ps5_fps_home", "Frame rate", "60 fps is smoother; 30 fps lets a weak link keep up",
-                            listOf("60 fps" to "60", "30 fps" to "30"), "60")   // PS5: 30 or 60 only (#39)
-                    choice(list, stream, "ps5_bitrate_home", "Bitrate", "Auto: 30 Mbps on fast Wi-Fi, 20 otherwise. 80–100 Mbps needs a strong 5 GHz / 6 GHz link",
-                            listOf("Auto" to "auto", "10" to "10", "15" to "15", "20" to "20", "30" to "30", "50" to "50", "80" to "80", "100" to "100", "Custom" to "custom"), "auto",
-                            onPick = { if (it == "custom") customDialog(stream, "ps5_bitrate_home", "Custom bitrate", "Mbps", 2, 100, 20) })
-                    if (stream.getString("ps5_bitrate_home", "auto") == "custom")
-                        customNumber(list, stream, "ps5_bitrate_home", "Custom bitrate", "2 to 100 Mbps. 80–100 needs a strong 5 GHz / 6 GHz link", "Mbps", 2, 100, 20)
-                    choice(list, stream, "ps5_codec", "Video codec", "HEVC looks better at the same bitrate", listOf("H.264" to "h264", "HEVC" to "h265"), "h265")
-                }
-                if (mode != "home") {
-                    choice(list, stream, "ps5_away_quality", "Resolution", "Auto follows the Wi-Fi: 1080p strong, 720p weak",
-                            listOf("Auto" to "auto", "540p" to "540", "720p" to "720", "1080p" to "1080"), "auto")
-                    choice(list, stream, "away_fps", "Frame rate", "60 fps is smoother; 30 fps lets a weak link keep up",
-                            listOf("60 fps" to "60", "30 fps" to "30"), "60")   // PS5: 30 or 60 only (#39)
-                    choice(list, stream, "away_bitrate", "Bitrate", "Auto: capped by the Wi-Fi link",
-                            listOf("Auto" to "auto", "8" to "8", "10" to "10", "15" to "15", "Custom" to "custom"), "auto",
-                            onPick = { if (it == "custom") customDialog(stream, "away_bitrate", "Custom bitrate", "Mbps", 2, 100, 10) })
-                    if (stream.getString("away_bitrate", "auto") == "custom")
-                        customNumber(list, stream, "away_bitrate", "Custom bitrate", "2 to 100 Mbps (the internet path rarely carries more than 30)", "Mbps", 2, 100, 10)
-                    choice(list, stream, "away_codec", "Video codec", "HEVC looks better at the same bitrate", listOf("H.264" to "h264", "HEVC" to "h265"), "h265")
-                }
+                if (mode != "away") psHomeRows(list)
+                if (mode != "home") psAwayRows(list)
                 // its own picture settings; "Same as Picture" until set
                 choice(list, stream, "ps5_fsr", "Super resolution", "FSR 1.0 for the PS5 only, or the same as Picture",
                         listOf("Same as Picture" to "same", "Off" to "off", "FSR 1.0" to "fsr1"), "same")
@@ -1717,22 +1691,12 @@ class HandheldHomeActivity : Activity() {
                 toggle(list, "ps5_swap_cross_circle", "Swap Cross and Circle", "For the Japanese layout", false)
                 choice(list, stream, com.limelight.Ps5StreamActivity.DECODER_PREF, "Decoder", "Low latency shows each frame sooner. Ultra pushes this device's chip harder. Standard if the picture misbehaves",
                         listOf("Low latency" to "low", "Ultra low latency" to "ultra", "Standard" to "standard"), "low")
-                val pin = prefs.getString("ps5_login_pin", "") ?: ""
-                action(list, "pspin", "Console PIN", "Signs in for you when the PS5 asks for its 4-digit login PIN", if (pin.isEmpty()) "Not set" else "••••") {
-                    entry("Console PIN", "The 4-digit PIN your PS5 asks for when it starts. Leave empty to turn it off.", "4 digits", pin, true) { v ->
-                        if (v.isNotEmpty() && v.length != 4) "The PIN has 4 digits" else { prefs.edit().putString("ps5_login_pin", v).apply(); render(force = true); null }
-                    } }
+                psPinRow(list)
                 info(list, "PS button", "L2 + Start")
                 info(list, "Touchpad", "Select + Start")
             }
             "xbox" -> {
-                if (Xbox.noProfile(this)) action(list, "xbox", "Xbox network", "Signed in, no Xbox profile. Sign out, then sign in with the account you use on your Xbox", "Sign out") {
-                    confirm("Sign out of Xbox?", "This Microsoft account has no Xbox profile. Sign out to start fresh with another account.", "Sign out", yesPicked = true) {
-                        Xbox.signOut(this); xboxes = emptyList(); render(force = true) } }
-                else if (Xbox.signedIn(this)) action(list, "xbox", "Xbox network", "Signed in" + (Xbox.gamertag(this)?.let { " as $it" } ?: ""), "Sign out") {
-                    confirm("Sign out of Xbox?", "Your Xbox consoles leave this device until you sign in again.", "Sign out") {
-                        Xbox.signOut(this); xboxes = emptyList(); render(force = true) } }
-                else action(list, "xbox", "Xbox network", "Sign in once to play your Xbox here, at home or away", "Sign in") { xboxSignIn() }
+                xboxRow(list)
                 choice(list, stream, "xbox_resolution", "Picture", "The Xbox sets quality from this",
                         listOf("Auto" to "auto", "720p" to "720", "1080p" to "1080", "1080p high" to "1081"), "auto")
                 val steps = listOf(0, 5, 10, 15, 20, 30)
@@ -1793,7 +1757,75 @@ class HandheldHomeActivity : Activity() {
         }
     }
 
-    private fun value(s: String) = sw.text(s, 28, sw.ring, 700)
+    /** Settings, Picture: the streaming profile (Home, Away, your own), and Rename for your own. */
+    internal fun profileRows(list: LinearLayout) {
+        // Home and Away: one switch for PC, PlayStation and Xbox. Each profile keeps its own settings.
+        choice(list, stream, Profile.PREF, "Streaming profile", "Home: best quality on your network. Away: lighter settings for PlayStation Network and slower links. Custom: your own sets",
+                Profile.choices(this), "home")
+        if (Profile.isCustom(this)) {
+            val m = Profile.mode(this)
+            action(list, "profile:rename", "Rename this profile", "Its name shows wherever the profile does", Profile.name(this, m)) {
+                entry("Rename this profile", "Up to 24 letters.", "A name", Profile.name(this, m), "text") { v ->
+                    if (v.isBlank()) "Type a name" else { Profile.rename(this, m, v); render(force = true); null } }
+            }
+        }
+    }
+
+    internal fun psnRow(list: LinearLayout) {
+        if (Psn.signedIn(this)) action(list, "psn", "PlayStation Network",
+                "Signed in" + (Psn.onlineId(this)?.takeIf { it.isNotBlank() }?.let { " as $it" } ?: ""), "Sign out") {
+            confirm("Sign out of PlayStation Network?", "You'll sign in again to register a PS5 or reach it away from home.", "Sign out") {
+                Psn.signOut(this); render(force = true) } }
+        else action(list, "psn", "PlayStation Network", "Sign in once to register a PS5 and play it away from home", "Sign in") {
+            startActivityForResult(Intent(this, PsnSignInActivity::class.java), REQ_PSN) }
+    }
+
+    /** The PS5's Home rows: resolution, frame rate, bitrate, codec. */
+    internal fun psHomeRows(list: LinearLayout) {
+        choice(list, stream, "ps5_resolution", "Resolution", "The PS5 streams up to 1080p", listOf("720p" to "720", "1080p" to "1080"), "1080")
+        choice(list, stream, "ps5_fps_home", "Frame rate", "60 fps is smoother; 30 fps lets a weak link keep up",
+                listOf("60 fps" to "60", "30 fps" to "30"), "60")   // PS5: 30 or 60 only (#39)
+        choice(list, stream, "ps5_bitrate_home", "Bitrate", "Auto: 30 Mbps on fast Wi-Fi, 20 otherwise. 80–100 Mbps needs a strong 5 GHz / 6 GHz link",
+                listOf("Auto" to "auto", "10" to "10", "15" to "15", "20" to "20", "30" to "30", "50" to "50", "80" to "80", "100" to "100", "Custom" to "custom"), "auto",
+                onPick = { if (it == "custom") customDialog(stream, "ps5_bitrate_home", "Custom bitrate", "Mbps", 2, 100, 20) })
+        if (stream.getString("ps5_bitrate_home", "auto") == "custom")
+            customNumber(list, stream, "ps5_bitrate_home", "Custom bitrate", "2 to 100 Mbps. 80–100 needs a strong 5 GHz / 6 GHz link", "Mbps", 2, 100, 20)
+        choice(list, stream, "ps5_codec", "Video codec", "HEVC looks better at the same bitrate", listOf("H.264" to "h264", "HEVC" to "h265"), "h265")
+    }
+
+    /** The PS5's Away rows. */
+    internal fun psAwayRows(list: LinearLayout) {
+        choice(list, stream, "ps5_away_quality", "Resolution", "Auto follows the Wi-Fi: 1080p strong, 720p weak",
+                listOf("Auto" to "auto", "540p" to "540", "720p" to "720", "1080p" to "1080"), "auto")
+        choice(list, stream, "away_fps", "Frame rate", "60 fps is smoother; 30 fps lets a weak link keep up",
+                listOf("60 fps" to "60", "30 fps" to "30"), "60")   // PS5: 30 or 60 only (#39)
+        choice(list, stream, "away_bitrate", "Bitrate", "Auto: capped by the Wi-Fi link",
+                listOf("Auto" to "auto", "8" to "8", "10" to "10", "15" to "15", "Custom" to "custom"), "auto",
+                onPick = { if (it == "custom") customDialog(stream, "away_bitrate", "Custom bitrate", "Mbps", 2, 100, 10) })
+        if (stream.getString("away_bitrate", "auto") == "custom")
+            customNumber(list, stream, "away_bitrate", "Custom bitrate", "2 to 100 Mbps (the internet path rarely carries more than 30)", "Mbps", 2, 100, 10)
+        choice(list, stream, "away_codec", "Video codec", "HEVC looks better at the same bitrate", listOf("H.264" to "h264", "HEVC" to "h265"), "h265")
+    }
+
+    internal fun psPinRow(list: LinearLayout) {
+        val pin = prefs.getString("ps5_login_pin", "") ?: ""
+        action(list, "pspin", "Console PIN", "Signs in for you when the PS5 asks for its 4-digit login PIN", if (pin.isEmpty()) "Not set" else "••••") {
+            entry("Console PIN", "The 4-digit PIN your PS5 asks for when it starts. Leave empty to turn it off.", "4 digits", pin, true) { v ->
+                if (v.isNotEmpty() && v.length != 4) "The PIN has 4 digits" else { prefs.edit().putString("ps5_login_pin", v).apply(); render(force = true); null }
+            } }
+    }
+
+    internal fun xboxRow(list: LinearLayout) {
+        if (Xbox.noProfile(this)) action(list, "xbox", "Xbox network", "Signed in, no Xbox profile. Sign out, then sign in with the account you use on your Xbox", "Sign out") {
+            confirm("Sign out of Xbox?", "This Microsoft account has no Xbox profile. Sign out to start fresh with another account.", "Sign out", yesPicked = true) {
+                Xbox.signOut(this); xboxes = emptyList(); render(force = true) } }
+        else if (Xbox.signedIn(this)) action(list, "xbox", "Xbox network", "Signed in" + (Xbox.gamertag(this)?.let { " as $it" } ?: ""), "Sign out") {
+            confirm("Sign out of Xbox?", "Your Xbox consoles leave this device until you sign in again.", "Sign out") {
+                Xbox.signOut(this); xboxes = emptyList(); render(force = true) } }
+        else action(list, "xbox", "Xbox network", "Sign in once to play your Xbox here, at home or away", "Sign in") { xboxSignIn() }
+    }
+
+    internal fun value(s: String) = sw.text(s, 28, sw.ring, 700)
 
     /** About, Open-source licences: each project with its licence; pressing one shows the full text. Back returns to About. */
     private var licencesOpen = false
@@ -1809,7 +1841,7 @@ class HandheldHomeActivity : Activity() {
         }
     }
 
-    private fun srow(list: LinearLayout, key: String, title: String, sub: String?, value: View?, onClick: (() -> Unit)?) {
+    internal fun srow(list: LinearLayout, key: String, title: String, sub: String?, value: View?, onClick: (() -> Unit)?) {
         list.addView(sw.row().apply {
             tag = "set:$key"
             background = sw.bottomLine()
@@ -1830,13 +1862,13 @@ class HandheldHomeActivity : Activity() {
     }
 
     /** A Custom value for a choice row: tapping it asks for a number, and saving a number switches the row to Custom. */
-    private fun customNumber(list: LinearLayout, store: SharedPreferences, key: String, title: String, sub: String, unit: String, min: Int, max: Int, def: Int) {
+    internal fun customNumber(list: LinearLayout, store: SharedPreferences, key: String, title: String, sub: String, unit: String, min: Int, max: Int, def: Int) {
         val cur = store.getString(key + "_custom", def.toString()) ?: def.toString()
         action(list, "$key-custom", title, sub, "$cur $unit") { customDialog(store, key, title, unit, min, max, def) }
     }
 
     /** Asks for a Custom number and saves it; the row switches to Custom. */
-    private fun customDialog(store: SharedPreferences, key: String, title: String, unit: String, min: Int, max: Int, def: Int) {
+    internal fun customDialog(store: SharedPreferences, key: String, title: String, unit: String, min: Int, max: Int, def: Int) {
         val cur = store.getString(key + "_custom", def.toString()) ?: def.toString()
         entry(title, "$min to $max $unit", unit, cur, true) { v ->
             val n = v.trim().toIntOrNull()
@@ -1849,7 +1881,7 @@ class HandheldHomeActivity : Activity() {
         }
     }
 
-    private fun choice(list: LinearLayout, store: SharedPreferences, key: String, title: String, sub: String, options: List<Pair<String, String>>, def: String,
+    internal fun choice(list: LinearLayout, store: SharedPreferences, key: String, title: String, sub: String, options: List<Pair<String, String>>, def: String,
                        onPick: ((String) -> Unit)? = null) {
         val cur = store.getString(key, def)
         val label = options.firstOrNull { it.second == cur }?.first ?: cur ?: ""
@@ -1863,7 +1895,7 @@ class HandheldHomeActivity : Activity() {
         }
     }
 
-    private fun intChoice(list: LinearLayout, key: String, title: String, sub: String, options: List<Int>, def: Int, label: (Int) -> String) {
+    internal fun intChoice(list: LinearLayout, key: String, title: String, sub: String, options: List<Int>, def: Int, label: (Int) -> String) {
         val cur = stream.getInt(key, def)
         srow(list, key, title, sub, value(label(cur))) {
             stream.edit().putInt(key, options[(options.indexOf(cur) + 1) % options.size]).apply()
@@ -1872,7 +1904,7 @@ class HandheldHomeActivity : Activity() {
     }
 
     /** 25000 -> "25 Mbps", 7500 -> "7.5 Mbps" */
-    private fun mbps(kbps: Int) = (if (kbps % 1000 == 0) "${kbps / 1000}" else "%.1f".format(java.util.Locale.ROOT, kbps / 1000.0)) + " Mbps"
+    internal fun mbps(kbps: Int) = (if (kbps % 1000 == 0) "${kbps / 1000}" else "%.1f".format(java.util.Locale.ROOT, kbps / 1000.0)) + " Mbps"
 
     private fun bitrate(list: LinearLayout) {
         val steps = listOf(0) + BITRATE_STEPS
@@ -1886,10 +1918,10 @@ class HandheldHomeActivity : Activity() {
         }
     }
 
-    private fun toggle(list: LinearLayout, key: String, title: String, sub: String, def: Boolean) = flip(list, stream, key, title, sub, def, null)
-    private fun appToggle(list: LinearLayout, key: String, title: String, sub: String, def: Boolean, after: (() -> Unit)? = null) = flip(list, prefs, key, title, sub, def, after)
+    internal fun toggle(list: LinearLayout, key: String, title: String, sub: String, def: Boolean) = flip(list, stream, key, title, sub, def, null)
+    internal fun appToggle(list: LinearLayout, key: String, title: String, sub: String, def: Boolean, after: (() -> Unit)? = null) = flip(list, prefs, key, title, sub, def, after)
 
-    private fun flip(list: LinearLayout, store: SharedPreferences, key: String, title: String, sub: String, def: Boolean, after: (() -> Unit)?) {
+    internal fun flip(list: LinearLayout, store: SharedPreferences, key: String, title: String, sub: String, def: Boolean, after: (() -> Unit)?) {
         val on = store.getBoolean(key, def)
         val t = sw.toggle(on).apply { layoutParams = sw.lp(96, 52) }
         srow(list, key, title, sub, t) {
@@ -1900,10 +1932,10 @@ class HandheldHomeActivity : Activity() {
         }
     }
 
-    private fun action(list: LinearLayout, key: String, title: String, sub: String, v: String?, onClick: () -> Unit) =
+    internal fun action(list: LinearLayout, key: String, title: String, sub: String, v: String?, onClick: () -> Unit) =
         srow(list, key, title, sub, v?.let { value(it) }, onClick)
 
-    private fun info(list: LinearLayout, title: String, v: String) =
+    internal fun info(list: LinearLayout, title: String, v: String) =
         srow(list, "info:$title", title, null, sw.text(v, 26, sw.sub, 700), null)
 
     // ---------------------------------------------------------------- playing
@@ -1911,7 +1943,7 @@ class HandheldHomeActivity : Activity() {
     /** A message in the Switch style along the bottom (system toasts showed as an empty white pill on the Odin). */
     private var snack: TextView? = null
     private val hideSnack = Runnable { snack?.animate()?.alpha(0f)?.translationY(sw.pxf(20))?.setDuration(200)?.start() }
-    private fun toast(s: String) {
+    internal fun toast(s: String) {
         val v = snack?.takeIf { it.parent === root } ?: sw.text("", 26, sw.ink, 700, 3).apply {
             gravity = Gravity.CENTER
             setPadding(sw.px(36), sw.px(22), sw.px(36), sw.px(22))
@@ -2022,6 +2054,8 @@ class HandheldHomeActivity : Activity() {
         }
     }
     private var whereOpen: Game? = null
+    /** Settings, TVs: the "Play on" list (this device or a TV). */
+    internal fun openPlayOn() = playWhere(null)
     private val NO_GAME = Game("", "", "", "", false)
 
     /** Y: switch between this device and the last TV. With no TV yet, the "Play on" list opens. */
@@ -2065,7 +2099,7 @@ class HandheldHomeActivity : Activity() {
         dialog("Controllers", "Using: ${controllerName()}", listOf(
                 Opt("◎", Sw.C_BLUE, "Test a controller", "Every button, stick and trigger, live") { startActivity(Intent(this, PadTestActivity::class.java)) },
                 Opt("+", Sw.C_BLUE, "Pair a controller", "Opens Bluetooth settings") { pairController() },
-                Opt("⚙", Sw.PC, "Controller settings") { settingsGroup = "pads"; go(Page.SETTINGS) }), listOf("Close" to {}))
+                Opt("⚙", Sw.PC, "Controller settings") { cards.reset("pads"); settingsGroup = "pads"; go(Page.SETTINGS) }), listOf("Close" to {}))
     }
 
     /** Starts [app], asking first when another game runs there. [started] runs once it really starts (not on Cancel). */
@@ -2102,7 +2136,7 @@ class HandheldHomeActivity : Activity() {
     private val waking = java.util.concurrent.ConcurrentHashMap<String, Long>()
     private var afterWake: Pair<String, () -> Unit>? = null
 
-    private fun wake(d: ComputerDetails, then: (() -> Unit)? = null) {
+    internal fun wake(d: ComputerDetails, then: (() -> Unit)? = null) {
         if (d.macAddress == null || d.macAddress == "00:00:00:00:00:00") return toast(getString(R.string.wol_no_mac))
         watch(d, sendWol = true, then = then)
     }
@@ -2140,7 +2174,7 @@ class HandheldHomeActivity : Activity() {
     }
 
     /** True while MoonCast waits for this PC to wake or come back. */
-    private fun isWaking(d: ComputerDetails) = d.uuid?.let { waking.containsKey(it) } == true
+    internal fun isWaking(d: ComputerDetails) = d.uuid?.let { waking.containsKey(it) } == true
 
     private fun pair(d: ComputerDetails) {
         val b = binder ?: return toast(getString(R.string.error_manager_not_running))
@@ -2198,7 +2232,7 @@ class HandheldHomeActivity : Activity() {
         showOverlay("pin", card)
     }
 
-    private fun confirmUnpair(d: ComputerDetails) =
+    internal fun confirmUnpair(d: ComputerDetails) =
         confirm("Unpair ${d.name}?", "It stays here, but you'll pair it again with a PIN before you can play its games.", "Unpair") {
             val b = binder ?: return@confirm
             Thread {
@@ -2210,7 +2244,7 @@ class HandheldHomeActivity : Activity() {
             }.start()
         }
 
-    private fun confirmRemovePc(d: ComputerDetails) =
+    internal fun confirmRemovePc(d: ComputerDetails) =
         confirm("Remove ${d.name}?", "It disappears from this device and is unpaired. To add it back, pair it again with a PIN.", "Remove") {
             val b = binder ?: return@confirm
             if (online(d) && paired(d)) Thread {
@@ -2317,7 +2351,7 @@ class HandheldHomeActivity : Activity() {
     }
 
     /** Microsoft's device-code sign-in. On a handheld the page can open right here. */
-    private fun xboxSignIn() {
+    internal fun xboxSignIn() {
         val card = card()
         card.addView(sw.text("Sign in to Xbox", 40, sw.ink, 800), sw.lp(-1, -2).apply { leftMargin = sw.px(56); topMargin = sw.px(48) })
         val sub = sw.text("Getting a code…", 26, sw.sub, 600, 3)
@@ -2373,7 +2407,7 @@ class HandheldHomeActivity : Activity() {
     }
 
     /** Moonlight's network test, in this app's own dialog (the old grey system one looked like another app). */
-    private fun networkTest() {
+    internal fun networkTest() {
         dialog("Testing the network", "Checking that nothing blocks streaming. This takes a few seconds.", emptyList(), listOf("Close" to {}))
         Thread {
             val r = ServerHelper.networkTestSummary(this)
@@ -2445,11 +2479,12 @@ class HandheldHomeActivity : Activity() {
         card.addView(row, sw.lp(-1, 96).apply { leftMargin = sw.px(40); rightMargin = sw.px(40); topMargin = sw.px(28); bottomMargin = sw.px(40) })
     }
 
-    private fun dialog(title: String, body: String?, opts: List<Opt>, btns: List<Pair<String, () -> Unit>>, primaryAt: Int = btns.size - 1) {
+    internal fun dialog(title: String, body: String?, opts: List<Opt>, btns: List<Pair<String, () -> Unit>>, primaryAt: Int = btns.size - 1, focusAt: Int = -1) {
         val card = card()
         card.addView(sw.text(title, 40, sw.ink, 800, 2), sw.lp(-1, -2).apply { leftMargin = sw.px(56); rightMargin = sw.px(56); topMargin = sw.px(48); bottomMargin = sw.px(10) })
         if (body != null) card.addView(sw.text(body, 26, sw.sub, 600, 8), sw.lp(-1, -2).apply { leftMargin = sw.px(56); rightMargin = sw.px(56); bottomMargin = sw.px(26) })
-        val firstOn = opts.indexOfFirst { it.enabled }
+        // focus starts on the first option, or on [focusAt] (a picker opens on the value in use)
+        val firstOn = if (focusAt in opts.indices && opts[focusAt].enabled) focusAt else opts.indexOfFirst { it.enabled }
         val list = sw.col()
         opts.forEachIndexed { i, o -> list.addView(optRow(o, if (i == firstOn) "primary" else "opt:$i")) }
         // as many options as the screen has room for; past that the list scrolls, cut through the middle of a row
@@ -2466,14 +2501,14 @@ class HandheldHomeActivity : Activity() {
      * A yes/Cancel question. Cancel is picked (A presses it) unless [yesPicked]: a habitual A must not quit a game,
      * unpair or remove anything (it quit Ryujinx on 2026-10-21). Only a harmless yes, like Wake it, is picked.
      */
-    private fun confirm(title: String, body: String, yes: String, yesPicked: Boolean = false, onYes: () -> Unit) =
+    internal fun confirm(title: String, body: String, yes: String, yesPicked: Boolean = false, onYes: () -> Unit) =
         dialog(title, body, emptyList(), listOf("Cancel" to {}, yes to onYes), primaryAt = if (yesPicked) 1 else 0)
 
     /** A one-line entry; [onSave] returns an error to show, or null when the value is good. */
-    private fun entry(title: String, body: String, hint: String, v: String, numbers: Boolean, onSave: (String) -> String?) =
+    internal fun entry(title: String, body: String, hint: String, v: String, numbers: Boolean, onSave: (String) -> String?) =
         entry(title, body, hint, v, if (numbers) "number" else "text", onSave)
 
-    private fun entry(title: String, body: String, hint: String, v: String, kind: String, onSave: (String) -> String?) {
+    internal fun entry(title: String, body: String, hint: String, v: String, kind: String, onSave: (String) -> String?) {
         val card = card()
         card.addView(sw.text(title, 40, sw.ink, 800, 2), sw.lp(-1, -2).apply { leftMargin = sw.px(56); rightMargin = sw.px(56); topMargin = sw.px(48); bottomMargin = sw.px(10) })
         card.addView(sw.text(body, 26, sw.sub, 600, 4), sw.lp(-1, -2).apply { leftMargin = sw.px(56); rightMargin = sw.px(56) })
@@ -2551,7 +2586,7 @@ class HandheldHomeActivity : Activity() {
         (if (Build.VERSION.SDK_INT >= 25) Settings.Global.getString(contentResolver, Settings.Global.DEVICE_NAME) else null) ?: Build.MODEL
 
     /** "Odin" on AYN's handhelds, else "device". */
-    private fun deviceShort(): String =
+    internal fun deviceShort(): String =
         if (Build.MANUFACTURER.equals("AYN", true) || Build.MODEL.contains("Odin", true)) "Odin" else "device"
 
     /** The first real game controller's name, for the hint bar. */
@@ -2592,7 +2627,7 @@ class HandheldHomeActivity : Activity() {
     }
 
     /** With Native on, the saved size is this screen's, so the settings and Moonlight's own pages show it. */
-    private fun syncNativeRes(commit: Boolean = false) {
+    internal fun syncNativeRes(commit: Boolean = false) {
         // a foldable (both its screens seen): fill each screen from the one shared shape, unless Picture shape was set
         if (PreferenceConfiguration.foldableResolution(this) == null) PreferenceConfiguration.rememberScreen(this)
         if (PreferenceConfiguration.foldableResolution(this) != null && !stream.contains("list_video_scale_mode"))
@@ -2605,11 +2640,11 @@ class HandheldHomeActivity : Activity() {
             stream.edit().putString("list_resolution", nativeResolution()).let { if (commit) it.commit() else it.apply() }
     }
 
-    private fun nativeResolution(): String = PreferenceConfiguration.nativeResolution(this)
+    internal fun nativeResolution(): String = PreferenceConfiguration.nativeResolution(this)
 
     private fun chipName(): String = com.limelight.home.Chip.name()
 
-    private fun rounded(r: Number) = object : ViewOutlineProvider() {
+    internal fun rounded(r: Number) = object : ViewOutlineProvider() {
         override fun getOutline(view: View, outline: Outline) = outline.setRoundRect(0, 0, view.width, view.height, sw.pxf(r))
     }
 
@@ -2617,6 +2652,7 @@ class HandheldHomeActivity : Activity() {
 
     override fun dispatchKeyEvent(e: KeyEvent): Boolean {
         if (e.action == KeyEvent.ACTION_DOWN && overlayKind == null && e.repeatCount == 0) {
+            if (page == Page.SETTINGS && !cards.classic && cards.key(e.keyCode)) return true
             when (e.keyCode) {
                 KeyEvent.KEYCODE_BUTTON_Y -> if (page == Page.HOME || page == Page.GAMES) { toggleTarget(); return true }
                 KeyEvent.KEYCODE_BUTTON_X -> if (page == Page.GAMES) {
@@ -2629,7 +2665,7 @@ class HandheldHomeActivity : Activity() {
                             gamesTab = tabs[(tabs.indexOf(gamesTab) + step + tabs.size) % tabs.size]
                             FeelSounds.play(this, FeelSounds.Cue.TAB, 0.3f * step); render(force = true); return true
                         }
-                        Page.SETTINGS -> run {
+                        Page.SETTINGS -> if (!cards.classic) { cards.shoulder(step); return true } else run {
                             val i = groups.indexOfFirst { it.first == settingsGroup }
                             settingsGroup = groups[(i + step + groups.size) % groups.size].first
                             FeelSounds.play(this, FeelSounds.Cue.TAB, 0.3f * step); render(force = true)
@@ -2713,6 +2749,7 @@ class HandheldHomeActivity : Activity() {
         when {
             overlayKind != null -> hideOverlay()
             licencesOpen && page == Page.SETTINGS -> { FeelSounds.play(this, FeelSounds.Cue.BACK); licencesOpen = false; render(force = true) }
+            page == Page.SETTINGS && cards.back() -> FeelSounds.play(this, FeelSounds.Cue.BACK)
             page != Page.HOME -> { FeelSounds.play(this, FeelSounds.Cue.BACK); go(Page.HOME) }
             else -> { FeelSounds.play(this, FeelSounds.Cue.BACK); moveTaskToBack(true) }
         }
@@ -2726,9 +2763,10 @@ class HandheldHomeActivity : Activity() {
 
         private const val STATE_PAGE = "hh_page"
         private const val STATE_GROUP = "hh_settings_group"
+        private const val STATE_CARDS = "hh_settings_cards"
         const val EXTRA_PLAY_HERE = "play_here"
         private const val REQ_PSN_REGISTER = 41
-        private const val REQ_PSN = 42
+        internal const val REQ_PSN = 42
         private const val REQ_PICTURE = 43
         // one look for every list row (Consoles, Settings, dialogs): the icon square, its corner, a value on the right
         private const val ROW_ICON = 72
