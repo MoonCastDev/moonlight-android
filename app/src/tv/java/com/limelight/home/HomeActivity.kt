@@ -1036,6 +1036,10 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                 choice(list, "video_format", "Video codec", "HEVC and AV1 look better at the same bitrate",
                         listOf("Auto" to "auto", "H.264" to "neverh265", "HEVC" to "forceh265", "AV1" to "forceav1"), "auto")
                 toggle(list, "checkbox_enable_hdr", "HDR", "Only when the PC, the game and this TV support it. With PyroWave: HDR / 10-bit SDR", false)
+                // as on the handheld: always shown, and when this TV's HEVC decoder can't show 4:4:4 the row says so
+                toggle(list, Yuv444.PREF, "YUV 4:4:4 (HEVC)",
+                        if (Yuv444.deviceCan()) "Sharper text and colour edges. Needs Sunshine with 4:4:4 on the PC; otherwise it stays 4:2:0"
+                        else "This TV's decoder can't show 4:4:4, so streams stay 4:2:0", false)
                 // PyroWave: only where this TV's GPU can decode it (arm64, Vulkan); hidden elsewhere
                 if (com.limelight.home.Pyrowave.deviceCan(this)) {
                     val pc = com.limelight.preferences.PreferenceConfiguration.readPreferences(this)
