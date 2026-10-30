@@ -458,15 +458,28 @@ public class PreferenceConfiguration {
     }
 
     /**
-     * Native for the screen [context] is on: the screen's own size, rounded down to multiples of 8 for the PC's
-     * display modes (the Fold: 2448x1848 open, 1968x1248 folded). The PC draws its desktop and menus in that shape.
+     * Native for the screen [context] is on: exactly that screen's size (only made even, for the PC's encoder), so the
+     * stream fills it without bars (the Fold: 2448x1848 open, 1968x1248 folded). A host that makes its display at the
+     * size the client asks (Polaris) draws its desktop and games in that shape; a fold or unfold mid-stream reconnects
+     * at the other screen's size (Game).
      */
     public static String nativeResolution(Context context) {
         rememberScreen(context);
-        String shared = foldableResolution(context);
-        if (shared != null) return shared;
         int[] wh = screenSize(context);
-        return (wh[0] & ~7) + "x" + (wh[1] & ~7);
+        return (wh[0] & ~1) + "x" + (wh[1] & ~1);
+    }
+
+    /** Two sizes within this many pixels on both sides are the same screen (Native's even rounding, a stray pixel). */
+    public static final int SAME_SCREEN_SLACK = 8;
+
+    /** True when [a] and [b] ("WxH") are the same screen within [SAME_SCREEN_SLACK] pixels on both sides. */
+    public static boolean sameScreen(String a, String b) {
+        try {
+            return Math.abs(getWidthFromResolutionString(a) - getWidthFromResolutionString(b)) <= SAME_SCREEN_SLACK
+                    && Math.abs(getHeightFromResolutionString(a) - getHeightFromResolutionString(b)) <= SAME_SCREEN_SLACK;
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     /** MoonCast: the screen sizes this device has run on ("2448x1848;1968x1248"): a foldable has two shapes. */
@@ -488,15 +501,12 @@ public class PreferenceConfiguration {
     }
 
     /**
-     * A foldable (two screens of clearly different shapes, both seen here): one stream shape between the two, so a
-     * fold or unfold only re-fits the picture (Picture shape: Fill trims a little, Stretch bends a little, Fit leaves
-     * thin bars) instead of reconnecting or restarting the game. Its width is the biggest screen's long side, its
-     * shape the geometric mean of the widest and the squarest (the Fold: 1.58 and 1.32 make 1.45, 2448x1696).
-     * Null on a device with one screen shape.
+     * A foldable: two screens of clearly different shapes have been seen here (the Fold: 1.58 and 1.32). Native
+     * streams each one at its own size and a fold or unfold reconnects; this only words the settings.
      */
-    public static String foldableResolution(Context context) {
+    public static boolean hasTwoScreenShapes(Context context) {
         String all = PreferenceManager.getDefaultSharedPreferences(context).getString(SCREENS_PREF_STRING, "");
-        double lo = 0, hi = 0; int wmax = 0;
+        double lo = 0, hi = 0;
         for (String x : all.split(";")) {
             int w, h;
             try { w = getWidthFromResolutionString(x); h = getHeightFromResolutionString(x); } catch (RuntimeException e) { continue; }
@@ -504,13 +514,8 @@ public class PreferenceConfiguration {
             double r = (double) w / h;
             if (lo == 0 || r < lo) lo = r;
             if (r > hi) hi = r;
-            wmax = Math.max(wmax, w);
         }
-        if (lo == 0 || hi / lo < 1.08) return null;
-        double shape = Math.sqrt(lo * hi);
-        int w = wmax & ~7;
-        int h = (int) Math.round(w / shape / 8.0) * 8;
-        return w + "x" + h;
+        return lo != 0 && hi / lo >= 1.08;
     }
 
     /** The physical size of the screen [context] is on, the long side first. */

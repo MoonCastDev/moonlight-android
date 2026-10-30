@@ -642,14 +642,15 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         // Set requested orientation for possible new screen size
         setPreferredOrientationForCurrentDisplay();
 
-        // Folded or unfolded mid-game: once the screen settles (a fold sends a few changes), reconnect at its size
-        // so Native fills it; the game keeps running on the PC
-        // (always check after it settles: right at the change the screen's new size may not be known yet)
+        // Folded or unfolded mid-game: once the screen's size holds still (a fold sends a few changes, and right at
+        // the change the new size may not be known yet), reconnect at its size so Native fills it; the game keeps
+        // running on the PC (fitScreen)
         if (streamView != null) {
+            settlingSize = PreferenceConfiguration.nativeResolution(this);
             trace(foldLabel(newConfig) + ": size changed " + newConfig.screenWidthDp + "x" + newConfig.screenHeightDp + " dp, screen "
-                    + PreferenceConfiguration.nativeResolution(this));
+                    + settlingSize);
             streamView.removeCallbacks(fitScreen);
-            streamView.postDelayed(fitScreen, 1500);
+            streamView.postDelayed(fitScreen, SETTLE_MS);
         }
 
         if (virtualController != null) {
@@ -1022,9 +1023,19 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             }
         }
 
+        // MoonCast: Native on, the stream is this screen's own size (even-rounded, within a few pixels), in full screen:
+        // the view takes the whole screen whatever Picture shape says, so no hairline bars from the rounding
+        boolean nativeFits = PreferenceConfiguration.nativeWholeScreen(this)
+                && !(Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && isInMultiWindowMode())
+                && PreferenceConfiguration.sameScreen(PreferenceConfiguration.nativeResolution(this), prefConfig.width + "x" + prefConfig.height);
+        trace("picture: stream " + prefConfig.width + "x" + prefConfig.height + (nativeFits ? " is this screen: whole screen" : ""));
+
         if (!fsrPlanned && (prefConfig.stretchVideo || aspectRatioMatch)) {
             // Set the surface to the size of the video
             streamView.getHolder().setFixedSize(prefConfig.width, prefConfig.height);
+        }
+        else if (nativeFits) {
+            // the view keeps its parent's size (the whole screen); the picture is drawn into it as it is
         }
         else if (!(fsrPlanned && prefConfig.stretchVideo)) {
             // Set the surface to scale based on the aspect ratio of the stream
@@ -2716,14 +2727,44 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         else if (done != null) runOnUiThread(done);
     }
 
+    /** How long a screen's size must hold still before the stream follows it (a fold sends a few changes). */
+    private static final int SETTLE_MS = 700;
+    /** The screen size last seen while waiting for a fold or unfold to settle. */
+    private String settlingSize;
+
     private final Runnable fitScreen = () -> {
-        trace("check: screen " + PreferenceConfiguration.nativeResolution(Game.this) + ", stream "
+        String now = PreferenceConfiguration.nativeResolution(Game.this);
+        if (!now.equals(settlingSize)) {
+            // still changing: wait until it holds still
+            trace("settling: screen " + settlingSize + " -> " + now);
+            settlingSize = now;
+            streamView.postDelayed(Game.this.fitScreen, SETTLE_MS);
+            return;
+        }
+        trace("check: screen " + now + ", stream "
                 + (prefConfig != null ? prefConfig.width + "x" + prefConfig.height : "?") + ", connected " + connected
                 + ", Native " + PreferenceConfiguration.nativeWholeScreen(Game.this) + " -> " + (needsRefit() ? "RECONNECT" : "no"));
         if (needsRefit()) {
-            reconnectHere("size changed");
+            if (refitAllowed()) reconnectHere("size changed");
+            else trace("size keeps changing: keeping this stream's size");
         }
     };
+
+    // Size reconnects lately (shared by the Game a reconnect recreates): a screen that keeps reporting different sizes
+    // must not reconnect over and over
+    private static final long[] refitTimes = new long[3];
+
+    /** At most three size reconnects in 30 s; past that the stream stays as it is (the picture re-fits). */
+    private static boolean refitAllowed() {
+        long now = android.os.SystemClock.elapsedRealtime();
+        synchronized (refitTimes) {
+            int oldest = 0;
+            for (int i = 1; i < refitTimes.length; i++) if (refitTimes[i] < refitTimes[oldest]) oldest = i;
+            if (refitTimes[oldest] != 0 && now - refitTimes[oldest] < 30_000) return false;
+            refitTimes[oldest] = now;
+            return true;
+        }
+    }
 
     /** A foldable folded or unfolded mid-game with Native on: the stream is still the size of the other screen. */
     private boolean needsRefit() {
@@ -3136,9 +3177,13 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     private boolean reconnecting;
 
     /**
-     * Folded or unfolded mid-game (Native): quit the game on the PC and start it again on this screen. A PC sets its
-     * resolution when a game launches, so only a fresh launch fills the new screen; a reconnect alone kept the other
-     * screen's size inside the new frame. Unsaved progress in the game is lost.
+     * Folded or unfolded mid-game, or the stream lost its surface: end this stream the way Disconnect does (the game
+     * keeps running on the PC; Polaris pauses the session and keeps it resumable) and start it again here once the
+     * screen's size holds still. With Native on the new start asks for this screen's size (readPreferences), and a
+     * host that makes its display at the size the client asks (Polaris) resumes the same game in that shape. Stock
+     * Sunshine resumes the game too: it encodes at the new size, but its desktop keeps the mode it launched with
+     * unless its display settings change it on a resume, so the picture can sit inside the new frame with bars.
+     * The game is never quit for this.
      */
     private void reconnectHere(String why) {
         if (reconnecting) return;   // a fold can bring a new surface, onStart and a size change: act once
@@ -3146,21 +3191,39 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         surfaceLostMidStream = false;
         stoppedAwhile = false;
         endedByUser = true;
-        // Only a new size needs the game restarted. A foldable whose two screens are known streams one shape for both
-        // (the picture just re-fits), so a stream that ended there only reconnects; the game keeps running.
-        final boolean restart = sizeChanged();
-        trace((restart ? "restarting the game for this screen (" : "reconnecting (") + why + ")");
-        Toast.makeText(this, restart ? "Restarting the game for this screen…" : "Reconnecting…", Toast.LENGTH_SHORT).show();
-        stopConnection(() -> new Thread(() -> {
-            if (restart) quitAppOnHost();
-            runOnUiThread(() -> { if (!isFinishing()) recreate(); });
-        }, "mc-refit").start());
+        streamView.removeCallbacks(fitScreen);
+        final boolean resize = sizeChanged();
+        trace((resize ? "matching this screen (" : "reconnecting (") + why + ")");
+        Toast.makeText(this, resize ? "Matching this screen…" : "Reconnecting…", Toast.LENGTH_SHORT).show();
+        stopConnection(() -> afterSizeSettles(() -> { if (!isFinishing()) recreate(); }));
     }
 
-    /** With Native on, the size this screen streams at now differs from this stream's. */
+    /** Runs [then] on the main thread once the screen's size has held still for SETTLE_MS (3 s at most). */
+    private void afterSizeSettles(Runnable then) {
+        final long giveUp = android.os.SystemClock.uptimeMillis() + 3000;
+        final String[] last = { PreferenceConfiguration.nativeResolution(this) };
+        final android.os.Handler h = new android.os.Handler(android.os.Looper.getMainLooper());
+        h.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (isFinishing()) return;
+                String now = PreferenceConfiguration.nativeResolution(Game.this);
+                if (!now.equals(last[0]) && android.os.SystemClock.uptimeMillis() < giveUp) {
+                    trace("settling: screen " + last[0] + " -> " + now);
+                    last[0] = now;
+                    h.postDelayed(this, SETTLE_MS);
+                    return;
+                }
+                trace("settled at " + now);
+                then.run();
+            }
+        }, SETTLE_MS);
+    }
+
+    /** With Native on, this screen's size differs from this stream's by more than a few pixels. */
     private boolean sizeChanged() {
         return prefConfig != null && PreferenceConfiguration.nativeWholeScreen(this)
-                && !PreferenceConfiguration.nativeResolution(this).equals(prefConfig.width + "x" + prefConfig.height);
+                && !PreferenceConfiguration.sameScreen(PreferenceConfiguration.nativeResolution(this), prefConfig.width + "x" + prefConfig.height);
     }
 
     @Override
