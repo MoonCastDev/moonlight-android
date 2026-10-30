@@ -458,13 +458,42 @@ public class PreferenceConfiguration {
     }
 
     /**
-     * Native for the screen [context] is on: exactly that screen's size (only made even, for the PC's encoder), so the
-     * stream fills it without bars (the Fold: 2448x1848 open, 1968x1248 folded). A host that makes its display at the
-     * size the client asks (Polaris) draws its desktop and games in that shape; a fold or unfold mid-stream reconnects
-     * at the other screen's size (Game).
+     * MoonCast: the PC streamed last (or streaming now) is Polaris (ComputerDetails.polarisServer), so Native is the
+     * exact screen. Game sets it from its PC before reading the preferences; Settings shows Native for that PC.
+     */
+    public static final String EXACT_NATIVE_HOST_PREF_STRING = "mc_native_exact_host";
+
+    public static void setExactNativeHost(Context context, boolean polaris) {
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+        if (prefs.getBoolean(EXACT_NATIVE_HOST_PREF_STRING, false) != polaris)
+            prefs.edit().putBoolean(EXACT_NATIVE_HOST_PREF_STRING, polaris).apply();
+    }
+
+    public static boolean exactNativeHost(Context context) {
+        return PreferenceManager.getDefaultSharedPreferences(context).getBoolean(EXACT_NATIVE_HOST_PREF_STRING, false);
+    }
+
+    /**
+     * Native for the screen [context] is on.
+     * Polaris (it makes its display at the size the client asks): exactly that screen's size, only made even, so the
+     * stream fills it without bars (the Fold: 2448x1848 open, 1968x1248 folded); a fold or unfold mid-stream
+     * reconnects at the other screen's size and Polaris resumes the game (Game).
+     * Any other host (Sunshine, GFE): the screen's size rounded down to multiples of 8 for the PC's display modes, and
+     * on a foldable the one shape between its two screens ([foldableCompromise]), so a fold only re-fits the picture.
      */
     public static String nativeResolution(Context context) {
         rememberScreen(context);
+        if (!exactNativeHost(context)) {
+            String shared = foldableCompromise(context);
+            if (shared != null) return shared;
+            int[] wh = screenSize(context);
+            return (wh[0] & ~7) + "x" + (wh[1] & ~7);
+        }
+        return screenResolution(context);
+    }
+
+    /** The screen [context] is on, exactly (only made even), whatever the host. */
+    public static String screenResolution(Context context) {
         int[] wh = screenSize(context);
         return (wh[0] & ~1) + "x" + (wh[1] & ~1);
     }
@@ -498,6 +527,32 @@ public class PreferenceConfiguration {
         list.add(0, me);
         while (list.size() > 4) list.remove(list.size() - 1);
         prefs.edit().putString(SCREENS_PREF_STRING, android.text.TextUtils.join(";", list)).apply();
+    }
+
+    /**
+     * Not Polaris: a foldable (two screens of clearly different shapes, both seen here): one stream shape between the
+     * two, so a fold or unfold only re-fits the picture (Picture shape: Fill trims a little, Stretch bends a little,
+     * Fit leaves thin bars) instead of reconnecting or restarting the game. Its width is the biggest screen's long
+     * side, its shape the geometric mean of the widest and the squarest (the Fold: 1.58 and 1.32 make 1.45,
+     * 2448x1696). Null on a device with one screen shape. (Was foldableResolution.)
+     */
+    public static String foldableCompromise(Context context) {
+        String all = PreferenceManager.getDefaultSharedPreferences(context).getString(SCREENS_PREF_STRING, "");
+        double lo = 0, hi = 0; int wmax = 0;
+        for (String x : all.split(";")) {
+            int w, h;
+            try { w = getWidthFromResolutionString(x); h = getHeightFromResolutionString(x); } catch (RuntimeException e) { continue; }
+            if (w <= 0 || h <= 0) continue;
+            double r = (double) w / h;
+            if (lo == 0 || r < lo) lo = r;
+            if (r > hi) hi = r;
+            wmax = Math.max(wmax, w);
+        }
+        if (lo == 0 || hi / lo < 1.08) return null;
+        double shape = Math.sqrt(lo * hi);
+        int w = wmax & ~7;
+        int h = (int) Math.round(w / shape / 8.0) * 8;
+        return w + "x" + h;
     }
 
     /**

@@ -185,6 +185,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     public static final String EXTRA_UNIQUEID = "UniqueId";
     public static final String EXTRA_PC_UUID = "UUID";
     public static final String EXTRA_PC_NAME = "PcName";
+    /** MoonCast: the PC is Polaris (ComputerDetails.polarisServer): exact Native and fold reconnect-and-resume. */
+    public static final String EXTRA_PC_POLARIS = "PcPolaris";
     public static final String EXTRA_APP_HDR = "HDR";
     public static final String EXTRA_SERVER_CERT = "ServerCert";
 
@@ -223,14 +225,16 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         spinner = SpinnerDialog.displayDialog(this, getResources().getString(R.string.conn_establishing_title),
                 getResources().getString(R.string.conn_establishing_msg), true);
 
-        // Read the stream preferences
+        // Read the stream preferences (Native follows the host: exact on Polaris, PreferenceConfiguration.nativeResolution)
+        polarisHost = getIntent().getBooleanExtra(EXTRA_PC_POLARIS, false);
+        PreferenceConfiguration.setExactNativeHost(this, polarisHost);
         prefConfig = PreferenceConfiguration.readPreferences(this);
         // MoonCast: over the internet, Home streams with the Away settings, and never PyroWave or more than 100 Mbps
         awayPlan = com.limelight.home.AwayStream.prepare(this, prefConfig,
                 getIntent().getStringExtra(EXTRA_HOST), getIntent().getStringExtra(EXTRA_PC_UUID));
         if (awayPlan.message != null) Toast.makeText(this, awayPlan.message, Toast.LENGTH_LONG).show();
         trace(foldLabel(getResources().getConfiguration()) + ": stream " + prefConfig.width + "x" + prefConfig.height
-                + ", Native " + PreferenceConfiguration.nativeWholeScreen(this));
+                + ", Native " + PreferenceConfiguration.nativeWholeScreen(this) + ", Polaris " + polarisHost);
         tombstonePrefs = Game.this.getSharedPreferences("DecoderTombstone", 0);
 
         // Enter landscape unless we're on a square screen
@@ -642,15 +646,15 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         // Set requested orientation for possible new screen size
         setPreferredOrientationForCurrentDisplay();
 
-        // Folded or unfolded mid-game: once the screen's size holds still (a fold sends a few changes, and right at
-        // the change the new size may not be known yet), reconnect at its size so Native fills it; the game keeps
-        // running on the PC (fitScreen)
+        // Folded or unfolded mid-game: once the screen settles (a fold sends a few changes, and right at the change
+        // the new size may not be known yet), reconnect at its size so Native fills it (fitScreen). Polaris: once the
+        // size holds still for SETTLE_MS, and the game resumes; other hosts: after 1.5 s, restarting the game.
         if (streamView != null) {
             settlingSize = PreferenceConfiguration.nativeResolution(this);
             trace(foldLabel(newConfig) + ": size changed " + newConfig.screenWidthDp + "x" + newConfig.screenHeightDp + " dp, screen "
                     + settlingSize);
             streamView.removeCallbacks(fitScreen);
-            streamView.postDelayed(fitScreen, SETTLE_MS);
+            streamView.postDelayed(fitScreen, polarisHost ? SETTLE_MS : 1500);
         }
 
         if (virtualController != null) {
@@ -1025,9 +1029,10 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
         // MoonCast: Native on, the stream is this screen's own size (even-rounded, within a few pixels), in full screen:
         // the view takes the whole screen whatever Picture shape says, so no hairline bars from the rounding
-        boolean nativeFits = PreferenceConfiguration.nativeWholeScreen(this)
+        // (Polaris only: other hosts keep Picture shape as it was)
+        boolean nativeFits = polarisHost && PreferenceConfiguration.nativeWholeScreen(this)
                 && !(Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && isInMultiWindowMode())
-                && PreferenceConfiguration.sameScreen(PreferenceConfiguration.nativeResolution(this), prefConfig.width + "x" + prefConfig.height);
+                && PreferenceConfiguration.sameScreen(PreferenceConfiguration.screenResolution(this), prefConfig.width + "x" + prefConfig.height);
         trace("picture: stream " + prefConfig.width + "x" + prefConfig.height + (nativeFits ? " is this screen: whole screen" : ""));
 
         if (!fsrPlanned && (prefConfig.stretchVideo || aspectRatioMatch)) {
@@ -2727,6 +2732,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         else if (done != null) runOnUiThread(done);
     }
 
+    /** This stream's PC is Polaris (EXTRA_PC_POLARIS). */
+    private boolean polarisHost;
     /** How long a screen's size must hold still before the stream follows it (a fold sends a few changes). */
     private static final int SETTLE_MS = 700;
     /** The screen size last seen while waiting for a fold or unfold to settle. */
@@ -2734,7 +2741,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
     private final Runnable fitScreen = () -> {
         String now = PreferenceConfiguration.nativeResolution(Game.this);
-        if (!now.equals(settlingSize)) {
+        if (polarisHost && !now.equals(settlingSize)) {
             // still changing: wait until it holds still
             trace("settling: screen " + settlingSize + " -> " + now);
             settlingSize = now;
@@ -2745,7 +2752,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                 + (prefConfig != null ? prefConfig.width + "x" + prefConfig.height : "?") + ", connected " + connected
                 + ", Native " + PreferenceConfiguration.nativeWholeScreen(Game.this) + " -> " + (needsRefit() ? "RECONNECT" : "no"));
         if (needsRefit()) {
-            if (refitAllowed()) reconnectHere("size changed");
+            if (!polarisHost || refitAllowed()) reconnectHere("size changed");
             else trace("size keeps changing: keeping this stream's size");
         }
     };
@@ -3177,13 +3184,11 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     private boolean reconnecting;
 
     /**
-     * Folded or unfolded mid-game, or the stream lost its surface: end this stream the way Disconnect does (the game
-     * keeps running on the PC; Polaris pauses the session and keeps it resumable) and start it again here once the
-     * screen's size holds still. With Native on the new start asks for this screen's size (readPreferences), and a
-     * host that makes its display at the size the client asks (Polaris) resumes the same game in that shape. Stock
-     * Sunshine resumes the game too: it encodes at the new size, but its desktop keeps the mode it launched with
-     * unless its display settings change it on a resume, so the picture can sit inside the new frame with bars.
-     * The game is never quit for this.
+     * Folded or unfolded mid-game, or the stream lost its surface.
+     * Polaris: end this stream the way Disconnect does (Polaris pauses the session and keeps it resumable) and start
+     * it again here once the screen's size holds still. With Native on the new start asks for this screen's exact
+     * size (readPreferences) and Polaris resumes the same game in that shape. The game is never quit.
+     * Other hosts: as before Polaris support, see the branch below.
      */
     private void reconnectHere(String why) {
         if (reconnecting) return;   // a fold can bring a new surface, onStart and a size change: act once
@@ -3191,6 +3196,20 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         surfaceLostMidStream = false;
         stoppedAwhile = false;
         endedByUser = true;
+        if (!polarisHost) {
+            // Not Polaris (Sunshine, GFE): a PC sets its resolution when a game launches, so only a fresh launch fills
+            // the new screen; a reconnect alone kept the other screen's size inside the new frame. So a new size quits
+            // the game on the PC and starts it again (unsaved progress is lost). A foldable whose two screens are known
+            // streams one shape for both (foldableCompromise: the picture just re-fits), so there it only reconnects.
+            final boolean restart = sizeChanged();
+            trace((restart ? "restarting the game for this screen (" : "reconnecting (") + why + ")");
+            Toast.makeText(this, restart ? "Restarting the game for this screen…" : "Reconnecting…", Toast.LENGTH_SHORT).show();
+            stopConnection(() -> new Thread(() -> {
+                if (restart) quitAppOnHost();
+                runOnUiThread(() -> { if (!isFinishing()) recreate(); });
+            }, "mc-refit").start());
+            return;
+        }
         streamView.removeCallbacks(fitScreen);
         final boolean resize = sizeChanged();
         trace((resize ? "matching this screen (" : "reconnecting (") + why + ")");
@@ -3220,11 +3239,16 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         }, SETTLE_MS);
     }
 
-    /** With Native on, this screen's size differs from this stream's by more than a few pixels. */
+    /**
+     * With Native on, the size this screen streams at now differs from this stream's (Polaris: by more than a few
+     * pixels).
+     */
     private boolean sizeChanged() {
-        return prefConfig != null && PreferenceConfiguration.nativeWholeScreen(this)
-                && !PreferenceConfiguration.sameScreen(PreferenceConfiguration.nativeResolution(this), prefConfig.width + "x" + prefConfig.height);
+        if (prefConfig == null || !PreferenceConfiguration.nativeWholeScreen(this)) return false;
+        String now = PreferenceConfiguration.nativeResolution(this), stream = prefConfig.width + "x" + prefConfig.height;
+        return polarisHost ? !PreferenceConfiguration.sameScreen(now, stream) : !now.equals(stream);
     }
+
 
     @Override
     public void mouseMove(int deltaX, int deltaY) {

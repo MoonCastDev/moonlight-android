@@ -385,6 +385,9 @@ public class NvHTTP {
 
         // The MJOLNIR codename was used by GFE but never by any third-party server
         details.nvidiaServer = getXmlString(serverInfo, "state", true).contains("MJOLNIR");
+        // MoonCast: Polaris reports POLARIS_SERVER_FREE / POLARIS_SERVER_BUSY (its appversion and GfeVersion mimic
+        // GFE's, so only the state tells it apart); getCurrentGame's "_SERVER_BUSY" test covers it as is
+        details.polarisServer = getXmlString(serverInfo, "state", true).startsWith("POLARIS_");
 
         // We could reach it so it's online
         details.state = ComputerDetails.State.ONLINE;

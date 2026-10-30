@@ -76,6 +76,12 @@ public class ComputerDetails {
     public int runningGameId;
     public String rawAppList;
     public boolean nvidiaServer;
+    /**
+     * MoonCast: the host is Polaris (a Sunshine fork; serverinfo state POLARIS_SERVER_FREE/BUSY). It makes its display
+     * at the size the client asks and keeps a disconnected session resumable, so Native is the exact screen and a
+     * fold reconnects and resumes. Learned from serverinfo, not saved.
+     */
+    public boolean polarisServer;
 
     public ComputerDetails() {
         // Use defaults
@@ -145,6 +151,7 @@ public class ComputerDetails {
         this.pairState = details.pairState;
         this.runningGameId = details.runningGameId;
         this.nvidiaServer = details.nvidiaServer;
+        this.polarisServer = details.polarisServer;
         this.rawAppList = details.rawAppList;
     }
 
