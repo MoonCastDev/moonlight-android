@@ -14,8 +14,14 @@ import android.preference.PreferenceManager
 object Yuv444 {
     const val PREF = "checkbox_yuv444"
 
+    /**
+     * 4:4:4 goes with PyroWave only (Settings' PyroWave play style turns both on): a checkbox_yuv444 left on by an
+     * older build, from when it was a setting of its own, counts as off while PyroWave is off.
+     */
     @JvmStatic
-    fun wanted(ctx: Context): Boolean = PreferenceManager.getDefaultSharedPreferences(ctx).getBoolean(PREF, false)
+    fun wanted(ctx: Context): Boolean = PreferenceManager.getDefaultSharedPreferences(ctx).let { p ->
+        p.getBoolean(PREF, false) && p.getBoolean(Pyrowave.PREF, false)
+    }
 
     private var able: Boolean? = null
 

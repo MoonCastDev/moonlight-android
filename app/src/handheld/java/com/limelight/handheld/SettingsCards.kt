@@ -43,6 +43,25 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
         private const val ORANGE = 0xFFF29A2E.toInt()
         private val CUSTOM = listOf("custom1", "custom2", "custom3")
         private val DECODER = com.limelight.Ps5StreamActivity.DECODER_PREF
+        // the PC stream keys the play styles set (the classic list's)
+        private const val RES = "list_resolution"
+        private const val FPS = "list_fps"
+        private const val KBPS = "seekbar_bitrate_kbps"
+        private const val CODEC = "video_format"
+        private const val HDR = "checkbox_enable_hdr"
+        private const val SHAPE = "list_video_scale_mode"
+        private const val PACING = "frame_pacing"
+        private const val RANGE = "checkbox_full_range"
+        private const val ULL = "checkbox_ultra_low_latency"
+        private val FSR = com.limelight.binding.video.FsrRenderer.PREF
+        private val FSR_SHARP = com.limelight.binding.video.FsrRenderer.SHARPNESS_PREF
+        private val PW = com.limelight.home.Pyrowave.PREF
+        private val PW_DITHER = com.limelight.home.Pyrowave.DITHER_PREF
+        private val PW_FRONT = com.limelight.home.Pyrowave.FRONT_BUFFER_PREF
+        private val PW_BOOST = com.limelight.home.Pyrowave.GPU_BOOST_PREF
+        private val Y444 = com.limelight.home.Yuv444.PREF
+        /** A play style's resolution: Native (the screen's own size, whichever screen a stream starts on). */
+        private const val NATIVE_V = "native"
     }
 
     private val sw get() = a.sw
@@ -60,27 +79,32 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
     private var fresh = false
     /** X on a Fine-tune tile: its details, by the tile's tag. */
     private val details = HashMap<String, () -> Unit>()
+    /** The PC play style whose own Fine-tune is showing (hold or X on its card), on the Play style tab. */
+    private var editing: String? = null
+    /** The PC play style last fine-tuned or renamed, where focus goes back to on the style cards. */
+    private var lastStyle: String? = null
 
-    fun save() = "${if (classic) 1 else 0}|$screen|$tab|${lastCard ?: ""}"
+    fun save() = "${if (classic) 1 else 0}|$screen|$tab|${lastCard ?: ""}|${editing ?: ""}"
     fun restore(s: String) {
         val p = s.split('|')
         if (p.size < 3) return
         classic = p[0] == "1"; screen = p[1]; tab = p[2]; lastCard = p.getOrNull(3)?.ifEmpty { null }
+        editing = p.getOrNull(4)?.ifEmpty { null }
     }
 
-    fun sig() = "$classic/$screen/$tab"
+    fun sig() = "$classic/$screen/$tab/${editing ?: ""}"
 
     /** True once after moving to another screen: the page builds in and focus starts on its first item. */
     fun takeFresh(): Boolean { val f = fresh; fresh = false; return f }
 
     /** Settings opens on the cards, or straight on [to] (Home's Controllers, Controller settings). */
     fun reset(to: String = "home") {
-        classic = false; screen = to; tab = tabsOf(to).firstOrNull()?.first ?: ""; fresh = false
+        classic = false; screen = to; tab = tabsOf(to).firstOrNull()?.first ?: ""; fresh = false; editing = null
     }
 
     private fun open(s: String) {
         if (screen == "home") lastCard = s
-        screen = s; tab = tabsOf(s).firstOrNull()?.first ?: ""
+        screen = s; tab = tabsOf(s).firstOrNull()?.first ?: ""; editing = null
         fresh = true
         a.render(force = true)
     }
@@ -88,6 +112,7 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
     /** B: one level up (classic or a card's screen back to the cards). False on the cards: Settings closes. */
     fun back(): Boolean = when {
         classic -> { classic = false; fresh = true; a.render(force = true); true }
+        editing != null -> { lastStyle = editing; editing = null; fresh = true; a.render(force = true); true }
         screen != "home" -> { screen = "home"; tab = ""; fresh = true; a.render(force = true); true }
         else -> false
     }
@@ -123,10 +148,13 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
     fun hints(): List<Pair<String, String>> {
         val h = ArrayList<Pair<String, String>>()
         if (screen != "home" && tabsOf(screen).size > 1) h += "L R" to "Tabs"
-        if (screen != "home" && tab == "play") h += "X" to "Fine-tune"
-        if (screen != "home" && tab == "fine") { h += "Y" to "Save as my own"; h += "X" to "Details" }
+        val pcPlay = kind() == "pc" && tab == "play"
+        if (pcPlay && editing != null) h += "Y" to "Rename"
+        else if (pcPlay) { h += "Y" to "Rename"; h += "X" to "Fine-tune style" }
+        else if (screen != "home" && tab == "play") h += "X" to "Fine-tune"
+        if (screen != "home" && tab == "fine") { h += "Y" to if (kind() == "pc") "Save into a style" else "Save as my own"; h += "X" to "Details" }
         h += "B" to "Back"
-        h += "A" to when { screen == "home" -> "Open"; tab == "play" -> "Use"; else -> "OK" }
+        h += "A" to when { screen == "home" -> "Open"; pcPlay && editing != null -> "Change"; tab == "play" -> "Use"; else -> "OK" }
         return h
     }
 
@@ -135,10 +163,20 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
         if (screen == "home") return false
         when (code) {
             KeyEvent.KEYCODE_BUTTON_X -> {
+                if (tab == "play" && kind() == "pc") {
+                    if (editing == null) focusedStyle()?.let { editStyle(it) } ?: showTab("fine")
+                    return true
+                }
                 if (tab == "play") { showTab("fine"); return true }
                 if (tab == "fine") { (a.currentFocus?.tag as? String)?.let { details[it] }?.invoke(); return true }
             }
-            KeyEvent.KEYCODE_BUTTON_Y -> if (tab == "fine") { saveAsOwn(); return true }
+            KeyEvent.KEYCODE_BUTTON_Y -> {
+                if (tab == "play" && kind() == "pc") {
+                    (editing?.let { id -> pcStyles().firstOrNull { it.id == id } } ?: focusedStyle())?.let { renameStyle(it) }
+                    return true
+                }
+                if (tab == "fine") { if (kind() == "pc") saveIntoStyle() else saveAsOwn(); return true }
+            }
         }
         return false
     }
@@ -153,7 +191,7 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
 
     private fun showTab(t: String) {
         if (tabsOf(screen).none { it.first == t }) return
-        tab = t; fresh = true
+        tab = t; fresh = true; editing = null
         a.render(force = true)
     }
 
@@ -164,11 +202,13 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
         if (screen == "home") return homePage()
         val tabs = tabsOf(screen)
         if (tabs.isNotEmpty() && tabs.none { it.first == tab }) tab = tabs.first().first
+        if (tab != "play" || kind() != "pc" || pcStyles().none { it.id == editing }) editing = null
         val col = sw.col().apply { clipChildren = false }
         if (tabs.size > 1) col.addView(a.part(tabRow(tabs)), sw.lp(-1, -2).apply { leftMargin = sw.px(sw.edge); topMargin = sw.px(6) })
         val body: View = when (kind()) {
             "pc" -> when (tab) {
-                "play" -> playPage("pc"); "fine" -> finePage("pc")
+                "play" -> editing?.let { id -> pcStyles().firstOrNull { it.id == id } }?.let { styleTunePage(it) } ?: playPage("pc")
+                "fine" -> finePage("pc")
                 "away" -> list { pcAwayRows(it) }
                 else -> list { pcPowerRows(it) }
             }
@@ -338,7 +378,7 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
                 listOf("${minOf(p.width, p.height)}p · ${p.fps} fps" to true,
                         "${if (kbps == 0) "Auto bitrate" else a.mbps(kbps)} · ${codecLabel(str("video_format", "auto"))}" to true,
                         "HDR ${if (hdr) "on" else "off"} · ${shapeLabel(pcShape())}" to false,
-                        styleLabel("pc") to false),
+                        pcNowLabel() to false),
                 "Profile: ${Profile.name(a)}", true, w, h)
     }
 
@@ -399,27 +439,8 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
         display().hdrCapabilities?.supportedHdrTypes?.contains(Display.HdrCapabilities.HDR_TYPE_HDR10) == true
     } catch (e: Exception) { false }
 
+    /** The PS5's and the Xbox's play styles: ready-made sets of their settings (the PC's are [PcStyle]s). */
     private fun styles(k: String): List<Style> = when (k) {
-        "pc" -> {
-            val fps = if (maxHz() >= 119f) "120" else "60"
-            val y444 = com.limelight.home.Yuv444.deviceCan()
-            val hdr = screenHdr()
-            val sharp = HashMap<String, Any>(mapOf("list_resolution" to "2560x1440", "list_fps" to "60", "seekbar_bitrate_kbps" to 80000,
-                    "video_format" to "forceh265", com.limelight.home.Yuv444.PREF to y444, "checkbox_ultra_low_latency" to false, "frame_pacing" to "balanced"))
-            if (hdr) sharp["checkbox_enable_hdr"] = true
-            listOf(
-                Style("battery", "Battery", "720p · 60 fps", "15 Mbps · H.264", "Longest play time", "leaf", Sw.C_GREEN, mapOf(
-                        "list_resolution" to "1280x720", "list_fps" to "60", "seekbar_bitrate_kbps" to 15000, "video_format" to "neverh265",
-                        "checkbox_enable_hdr" to false, com.limelight.home.Yuv444.PREF to false, "checkbox_ultra_low_latency" to false, "frame_pacing" to "balanced")),
-                Style("balanced", "Balanced", "1080p · 60 fps", "40 Mbps · HEVC", "Good everywhere at home", "half", sw.ring, mapOf(
-                        "list_resolution" to "1920x1080", "list_fps" to "60", "seekbar_bitrate_kbps" to 40000, "video_format" to "forceh265",
-                        com.limelight.home.Yuv444.PREF to false, "checkbox_ultra_low_latency" to false, "frame_pacing" to "balanced")),
-                Style("sharpest", "Sharpest", "1440p · 60 fps", "80 Mbps · HEVC" + (if (y444) " · 4:4:4" else "") + (if (hdr) " · HDR" else ""),
-                        "Best picture, good Wi-Fi", "star", PURPLE, sharp),
-                Style("fastest", "Fastest", "1080p · $fps fps", "60 Mbps · lowest delay", "For shooters and racing", "bolt", ORANGE, mapOf(
-                        "list_resolution" to "1920x1080", "list_fps" to fps, "seekbar_bitrate_kbps" to 60000, "video_format" to "forceh265",
-                        com.limelight.home.Yuv444.PREF to false, "checkbox_ultra_low_latency" to true, "frame_pacing" to "latency")))
-        }
         // the PS5 streams up to 1080p, 30 or 60 fps, and its own bitrate steps
         "ps" -> listOf(
             Style("battery", "Battery", "720p · 60 fps", "15 Mbps · H.264", "Longest play time", "leaf", Sw.C_GREEN, mapOf(
@@ -444,6 +465,7 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
             is Boolean -> stream.getBoolean(k, false)
             else -> stream.getString(k, when (k) {
                 "list_resolution" -> a.nativeResolution(); "list_fps" -> "60"; "video_format" -> "auto"; "frame_pacing" -> "latency"
+                "list_video_scale_mode" -> pcShapeDefault(); FSR -> "off"; PW_DITHER -> "off"
                 "ps5_resolution" -> "1080"; "ps5_fps_home" -> "60"; "ps5_bitrate_home" -> "auto"; "ps5_codec" -> "h265"; "ps5_pacing" -> "same"
                 DECODER -> "low"; "xbox_resolution" -> "auto"; else -> null })
         }
@@ -459,7 +481,9 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
         list.firstOrNull { it.id == a.prefs.getString("mc_style_$k", null) }
             ?: list.maxByOrNull { s -> s.keys.count { (key, v) -> read(key, v) == v } } ?: list.first()
 
-    private fun styleLabel(k: String): String {
+    /** What the device's settings are now, by play style: "Balanced", or "Balanced (changed)". */
+    private fun nowLabel(k: String): String {
+        if (k == "pc") return pcNowLabel()
         val list = styles(k)
         return detect(k, list)?.name ?: "${nearest(k, list).name} (changed)"
     }
@@ -467,25 +491,256 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
     private fun use(k: String, s: Style) {
         val e = stream.edit()
         s.keys.forEach { (key, v) -> when (v) { is Int -> e.putInt(key, v); is Boolean -> e.putBoolean(key, v); is String -> e.putString(key, v) } }
-        // as the classic Resolution row: picking this screen's own size is Native
-        (s.keys["list_resolution"] as? String)?.let { e.putBoolean(PreferenceConfiguration.NATIVE_RES_PREF_STRING, it == a.nativeResolution()) }
         e.apply()
         a.prefs.edit().putString("mc_style_$k", s.id).apply()
         a.toast("${s.name}: ${s.l1} · ${s.l2}")
         a.render(force = true)
     }
 
+    // ---------------------------------------------------------------- the PC's play styles
+
+    /**
+     * A PC play style: a preset of the PC stream settings kept on its own (in the app's own prefs, mc_tv), so it can be
+     * fine-tuned and renamed. Picking it copies its values into the live settings (the same keys as the classic list).
+     * Its values are [pcDefaults] with what was fine-tuned on top (mc_pcstyle_<id>, JSON); a key in neither, such as
+     * Picture shape until it's fine-tuned, is left as it is when the style is picked.
+     */
+    private class PcStyle(val id: String, val defName: String, val note: String, val icon: String, val color: Int, val pyro: Boolean = false)
+
+    private fun pcStyles(): List<PcStyle> = listOfNotNull(
+            PcStyle("battery", "Battery", "Longest play time", "leaf", Sw.C_GREEN),
+            PcStyle("balanced", "Balanced", "Good everywhere at home", "half", sw.ring),
+            PcStyle("sharpest", "Sharpest", "Best picture, good Wi-Fi", "star", PURPLE),
+            PcStyle("fastest", "Fastest", "For shooters and racing", "bolt", ORANGE),
+            // only where this device's GPU decodes PyroWave (the probe passed)
+            if (com.limelight.home.Pyrowave.deviceCan(a)) PcStyle("pyro", "PyroWave", "Wired or fast Wi-Fi only", "wave", Sw.C_BLUE, pyro = true) else null)
+
+    /** Every key a style's Fine-tune sets (and Save into a style copies). */
+    private fun pcStyleKeys(st: PcStyle): List<String> =
+        listOf(RES, FPS, KBPS) + (if (st.pyro) emptyList() else listOf(CODEC)) + listOf(HDR, SHAPE, PACING, FSR, FSR_SHARP, RANGE) +
+                (if (st.pyro) listOf(Y444, PW_BOOST, PW_DITHER, PW_FRONT) else listOf(ULL))
+
+    /** A style's own values before any fine-tuning. [NATIVE_V] for the resolution is Native. */
+    private fun pcDefaults(st: PcStyle): Map<String, Any> = when (st.id) {
+        "battery" -> mapOf(RES to NATIVE_V, FPS to "60", KBPS to 15000, CODEC to "neverh265", HDR to false, PACING to "balanced", ULL to false)
+        "balanced" -> mapOf(RES to NATIVE_V, FPS to "60", KBPS to 40000, CODEC to "forceh265", PACING to "balanced", ULL to false)
+        "sharpest" -> mapOf(RES to NATIVE_V, FPS to "60", KBPS to 80000, CODEC to "forceh265", PACING to "balanced", ULL to false) +
+                (if (screenHdr()) mapOf(HDR to true) else emptyMap())
+        "fastest" -> mapOf(RES to NATIVE_V, FPS to (if (maxHz() >= 119f) "120" else "60"), KBPS to 60000, CODEC to "forceh265",
+                PACING to "latency", ULL to true)
+        // the bitrate follows the resolution and frame rate (Pyrowave.recommendedKbps) until it's fine-tuned
+        else -> mapOf(RES to NATIVE_V, FPS to "60", Y444 to true, PW_BOOST to true, PW_DITHER to "low", PW_FRONT to false)
+    }
+
+    private fun storedOf(st: PcStyle): Map<String, Any> = try {
+        val j = org.json.JSONObject(a.prefs.getString("mc_pcstyle_${st.id}", null) ?: "{}")
+        j.keys().asSequence().mapNotNull { k -> when (val v = j.get(k)) { is Int, is Boolean, is String -> k to v; is Number -> k to v.toInt(); else -> null } }.toMap()
+    } catch (e: Exception) { emptyMap() }
+
+    private fun store(st: PcStyle, m: Map<String, Any>) {
+        val j = org.json.JSONObject()
+        m.forEach { (k, v) -> j.put(k, v) }
+        a.prefs.edit().putString("mc_pcstyle_${st.id}", j.toString()).apply()
+    }
+
+    private fun sizeOf(res: String): Pair<Int, Int> =
+        res.split('x').mapNotNull { it.toIntOrNull() }.takeIf { it.size == 2 }?.let { it[0] to it[1] } ?: (1920 to 1080)
+
+    /** A style's values (defaults, then what was fine-tuned), as stored: the resolution may be [NATIVE_V]. */
+    private fun pcStyleValues(st: PcStyle): Map<String, Any> {
+        val m = LinkedHashMap<String, Any>(pcDefaults(st))
+        m.putAll(storedOf(st))
+        if (st.pyro && KBPS !in m) {
+            val (w, h) = sizeOf((m[RES] as? String)?.takeIf { it != NATIVE_V } ?: a.nativeResolution())
+            m[KBPS] = com.limelight.home.Pyrowave.recommendedKbps(w, h, (m[FPS] as? String)?.toIntOrNull() ?: 60)
+        }
+        // PyroWave and its 4:4:4 come only with the PyroWave style; it has no Ultra low latency
+        if (st.pyro) { m[PW] = true; m[ULL] = false } else { m[PW] = false; m[Y444] = false }
+        return m
+    }
+
+    /** The live keys and values picking [st] writes: Native as the screen's size with Native's switch on. */
+    private fun pcApplied(st: PcStyle): Map<String, Any> {
+        val m = LinkedHashMap(pcStyleValues(st))
+        val res = m[RES] as? String
+        if (res != null) {
+            val native = res == NATIVE_V || res == a.nativeResolution()
+            m[RES] = if (native) a.nativeResolution() else res
+            m[PreferenceConfiguration.NATIVE_RES_PREF_STRING] = native
+        }
+        return m
+    }
+
+    private fun pcMatches(st: PcStyle) = pcApplied(st).all { (k, v) -> read(k, v) == v }
+
+    /** The style picked last (mc_style_pc) or, when the settings match another one exactly, that one; else the closest. */
+    private fun pcPicked(list: List<PcStyle> = pcStyles()): PcStyle {
+        val picked = list.firstOrNull { it.id == a.prefs.getString("mc_style_pc", null) }
+        if (picked != null && pcMatches(picked)) return picked
+        return list.firstOrNull { pcMatches(it) } ?: picked
+            ?: list.maxByOrNull { s -> pcApplied(s).count { (k, v) -> read(k, v) == v } } ?: list.first()
+    }
+
+    private fun pcName(st: PcStyle): String = a.prefs.getString("mc_pcstyle_name_${st.id}", null)?.takeIf { it.isNotBlank() } ?: st.defName
+
+    private fun pcNowLabel(): String { val p = pcPicked(); return if (pcMatches(p)) pcName(p) else "${pcName(p)} (changed)" }
+
+    private fun resLabel(res: String): String = when {
+        res == NATIVE_V || res == a.nativeResolution() -> "Native"
+        else -> HandheldHomeActivity.RES_STEPS.firstOrNull { it.second == res }?.first ?: res.replace("x", " × ")
+    }
+
+    /** The two lines on a style's card, from its values. */
+    private fun pcLines(st: PcStyle): List<String> {
+        val m = pcStyleValues(st)
+        val kbps = m[KBPS] as? Int ?: 0
+        val l2 = ArrayList<String>()
+        l2 += if (kbps == 0) "Auto bitrate" else a.mbps(kbps)
+        if (st.pyro) { if (m[Y444] == true) l2 += "4:4:4" }
+        else l2 += codecLabel(m[CODEC] as? String ?: "auto").removeSuffix(" codec")
+        if (m[HDR] == true) l2 += "HDR"
+        if (!st.pyro && m[ULL] == true) l2 += "lowest delay"
+        return listOf("${resLabel(m[RES] as? String ?: NATIVE_V)} · ${m[FPS] ?: "60"} fps", l2.joinToString(" · "))
+    }
+
+    private fun usePc(st: PcStyle, quiet: Boolean = false) {
+        val e = stream.edit()
+        pcApplied(st).forEach { (key, v) ->
+            when {
+                key == KBPS && v == 0 -> e.remove(key)   // Auto
+                v is Int -> e.putInt(key, v); v is Boolean -> e.putBoolean(key, v); v is String -> e.putString(key, v)
+            }
+        }
+        e.apply()
+        a.prefs.edit().putString("mc_style_pc", st.id).apply()
+        if (!quiet) { val l = pcLines(st); a.toast("${pcName(st)}: ${l[0]} · ${l[1]}") }
+        a.render(force = true)
+    }
+
+    /** The PC style card that has focus, if one does. */
+    private fun focusedStyle(): PcStyle? = (a.currentFocus?.tag as? String)?.takeIf { it.startsWith("style:") }
+            ?.removePrefix("style:")?.let { id -> pcStyles().firstOrNull { it.id == id } }
+
+    private fun editStyle(st: PcStyle) {
+        editing = st.id; lastStyle = st.id; fresh = true
+        FeelSounds.play(a, FeelSounds.Cue.TAB, 0f)
+        a.render(force = true)
+    }
+
+    private fun renameStyle(st: PcStyle) {
+        lastStyle = st.id
+        a.entry("Rename ${pcName(st)}", "Up to 24 letters. Leave it empty for its first name, ${st.defName}.", "A name", pcName(st), "text") { v ->
+            val t = v.trim()
+            if (t.length > 24) "Up to 24 letters."
+            else {
+                a.prefs.edit().apply { if (t.isEmpty() || t == st.defName) remove("mc_pcstyle_name_${st.id}") else putString("mc_pcstyle_name_${st.id}", t) }.apply()
+                a.render(force = true); null
+            }
+        }
+    }
+
+    /** Where Fine-tune's value rows read and write: the live settings, or one PC style's own values. */
+    private interface Vals {
+        fun s(k: String, d: String): String
+        fun i(k: String, d: Int): Int
+        fun b(k: String, d: Boolean): Boolean
+        /** Saves [v]; a bitrate of 0 is Auto. A resolution equal to the screen's own size is Native. */
+        fun put(k: String, v: Any)
+    }
+
+    private val live = object : Vals {
+        override fun s(k: String, d: String) = str(k, d)
+        override fun i(k: String, d: Int) = int(k, d)
+        override fun b(k: String, d: Boolean) = bool(k, d)
+        override fun put(k: String, v: Any) {
+            val e = stream.edit()
+            when {
+                k == KBPS && v == 0 -> e.remove(k)
+                v is Int -> e.putInt(k, v); v is Boolean -> e.putBoolean(k, v); v is String -> e.putString(k, v)
+            }
+            if (k == RES) e.putBoolean(PreferenceConfiguration.NATIVE_RES_PREF_STRING, v == a.nativeResolution())
+            e.apply()
+        }
+    }
+
+    /** A style's values for its Fine-tune: a key it doesn't set shows what's live (picking the style leaves it). */
+    private fun styleVals(st: PcStyle) = object : Vals {
+        fun v(k: String): Any? = pcStyleValues(st)[k]
+        override fun s(k: String, d: String): String = (v(k) as? String)?.let { if (k == RES && it == NATIVE_V) a.nativeResolution() else it } ?: live.s(k, d)
+        override fun i(k: String, d: Int): Int = v(k) as? Int ?: live.i(k, d)
+        override fun b(k: String, d: Boolean): Boolean = v(k) as? Boolean ?: live.b(k, d)
+        override fun put(k: String, v: Any) {
+            val m = LinkedHashMap(storedOf(st))
+            val pyroRate = st.pyro && KBPS !in m && (k == RES || k == FPS)
+            m[k] = if (k == RES && v == a.nativeResolution()) NATIVE_V else v
+            if (st.pyro && k == KBPS && v == 0) m.remove(KBPS)   // the PyroWave style's Auto is its recommended bitrate
+            store(st, m)
+            // the style in use: the live settings change with it
+            if (a.prefs.getString("mc_style_pc", null) == st.id) {
+                live.put(k, v)
+                if (pyroRate || (st.pyro && k == KBPS)) live.put(KBPS, pcStyleValues(st)[KBPS] as? Int ?: 0)
+            }
+        }
+    }
+
+    /** Y on the PC's Fine-tune: what's set now becomes one style's own values (it doesn't switch to it). */
+    private fun saveIntoStyle() {
+        val opts = pcStyles().map { st ->
+            HandheldHomeActivity.Opt(null, 0, pcName(st), "Its values become what's set now", null) {
+                val m = LinkedHashMap<String, Any>()
+                for (k in pcStyleKeys(st)) {
+                    when (k) {
+                        RES -> m[k] = if (bool(PreferenceConfiguration.NATIVE_RES_PREF_STRING, false)) NATIVE_V else str(RES, a.nativeResolution())
+                        KBPS -> int(KBPS, 0).let { if (it > 0 || !st.pyro) m[k] = it }
+                        HDR, RANGE, ULL, Y444, PW_BOOST, PW_FRONT -> m[k] = bool(k, false)
+                        FSR_SHARP -> m[k] = int(k, com.limelight.binding.video.FsrRenderer.DEFAULT_SHARPNESS)
+                        else -> m[k] = read(k, "") as? String ?: continue
+                    }
+                }
+                store(st, m)
+                a.prefs.edit().putString("mc_style_pc", st.id).apply()
+                lastStyle = st.id
+                a.toast("Saved into ${pcName(st)}")
+                usePc(st, quiet = true)
+            }
+        }
+        a.dialog("Save into a style", "The play style you pick takes the PC settings in use now, and becomes the one in use.", opts, listOf("Cancel" to {}))
+    }
+
+    private class StyleCardData(val id: String, val icon: String, val color: Int, val name: String, val tagLine: String?, val lines: List<String>,
+                                val note: String, val inUse: Boolean, val onClick: () -> Unit, val onHold: (() -> Unit)? = null)
+
     private fun playPage(k: String): View {
         val col = sw.col().apply { clipChildren = false }
         val e = sw.edge
-        val list = styles(k)
-        val now = detect(k, list)
         val custom = Profile.isCustom(a)
-        val near = if (now == null) nearest(k, list) else null
+        val cards = ArrayList<StyleCardData>()
+        val nowName: String
+        if (k == "pc") {
+            val list = pcStyles()
+            val picked = pcPicked(list)
+            val exact = pcMatches(picked)
+            nowName = if (exact) pcName(picked) else "${pcName(picked)} (changed)"
+            list.forEach { st ->
+                val inUse = st === picked
+                cards += StyleCardData(st.id, st.icon, st.color, pcName(st), if (st.pyro) "Experimental" else null, pcLines(st),
+                        when { inUse && exact -> "✓ In use"; inUse -> "✓ In use, changed"; else -> st.note }, inUse, { usePc(st) }, { editStyle(st) })
+            }
+        } else {
+            val list = styles(k)
+            val now = detect(k, list)
+            val near = if (now == null) nearest(k, list) else null
+            nowName = now?.name ?: "${near!!.name} (changed)"
+            list.forEach { s ->
+                val inUse = !custom && s === now
+                cards += StyleCardData(s.id, s.icon, s.color, s.name, null, listOf(s.l1, s.l2),
+                        when { inUse -> "✓ In use"; !custom && s === near -> "✓ In use, changed"; else -> s.note }, inUse || (!custom && s === near), { use(k, s) })
+            }
+        }
         val what = when (k) { "pc" -> "PC"; "ps" -> "PS5"; else -> "Xbox" }
         col.addView(a.part(sw.text("How should $what games play?", 34, sw.ink, 800)), sw.lp(-1, -2).apply { leftMargin = sw.px(e); topMargin = sw.px(26) })
-        val sub = StringBuilder("Pick one. Everything else follows; you can still fine-tune it. Now: ")
-        sub.append(now?.name ?: "${near!!.name} (changed)")
+        val sub = StringBuilder(if (k == "pc") "Pick one. Hold it (or X) to fine-tune it, Y renames it. Now: " else "Pick one. Everything else follows; you can still fine-tune it. Now: ")
+        sub.append(nowName)
         if (custom) sub.append(", in your own ").append(Profile.name(a))
         else if (Profile.isAway(a)) sub.append(if (k == "ps") ". The Away profile is on: Away from home sets what the PS5 uses" else ", in the Away profile")
         if (k == "pc" && a.pcs.values.count { a.paired(it) } > 1) sub.append(". Shared by all your PCs")
@@ -494,19 +749,11 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
         col.addView(a.part(sw.text(sub.toString(), 23, sw.sub, 600, 2)), sw.lp(-1, -2).apply { leftMargin = sw.px(e); rightMargin = sw.px(e); topMargin = sw.px(8) })
 
         val gap = 24
-        val n = list.size + 1
+        val n = if (k == "pc") cards.size else cards.size + 1
         val cw = ((sw.designWidth - 2 * e - gap * (n - 1)) / n).toInt().coerceAtLeast(300)
         val ch = if (sw.compact) 300 else 320
         val row = sw.row().apply { clipChildren = false; setPadding(sw.px(e), 0, sw.px(e), 0) }
-        val views = ArrayList<View>()
-        list.forEach { s ->
-            val inUse = !custom && s === now
-            val v = styleCard("style:${s.id}", s.icon, s.color, s.name, listOf(s.l1, s.l2),
-                    when { inUse -> "✓ In use"; !custom && s === near -> "✓ In use, changed"; else -> s.note }, inUse || (!custom && s === near), false) { use(k, s) }
-            views += v
-        }
-        views += styleCard("style:own", "pencil", sw.sub, "My own", CUSTOM.map { Profile.name(a, it) },
-                if (custom) "✓ In use: ${Profile.name(a)}" else "Named by you", custom, true) { myOwn() }
+        val views = cards.map { c -> styleCard("style:${c.id}", c.icon, c.color, c.name, c.tagLine, c.lines, c.note, c.inUse, false, c.onHold, c.onClick) }
         views.forEachIndexed { i, v -> row.addView(v, sw.lp(cw, ch).apply { if (i > 0) leftMargin = sw.px(gap) }) }
         val scroll = RowScroll(a, sw.px(e)).apply {
             isHorizontalScrollBarEnabled = false; isFocusable = false; clipChildren = false; clipToPadding = false
@@ -514,7 +761,9 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
             addView(row)
         }
         col.addView(a.part(scroll), sw.lp(-1, ch).apply { topMargin = sw.px(26) })
-        a.primaryView = views.firstOrNull { it.getTag(R_IN_USE) == true } ?: views.first()
+        a.primaryView = (if (k == "pc") views.firstOrNull { it.tag == "style:$lastStyle" } else null)
+                ?: views.firstOrNull { it.getTag(R_IN_USE) == true } ?: views.first()
+        if (k == "pc") lastStyle = null
 
         // Also: the few things people change without opening Fine-tune
         val also = sw.row().apply { clipChildren = false }
@@ -546,7 +795,7 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
             stream.edit().putString(Profile.PREF, m[(m.indexOf(Profile.mode(a)) + 1) % m.size]).apply()
             a.render(force = true)
         })
-        add(chip("chip:fine", "Fine-tune ${now?.name ?: near?.name ?: ""}…", main = true) { showTab("fine") })
+        add(chip("chip:fine", "Fine-tune ${nowName.removeSuffix(" (changed)")}…", main = true) { showTab("fine") })
         col.addView(a.part(RowScroll(a, sw.px(e)).apply {
             isHorizontalScrollBarEnabled = false; isFocusable = false; clipChildren = false; clipToPadding = false
             overScrollMode = View.OVER_SCROLL_NEVER
@@ -558,44 +807,51 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
 
     private val R_IN_USE = com.limelight.R.id.hh_in_use
 
-    private fun styleCard(tag: String, icon: String, color: Int, name: String, lines: List<String>, note: String, inUse: Boolean,
-                          dashed: Boolean, onClick: () -> Unit): View = sw.col().apply {
+    private fun styleCard(tag: String, icon: String, color: Int, name: String, tagLine: String?, lines: List<String>, note: String, inUse: Boolean,
+                          dashed: Boolean, onHold: (() -> Unit)?, onClick: () -> Unit): View = sw.col().apply {
         this.tag = tag
         setTag(R_IN_USE, inUse)
         background = if (dashed) sw.round(sw.bg, CORNER, sw.line, 3) else sw.round(sw.panel, CORNER)
         setPadding(sw.px(26), sw.px(24), sw.px(22), sw.px(22))
-        addView(FrameLayout(a).apply {
-            background = sw.round(if (dashed) sw.panel else (color and 0x00FFFFFF) or 0x2E000000, 18)
-            addView(StyleIcon(a, icon, color), sw.flp(44, 44, Gravity.CENTER))
-        }, sw.lp(76, 76))
+        addView(sw.row().apply {
+            addView(FrameLayout(a).apply {
+                background = sw.round(if (dashed) sw.panel else (color and 0x00FFFFFF) or 0x2E000000, 18)
+                addView(StyleIcon(a, icon, color), sw.flp(44, 44, Gravity.CENTER))
+            }, sw.lp(76, 76))
+            // a small tag beside the icon (PyroWave's "Experimental"), kept when the style is renamed
+            if (tagLine != null) addView(sw.text(tagLine.uppercase(), 18, color, 800), sw.lp(-2, -2).apply { leftMargin = sw.px(16) })
+        }, sw.lp(-1, -2))
         addView(sw.text(name, 32, sw.ink, 800), sw.lp(-1, -2).apply { topMargin = sw.px(20) })
         lines.forEachIndexed { i, l -> addView(sw.text(l, 22, sw.sub, 600), sw.lp(-1, -2).apply { topMargin = sw.px(if (i == 0) 10 else 6) }) }
         addView(View(a), LinearLayout.LayoutParams(1, 0, 1f))
         addView(sw.text(if (inUse) note.uppercase() else note, 20, if (inUse) sw.ring else sw.sub, if (inUse) 800 else 600, 2))
-        contentDescription = name
+        contentDescription = if (tagLine != null) "$name, $tagLine" else name
         sw.focusable(this); sw.pressable(this)
         setOnClickListener { onClick() }
+        if (onHold != null) setOnLongClickListener { onHold(); true }
     }
 
-    /** My own: the three custom profiles (Profile.kt), to use, rename, or fill with what's set now. */
-    private fun myOwn() {
-        val cur = Profile.mode(a)
-        val opts = ArrayList<HandheldHomeActivity.Opt>()
-        CUSTOM.forEach { m ->
-            opts += HandheldHomeActivity.Opt("✎", Sw.PC, Profile.name(a, m), if (m == cur) "In use" else "Use it: its own PC, PS5 and Xbox settings come back",
-                    if (m == cur) "Now" else null) {
-                if (m != cur) { stream.edit().putString(Profile.PREF, m).apply(); a.render(force = true); a.toast("Using ${Profile.name(a, m)}") }
+    /** Hold or X on a PC style: that style's own values, to change (the live settings too while it's in use). */
+    private fun styleTunePage(st: PcStyle): View = list { l ->
+        val inUse = a.prefs.getString("mc_style_pc", null) == st.id
+        l.addView(sw.text("Fine-tune ${pcName(st)}", 34, sw.ink, 800))
+        l.addView(sw.text((if (st.pyro) "Experimental. " else "") + "These are this style's own values: picking it brings them back. " +
+                (if (inUse) "It's in use, so changes apply now too. " else "Picking it on the cards uses them. ") + "B goes back to the styles.", 23, sw.sub, 600, 3),
+                sw.lp(-1, -2).apply { topMargin = sw.px(8); bottomMargin = sw.px(22) })
+        val rows = sw.col().apply { background = sw.round(sw.panel, CORNER); setPadding(0, sw.px(6), 0, sw.px(6)) }
+        vrow(rows, "style:name", "Name", pcName(st)) { renameStyle(st) }
+        val v = styleVals(st)
+        val rec = if (st.pyro) sizeOf(v.s(RES, a.nativeResolution())).let { (w, h) ->
+            com.limelight.home.Pyrowave.recommendedKbps(w, h, v.s(FPS, "60").toIntOrNull() ?: 60) } else null
+        pcValues(rows, v, st, rec)
+        vrow(rows, "style:reset", "Reset to default", "") {
+            a.confirm("Reset ${pcName(st)}?", "Its values go back to how MoonCast set them up. Its name stays.", "Reset") {
+                a.prefs.edit().remove("mc_pcstyle_${st.id}").apply()
+                if (a.prefs.getString("mc_style_pc", null) == st.id) usePc(st, quiet = true) else a.render(force = true)
+                a.toast("${pcName(st)} is back to its first values")
             }
         }
-        if (cur in CUSTOM) opts += HandheldHomeActivity.Opt("Aa", Sw.PC, "Rename ${Profile.name(a, cur)}", "Its name shows wherever the profile does") {
-            a.entry("Rename this profile", "Up to 24 letters.", "A name", Profile.name(a, cur), "text") { v ->
-                if (v.isBlank()) "Type a name" else { Profile.rename(a, cur, v); a.render(force = true); null } }
-        }
-        opts += HandheldHomeActivity.Opt("+", Sw.PC, "Save what's set now into…", "One of your own, without switching to it") { saveAsOwn() }
-        if (cur in CUSTOM) opts += HandheldHomeActivity.Opt("⌂", Sw.PC, "Back to Home", "Your Home settings come back") {
-            stream.edit().putString(Profile.PREF, "home").apply(); a.render(force = true) }
-        a.dialog("My own", "Your own sets of settings, each with every PC, PS5 and Xbox setting. Picking one switches to it; changes you make while it's on stay in it.",
-                opts, listOf("Close" to {}))
+        l.addView(rows, sw.lp(-1, -2))
     }
 
     /** Y on Fine-tune: keep what's set now as one of your own (Custom 1-3). */
@@ -604,7 +860,7 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
         val opts = CUSTOM.map { m ->
             HandheldHomeActivity.Opt("✎", Sw.PC, Profile.name(a, m),
                     if (m == cur) "In use now: changes already go into it" else "Replaces what it held with what's set now", if (m == cur) "Now" else null, m != cur) {
-                Profile.saveInto(a, m); a.toast("Saved into ${Profile.name(a, m)}. Pick it in My own to use it")
+                Profile.saveInto(a, m); a.toast("Saved into ${Profile.name(a, m)}. Pick it in Classic settings, Streaming profile, to use it")
             }
         }
         a.dialog("Save as my own style", "Every PC, PS5 and Xbox setting in use now goes into the one you pick.", opts, listOf("Cancel" to {}))
@@ -637,17 +893,17 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
             }) }
         }
         left.addView(grid, sw.lp(-2, -2))
-        val list = styles(k)
-        val name = detect(k, list)?.name ?: "${nearest(k, list).name} (changed)"
+        val name = nowLabel(k)
         val withDetails = tiles.filter { it.details != null }.joinToString(", ") { it.title }
         left.addView(sw.text("Now: $name" + (if (Profile.isCustom(a)) ", in your own ${Profile.name(a)}" else "") +
-                ". Changing anything here makes it \"(changed)\"; Y saves it as one of your own (${CUSTOM.joinToString(", ") { Profile.name(a, it) }})." +
+                ". Changing anything here makes it \"(changed)\"; " +
+                (if (k == "pc") "Y saves it into one of the play styles." else "Y saves it as one of your own (${CUSTOM.joinToString(", ") { Profile.name(a, it) }}).") +
                 (if (withDetails.isNotEmpty()) " X on $withDetails shows more." else "") +
                 (if (k == "pc") " Every other option is in Classic settings." else ""), 22, sw.sub, 600, 4),
                 sw.lp(-1, -2).apply { topMargin = sw.px(24) })
 
         val values = sw.col().apply { background = sw.round(sw.panel, CORNER); setPadding(0, sw.px(6), 0, sw.px(6)) }
-        when (k) { "pc" -> pcValues(values); "ps" -> psValues(values); else -> xbValues(values) }
+        when (k) { "pc" -> pcValues(values, live, null, null); "ps" -> psValues(values); else -> xbValues(values) }
 
         fun scroller(v: View) = ColScroll(a, sw.px(40)).apply {
             isVerticalScrollBarEnabled = false; isFocusable = false; clipToPadding = false; clipChildren = false
@@ -689,11 +945,7 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
         val t = ArrayList<Tile>()
         val hdr = bool("checkbox_enable_hdr", false)
         t += Tile("hdr", "HDR", if (screenHdr()) onOff(hdr) else onOff(hdr) + " · screen can't", hdr, "sun", ORANGE, { flip("checkbox_enable_hdr", false) })
-        // 4:4:4 only does something with HEVC (Auto usually picks it) and a decoder that shows it; shown while on, to turn it off
-        val y = bool(com.limelight.home.Yuv444.PREF, false)
-        val codec = str("video_format", "auto")
-        if (y || (com.limelight.home.Yuv444.deviceCan() && (codec == "auto" || codec == "forceh265")))
-            t += Tile("444", "4:4:4 colour", onOff(y) + " · HEVC", y, "grid", PURPLE, { flip(com.limelight.home.Yuv444.PREF, false) })
+        // YUV 4:4:4 has no tile: it comes only with the PyroWave play style
         val ull = bool("checkbox_ultra_low_latency", false)
         t += Tile("ull", "Ultra low latency", onOff(ull), ull, "bolt", sw.ring, { flip("checkbox_ultra_low_latency", false) })
         val fsr = str(com.limelight.binding.video.FsrRenderer.PREF, "off") == "fsr1"
@@ -707,9 +959,9 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
         t += Tile("pip", "Picture in picture", onOff(pip), pip, "pip", Sw.C_BLUE, { flip(com.limelight.home.Pip.PREF, false) })
         val lvl = StatsLevel.get(a)
         t += Tile("stats", "Stats", statsLabel(lvl), lvl != StatsLevel.OFF, "pulse", Sw.C_RED, { StatsLevel.set(a, StatsLevel.next(lvl)); a.render(force = true) })
-        // PyroWave only where this device's GPU decodes it (the probe passed)
-        if (com.limelight.home.Pyrowave.deviceCan(a)) {
-            val pw = bool(com.limelight.home.Pyrowave.PREF, false)
+        // PyroWave has its own play style; while it's on (that style, or the classic list), its tile turns it off and X has its options
+        if (com.limelight.home.Pyrowave.deviceCan(a) && bool(com.limelight.home.Pyrowave.PREF, false)) {
+            val pw = true
             t += Tile("pyro", "PyroWave", onOff(pw) + " · wired only", pw, "wave", Sw.C_BLUE, { flip(com.limelight.home.Pyrowave.PREF, false) }) { pyroDetails(0) }
         }
         // 144 and 240 fps: only for a screen that goes past 120 Hz (or when already on, to turn it off)
@@ -805,60 +1057,106 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
         vrow(list, key, title, opts.firstOrNull { it.second == cur }?.first ?: cur) { pick(title, body, opts, cur) { stream.edit().putString(key, it).apply() } }
     }
 
-    private fun pcValues(list: LinearLayout) {
+    /**
+     * The PC's value rows, reading and writing [v]: the live settings (Fine-tune), or a play style's own values ([st]'s
+     * Fine-tune, which adds its on/off rows: Ultra low latency, or PyroWave's). [pyroRec]: the PyroWave style's
+     * recommended bitrate, its Auto.
+     */
+    private fun pcValues(list: LinearLayout, v: Vals, st: PcStyle?, pyroRec: Int?) {
         a.syncNativeRes()
         val native = a.nativeResolution()
-        val resOpts = HandheldHomeActivity.RES_STEPS.filter { it.second != native } + ("Native" to native)
-        val res = str("list_resolution", native)
-        vrow(list, "list_resolution", "Resolution", resOpts.firstOrNull { it.second == res }?.first ?: res.replace("x", " × ")) {
-            pick("Resolution", "Native fills the screen you play on, now ${native.replace("x", " × ")}", resOpts, res) { v ->
-                stream.edit().putString("list_resolution", v).putBoolean(PreferenceConfiguration.NATIVE_RES_PREF_STRING, v == native).apply()
+        // Native first, then the fixed sizes, then Custom… (any width × height)
+        val resOpts = listOf("Native" to native) + HandheldHomeActivity.RES_STEPS.filter { it.second != native }
+        val res = v.s(RES, native)
+        val customRes = resOpts.none { it.second == res }
+        vrow(list, RES, "Resolution", if (customRes) "${res.replace("x", " × ")} (custom)" else resOpts.first { it.second == res }.first) {
+            pick("Resolution", "Native fills the screen you play on, now ${native.replace("x", " × ")}", resOpts + ("Custom…" to "custom"),
+                    if (customRes) "custom" else res) { r ->
+                if (r != "custom") v.put(RES, r)
+                else a.entry("Custom resolution", "Width × height in pixels, for example 1600x900. Both even, from 256 to 7680.", "For example 1600x900",
+                        if (customRes) res else "", "text") { raw ->
+                    val n = raw.trim().lowercase().replace('×', 'x').replace(" ", "").split('x').mapNotNull { it.toIntOrNull() }
+                    if (n.size != 2 || n.any { it !in 256..7680 || it % 2 != 0 }) "Two even numbers from 256 to 7680, like 1600x900."
+                    else { v.put(RES, "${maxOf(n[0], n[1])}x${minOf(n[0], n[1])}"); a.render(force = true); null }
+                }
             }
         }
         // frame rate: the classic steps, then Custom… (any rate, saved as a number into list_fps)
         val unlock = bool("checkbox_unlock_fps", false)
         val fpsSteps = listOf("30", "60", "90", "120") + (if (unlock) listOf("144", "240") else emptyList())
         val fpsMax = if (unlock) 240 else 120
-        val fps = str("list_fps", "60")
-        vrow(list, "list_fps", "Frame rate", if (fps in fpsSteps) fps else "$fps (custom)") {
+        val fps = v.s(FPS, "60")
+        vrow(list, FPS, "Frame rate", if (fps in fpsSteps) fps else "$fps (custom)") {
             pick("Frame rate", "60 is the smoothest. 30 uses less data and battery", fpsSteps.map { "$it fps" to it } + ("Custom…" to "custom"),
-                    if (fps in fpsSteps) fps else "custom") { v ->
-                if (v != "custom") stream.edit().putString("list_fps", v).apply()
+                    if (fps in fpsSteps) fps else "custom") { f ->
+                if (f != "custom") v.put(FPS, f)
                 else a.entry("Custom frame rate", "In fps, from 15 to $fpsMax. The PC streams at the rate you pick.", "For example 45",
                         if (fps !in fpsSteps) fps else "", true) { raw ->
                     val n = raw.trim().toIntOrNull()
                     if (n == null || n !in 15..fpsMax) "A number from 15 to $fpsMax."
-                    else { stream.edit().putString("list_fps", n.toString()).apply(); a.render(force = true); null }
+                    else { v.put(FPS, n.toString()); a.render(force = true); null }
                 }
             }
         }
-        // bitrate: Auto, the steps up to 1000 Mbps, then Custom… (0.5 to 1000 in 0.5 steps)
-        val kbps = int("seekbar_bitrate_kbps", 0)
+        // bitrate: Auto (the PyroWave style: its recommended one), the steps up to 1000 Mbps, then Custom… (0.5 to 1000 in 0.5 steps)
+        val rec = pyroRec != null && st != null && KBPS !in storedOf(st)
+        val kbps = if (pyroRec != null && rec) 0 else v.i(KBPS, 0)
         val custom = kbps != 0 && (kbps / 1000 !in HandheldHomeActivity.BITRATE_STEPS || kbps % 1000 != 0)
         val maxRate = QuickBitrate.PC_MAX_MBPS
-        vrow(list, "seekbar_bitrate_kbps", "Bitrate", if (kbps == 0) "Auto" else a.mbps(kbps), bitrateBar(kbps)) {
-            pick("Bitrate", QuickBitrate.highHint(kbps) ?: "Higher looks better and needs a faster network. Auto picks one for the resolution.",
-                    listOf("Auto" to "0") + HandheldHomeActivity.BITRATE_STEPS.map { "$it Mbps" to it.toString() } + ("Custom…" to "custom"),
-                    when { kbps == 0 -> "0"; custom -> "custom"; else -> (kbps / 1000).toString() }) { v ->
-                when (v) {
-                    "0" -> stream.edit().remove("seekbar_bitrate_kbps").apply()
+        val autoLabel = if (pyroRec != null) "Recommended · ${a.mbps(pyroRec)}" else "Auto"
+        vrow(list, KBPS, "Bitrate", if (kbps == 0) autoLabel else a.mbps(kbps), bitrateBar(if (kbps == 0) pyroRec ?: 0 else kbps)) {
+            pick("Bitrate", if (pyroRec != null) "PyroWave needs a lot: about ${a.mbps(pyroRec)} at this resolution and frame rate. Recommended follows them."
+                    else QuickBitrate.highHint(kbps) ?: "Higher looks better and needs a faster network. Auto picks one for the resolution.",
+                    listOf(autoLabel to "0") + HandheldHomeActivity.BITRATE_STEPS.map { "$it Mbps" to it.toString() } + ("Custom…" to "custom"),
+                    when { kbps == 0 -> "0"; custom -> "custom"; else -> (kbps / 1000).toString() }) { r ->
+                when (r) {
+                    "0" -> v.put(KBPS, 0)
                     "custom" -> a.entry("Custom bitrate", "In Mbps, from 0.5 to $maxRate. Higher looks better and needs a faster network. " +
                             "Above ${QuickBitrate.HIGH_MBPS}: ${QuickBitrate.HIGH_HINT}.", "For example 25",
                             if (custom) a.mbps(kbps).removeSuffix(" Mbps") else "", "decimal") { raw ->
                         val n = raw.trim().replace(',', '.').toDoubleOrNull()
                         if (n == null || n < 0.5 || n > maxRate) "A number from 0.5 to $maxRate."
-                        else { stream.edit().putInt("seekbar_bitrate_kbps", (Math.round(n * 2) * 500).toInt()).apply(); a.render(force = true); null }
+                        else { v.put(KBPS, (Math.round(n * 2) * 500).toInt()); a.render(force = true); null }
                     }
-                    else -> stream.edit().putInt("seekbar_bitrate_kbps", v.toInt() * 1000).apply()
+                    else -> v.put(KBPS, r.toInt() * 1000)
                 }
             }
         }
-        pickStr(list, "video_format", "Video codec", "HEVC and AV1 look better at the same bitrate",
+        fun choose(key: String, title: String, body: String?, opts: List<Pair<String, String>>, def: String) {
+            val cur = v.s(key, def)
+            vrow(list, key, title, opts.firstOrNull { it.second == cur }?.first ?: cur) { pick(title, body, opts, cur) { v.put(key, it) } }
+        }
+        fun onOffRow(key: String, title: String, sub: String? = null) {
+            val on = v.b(key, false)
+            vrow(list, key, title, onOff(on), sub?.let { sw.text(it, 22, sw.sub, 600, 3) }) {
+                v.put(key, !on); FeelSounds.play(a, FeelSounds.Cue.TOGGLE); a.render(force = true)
+            }
+        }
+        // a play style: PyroWave is its codec; the other styles pick theirs
+        if (st?.pyro != true) choose(CODEC, "Video codec", "HEVC and AV1 look better at the same bitrate",
                 listOf("Auto" to "auto", "H.264" to "neverh265", "HEVC" to "forceh265", "AV1" to "forceav1"), "auto")
-        pickStr(list, "list_video_scale_mode", "Picture shape", "Fit with bars, fill and crop, or stretch",
+        if (st != null) onOffRow(HDR, "HDR", if (screenHdr()) null else "This screen doesn't show HDR10")
+        choose(SHAPE, "Picture shape", "Fit with bars, fill and crop, or stretch",
                 listOf("Fit" to "fit", "Fill" to "fill", "Stretch" to "stretch"), pcShapeDefault())
-        pickStr(list, "frame_pacing", "Frame pacing", "PC and PS5: trade a little delay for smoother motion. Xbox paces itself",
+        choose(PACING, "Frame pacing", "PC and PS5: trade a little delay for smoother motion. Xbox paces itself",
                 listOf("Lowest delay" to "latency", "Balanced" to "balanced", "Smoothest" to "smoothness"), "latency")
+        if (st == null) return
+        choose(FSR, "Super resolution", "Sharper picture when the stream is smaller than this screen (AMD FSR 1.0). Not with HDR" +
+                (if (st.pyro) " or PyroWave" else ""), listOf("Off" to "off", "FSR 1.0" to "fsr1"), "off")
+        if (v.s(FSR, "off") == "fsr1") {
+            val sharp = v.i(FSR_SHARP, com.limelight.binding.video.FsrRenderer.DEFAULT_SHARPNESS)
+            vrow(list, FSR_SHARP, "Sharpening", "$sharp%") {
+                pick("Sharpening", "How crisp Super resolution makes edges. Lower it if you see halos.",
+                        listOf(0, 20, 40, 60, 80, 100).map { "$it%" to it.toString() }, sharp.toString()) { v.put(FSR_SHARP, it.toInt()) }
+            }
+        }
+        onOffRow(RANGE, "Full range", "Deeper blacks, if this screen shows them correctly")
+        if (!st.pyro) { onOffRow(ULL, "Ultra low latency", "Asks this device's decoder for the lowest delay"); return }
+        onOffRow(Y444, "YUV 4:4:4", "Sharper text and colour edges. Needs a PC that streams PyroWave 4:4:4")
+        onOffRow(PW_BOOST, "PyroWave: GPU boost", "Steadier decoding; uses more power and runs warmer")
+        choose(PW_DITHER, "PyroWave: spatial dithering", "Fine moving noise that hides colour banding, most visible in HDR gradients",
+                listOf("Off" to "off", "Low" to "low", "High" to "high"), "off")
+        onOffRow(PW_FRONT, "PyroWave: front buffer", "Lower delay. Turn off if you see tearing, flickering or corrupted video")
     }
 
     /** Where the bitrate sits between 10 Mbps and 1 Gbps (a log scale, as the steps are). */

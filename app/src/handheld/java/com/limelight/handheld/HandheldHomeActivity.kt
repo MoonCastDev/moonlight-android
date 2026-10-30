@@ -1602,16 +1602,14 @@ class HandheldHomeActivity : Activity() {
                 choice(list, stream, "video_format", "Video codec", "HEVC and AV1 look better at the same bitrate",
                         listOf("Auto" to "auto", "H.264" to "neverh265", "HEVC" to "forceh265", "AV1" to "forceav1"), "auto")
                 toggle(list, "checkbox_enable_hdr", "HDR", "Only when the PC, the game and this screen support it. With PyroWave: HDR / 10-bit SDR", false)
-                toggle(list, com.limelight.home.Yuv444.PREF, "YUV 4:4:4 (HEVC)",
-                        if (com.limelight.home.Yuv444.deviceCan()) "Sharper text and colour edges. Needs Sunshine with 4:4:4 on the PC; otherwise it stays 4:2:0"
-                        else "This device's decoder can't show 4:4:4, so streams stay 4:2:0", false)
+                // YUV 4:4:4: only with PyroWave, set by Settings' PyroWave play style (no row of its own any more)
                 // PyroWave: only where this device's GPU can decode it (arm64, Vulkan); hidden elsewhere
                 if (com.limelight.home.Pyrowave.deviceCan(this)) {
                     val pc = com.limelight.preferences.PreferenceConfiguration.readPreferences(this)
                     val rec = com.limelight.home.Pyrowave.recommendedKbps(pc.width, pc.height, pc.fps) / 1000
                     toggle(list, com.limelight.home.Pyrowave.PREF, "PyroWave (wired / fast Wi-Fi only)",
                             "Lowest delay, with a lot of bitrate: about $rec Mbps at your resolution and frame rate. Needs a PC with PyroWave " +
-                            "in Sunshine; otherwise your codec above is used. HDR and YUV 4:4:4 above apply to it too. No Super resolution", false)
+                            "in Sunshine; otherwise your codec above is used. HDR above applies to it too. No Super resolution", false)
                     // The PyroWave group: Moonlight X's Vulkan options for its renderer, and the GPU boost
                     if (com.limelight.home.Pyrowave.wanted(this)) {
                         choice(list, stream, "spatial_dithering", "PyroWave: spatial dithering",

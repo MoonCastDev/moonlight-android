@@ -76,7 +76,6 @@ object AwayStream {
         val mode = Profile.mode(ctx)
         val auto = mode == "home" && Profile.autoAway(ctx)
         var pyro = Pyrowave.wanted(ctx)
-        var yuv = Yuv444.wanted(ctx)
         // the bitrate the Away profile sets on purpose (0: Auto), which may go over the cap
         var awayKbps = if (mode == "away") p.getInt("seekbar_bitrate_kbps", 0) else 0
         // Away never set up: Home's own values stay (only the guards below apply), with a bitrate picked in the
@@ -106,7 +105,6 @@ object AwayStream {
             cfg.enableHdr = (Profile.awayValue(ctx, "checkbox_enable_hdr") as? Boolean ?: false) &&
                     !PreferenceConfiguration.isShieldAtvFirmwareWithBrokenHdr()
             pyro = Profile.awayValue(ctx, Pyrowave.PREF) as? Boolean ?: false
-            yuv = Profile.awayValue(ctx, Yuv444.PREF) as? Boolean ?: false
         }
         // PyroWave needs hundreds of Mbps: the codec setting instead, HEVC when it was Automatic (PyroWave only)
         val droppedPyro = pyro
@@ -125,6 +123,7 @@ object AwayStream {
         val msg = if (useAway || droppedPyro || capped)
             "Away from home: $codec at ${cfg.bitrate / 1000} Mbps" + (if (droppedPyro || capped) " (PyroWave and high bitrates are for your home network)" else "")
         else null
-        return Plan(true, auto, cap, yuv, msg)
+        // YUV 4:4:4 goes with PyroWave only, which stays home: never away
+        return Plan(true, auto, cap, false, msg)
     }
 }
