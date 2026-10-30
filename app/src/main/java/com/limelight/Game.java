@@ -116,6 +116,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     private VirtualController virtualController;
 
     private PreferenceConfiguration prefConfig;
+    private com.limelight.home.AwayStream.Plan awayPlan;
     private SharedPreferences tombstonePrefs;
 
     private NvConnection conn;
@@ -224,6 +225,10 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
         // Read the stream preferences
         prefConfig = PreferenceConfiguration.readPreferences(this);
+        // MoonCast: over the internet, Home streams with the Away settings, and never PyroWave or more than 100 Mbps
+        awayPlan = com.limelight.home.AwayStream.prepare(this, prefConfig,
+                getIntent().getStringExtra(EXTRA_HOST), getIntent().getStringExtra(EXTRA_PC_UUID));
+        if (awayPlan.message != null) Toast.makeText(this, awayPlan.message, Toast.LENGTH_LONG).show();
         trace(foldLabel(getResources().getConfiguration()) + ": stream " + prefConfig.width + "x" + prefConfig.height
                 + ", Native " + PreferenceConfiguration.nativeWholeScreen(this));
         tombstonePrefs = Game.this.getSharedPreferences("DecoderTombstone", 0);
@@ -375,7 +380,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                 }
 
                 // MoonCast: PyroWave still streams 10-bit then, shown as 10-bit SDR (tone mapped if the PC is in HDR)
-                if (!willStreamHdr && !(com.limelight.home.Pyrowave.wanted(this) && com.limelight.home.Pyrowave.deviceCan(this))) {
+                if (!willStreamHdr && !(com.limelight.home.AwayStream.pyrowave(this) && com.limelight.home.Pyrowave.deviceCan(this))) {
                     // Nope, no HDR for us :(
                     Toast.makeText(this, "Display does not support HDR10", Toast.LENGTH_LONG).show();
                 }
@@ -449,7 +454,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                 supportedVideoFormats |= MoonBridge.VIDEO_FORMAT_H265_MAIN10;
             }
             // MoonCast: Settings, Picture, YUV 4:4:4 (HEVC). The PC picks 4:4:4 only when it has it too.
-            if (com.limelight.home.Yuv444.wanted(this) && com.limelight.home.Yuv444.deviceCan()) {
+            if (com.limelight.home.AwayStream.yuv444(this) && com.limelight.home.Yuv444.deviceCan()) {
                 supportedVideoFormats |= MoonBridge.VIDEO_FORMAT_H265_REXT8_444;
                 if ((supportedVideoFormats & MoonBridge.VIDEO_FORMAT_H265_MAIN10) != 0) {
                     supportedVideoFormats |= MoonBridge.VIDEO_FORMAT_H265_REXT10_444;
@@ -466,10 +471,10 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         // MoonCast: Settings, Picture, PyroWave. The PC picks it over the other codecs when it offers it (NvConnection
         // drops it, and says so, when it doesn't). With HDR on, 10-bit too: HDR10 on an HDR screen, 10-bit SDR (and
         // HDR tone mapped) otherwise, so it doesn't wait for the screen check above. With YUV 4:4:4 on, 4:4:4 too.
-        if (com.limelight.home.Pyrowave.wanted(this) && com.limelight.home.Pyrowave.deviceCan(this)) {
+        if (com.limelight.home.AwayStream.pyrowave(this) && com.limelight.home.Pyrowave.deviceCan(this)) {
             supportedVideoFormats |= MoonBridge.VIDEO_FORMAT_PYROWAVE;
             boolean pyrowaveTenBit = prefConfig.enableHdr;
-            boolean pyrowave444 = com.limelight.home.Yuv444.wanted(this);
+            boolean pyrowave444 = com.limelight.home.AwayStream.yuv444(this);
             if (pyrowaveTenBit) supportedVideoFormats |= MoonBridge.VIDEO_FORMAT_PYROWAVE_10BIT;
             if (pyrowave444) supportedVideoFormats |= MoonBridge.VIDEO_FORMAT_PYROWAVE_444;
             if (pyrowaveTenBit && pyrowave444) supportedVideoFormats |= MoonBridge.VIDEO_FORMAT_PYROWAVE_10BIT_444;
@@ -1111,6 +1116,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        com.limelight.home.AwayStream.end(awayPlan);
 
         PhoneGamepad.stopFor(conn);
         PhoneGamepad.streamEnded(playGen);   // a later stream from the TV's own home has its controllers again

@@ -27,7 +27,7 @@ object QuickBitrate {
 
     /** "pc", "ps" or "xb": the bitrate steps in Mbps, 0 = Auto. */
     private fun steps(ctx: Context, kind: String): List<Int> = when (kind) {
-        "pc" -> listOf(0) + PC_STEPS
+        "pc" -> listOf(0) + AwayStream.current.let { pl -> if (pl != null && pl.away) PC_STEPS.filter { it * 1000 <= pl.capKbps } else PC_STEPS }
         "ps" -> if (Profile.isAway(ctx)) listOf(0, 8, 10, 15, 30, 50) else listOf(0, 10, 15, 20, 30, 50, 80, 100)
         else -> listOf(0, 5, 10, 15, 20, 30)
     }
@@ -37,7 +37,8 @@ object QuickBitrate {
 
     /** The saved choice, in Mbps (0 = Auto, -1 = a Custom value not in the steps). */
     private fun saved(ctx: Context, kind: String): Int = when (kind) {
-        "pc" -> prefs(ctx).getInt("seekbar_bitrate_kbps", 0) / 1000
+        "pc" -> (if (AwayStream.current?.autoAway == true) Profile.awayValue(ctx, "seekbar_bitrate_kbps") as? Int ?: 0
+                 else prefs(ctx).getInt("seekbar_bitrate_kbps", 0)) / 1000
         "ps" -> prefs(ctx).getString(psKey(ctx), "auto")?.let { if (it == "auto") 0 else it.toIntOrNull() ?: -1 } ?: 0
         else -> prefs(ctx).getInt("xbox_bitrate", 0)
     }
@@ -45,7 +46,9 @@ object QuickBitrate {
     private fun save(ctx: Context, kind: String, mbps: Int) {
         val e = prefs(ctx).edit()
         when (kind) {
-            "pc" -> e.putInt("seekbar_bitrate_kbps", mbps * 1000)
+            // Home switched to Away for this stream: the pick belongs to the Away profile
+            "pc" -> if (AwayStream.current?.autoAway == true) Profile.setAwayInt(ctx, "seekbar_bitrate_kbps", mbps * 1000)
+                    else e.putInt("seekbar_bitrate_kbps", mbps * 1000)
             "ps" -> e.putString(psKey(ctx), if (mbps == 0) "auto" else mbps.toString())
             else -> e.putInt("xbox_bitrate", mbps)
         }
@@ -67,6 +70,8 @@ object QuickBitrate {
                 })
             }
             menu.show("Bitrate", (if (kind == "ps" && Profile.isAway(ctx)) "Away profile. " else "") +
+                    (if (kind == "pc" && AwayStream.current?.away == true) "Away from home" +
+                            (if (AwayStream.current?.autoAway == true) ", so this sets your Away profile. " else ". ") else "") +
                     "Higher looks better and needs a faster network. Picking one reconnects in about 2 seconds; the game keeps running.",
                     QuickMenu.Stats { emptyList() }, items)
         }.staysOpen(null)

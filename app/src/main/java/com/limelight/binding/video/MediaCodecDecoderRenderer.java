@@ -397,7 +397,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         // MoonCast: PyroWave decodes and shows frames as they're handed over, which on the receive thread would keep it
         // from draining the socket (packets overflow and whole frames are lost). getCapabilities() comes before the
         // codec is known, so this goes by whether PyroWave may be asked for.
-        if (directSubmit && com.limelight.home.Pyrowave.wanted(activity) && com.limelight.home.Pyrowave.deviceCan(activity)) {
+        if (directSubmit && com.limelight.home.AwayStream.pyrowave(activity) && com.limelight.home.Pyrowave.deviceCan(activity)) {
             directSubmit = false;
             LimeLog.info("Not using direct submit, since the stream may be PyroWave");
         }

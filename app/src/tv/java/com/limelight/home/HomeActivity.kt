@@ -1007,6 +1007,8 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                 // Home and Away: one switch for PC, PlayStation and Xbox. Each profile keeps its own settings.
                 choice(list, Profile.PREF, "Streaming profile", "Home: best quality on your network. Away: lighter settings for PlayStation Network and slower links. Custom: your own sets",
                         Profile.choices(this), "home")
+                toggle(list, Profile.AUTO_AWAY_PREF, "Switch to Away automatically",
+                        "When Home is chosen and the PC is reached over the internet, that stream uses the Away settings. Away from home there's never PyroWave or more than 100 Mbps", true)
                 // a custom profile can be renamed, as on the handheld; the name shows wherever the profile does
                 if (Profile.isCustom(this)) {
                     val m = Profile.mode(this)

@@ -43,6 +43,8 @@ import android.os.SystemClock;
 import org.xmlpull.v1.XmlPullParserException;
 
 public class ComputerManagerService extends Service {
+    // MoonCast: when each PC last had its internet address looked up with STUN (uuid -> elapsedRealtime)
+    private static final java.util.concurrent.ConcurrentHashMap<String, Long> lastStunFill = new java.util.concurrent.ConcurrentHashMap<>();
     private static final int SERVERINFO_POLLING_PERIOD_MS = 1500;
     private static final int APPLIST_POLLING_PERIOD_MS = 30000;
     private static final int APPLIST_FAILED_POLLING_RETRY_MS = 2000;
@@ -132,6 +134,25 @@ public class ComputerManagerService extends Service {
             // due to detecting the PC via mDNS) without the saved external address. If we
             // write to the DB without doing this first, we can overwrite our existing data.
             if (existingComputer != null) {
+                // MoonCast: a PC saved without an internet address (its server, Sunshine or Polaris, reports no
+                // ExternalIP, and STUN only ran when it was first added) gets one the same way, when it's reached on
+                // this device's own network (so STUN sees the PC's own public address), at most once in 10 minutes
+                if (existingComputer.remoteAddress == null && details.remoteAddress == null && details.activeAddress != null) {
+                    Long last = lastStunFill.get(details.uuid);
+                    if (last == null || SystemClock.elapsedRealtime() - last > 10 * 60 * 1000) {
+                        lastStunFill.put(details.uuid, SystemClock.elapsedRealtime());
+                        try {
+                            InetAddress addr = InetAddress.getByName(details.activeAddress.address);
+                            if (addr instanceof Inet4Address && addr.isSiteLocalAddress()
+                                    && Boolean.TRUE.equals(com.limelight.home.Network.onLink(this, addr))) {
+                                populateExternalAddress(details);
+                                if (details.remoteAddress != null) {
+                                    LimeLog.info("Internet address for " + details.name + " from STUN: " + details.remoteAddress);
+                                }
+                            }
+                        } catch (UnknownHostException ignored) {}
+                    }
+                }
                 existingComputer.update(details);
                 dbManager.updateComputer(existingComputer);
             }
@@ -142,7 +163,9 @@ public class ComputerManagerService extends Service {
                     // it's not set already.
                     if (details.remoteAddress == null) {
                         InetAddress addr = InetAddress.getByName(details.activeAddress.address);
-                        if (addr.isSiteLocalAddress()) {
+                        // MoonCast: not when the private address is reached through a gateway (a site-to-site VPN):
+                        // STUN would give this device's network's public address, not the PC's
+                        if (addr.isSiteLocalAddress() && !Boolean.FALSE.equals(com.limelight.home.Network.onLink(this, addr))) {
                             populateExternalAddress(details);
                         }
                     }

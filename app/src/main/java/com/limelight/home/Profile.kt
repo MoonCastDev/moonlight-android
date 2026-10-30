@@ -84,6 +84,41 @@ object Profile {
         ed.apply()
     }
 
+    /** Settings, "Switch to Away automatically": Home streams with the Away settings when the PC is reached over the internet. */
+    const val AUTO_AWAY_PREF = "mc_auto_away"
+
+    @JvmStatic
+    fun autoAway(ctx: Context): Boolean = PreferenceManager.getDefaultSharedPreferences(ctx).getBoolean(AUTO_AWAY_PREF, true)
+
+    /**
+     * The Away profile's value for the PC setting [key], as a stream started in Away would see it: Int, Boolean or
+     * String, or null for the setting's default. While Away is the applied profile, that's the live value.
+     */
+    @JvmStatic
+    fun awayValue(ctx: Context, key: String): Any? {
+        val p = PreferenceManager.getDefaultSharedPreferences(ctx)
+        if ((p.getString(APPLIED, "home") ?: "home") == "away") return p.all[key]
+        val s = p.getString("pcprof_away_$key", null)
+        return when {
+            s == null && key in NEW_KEYS -> p.all[key]   // as syncPcSettings: saved before the key was in profiles
+            s == null || s.isEmpty() -> null
+            s.startsWith("i:") -> s.substring(2).toIntOrNull()
+            s.startsWith("s:") -> s.substring(2)
+            s.startsWith("b:") -> s.substring(2).toBoolean()
+            else -> null
+        }
+    }
+
+    /** Sets the Away profile's PC Int setting [key] (null: its default) without switching to Away. */
+    @JvmStatic
+    fun setAwayInt(ctx: Context, key: String, value: Int?) {
+        val p = PreferenceManager.getDefaultSharedPreferences(ctx)
+        val ed = p.edit()
+        if ((p.getString(APPLIED, "home") ?: "home") == "away") { if (value == null) ed.remove(key) else ed.putInt(key, value) }
+        else ed.putString("pcprof_away_$key", if (value == null) "" else "i:$value")
+        ed.apply()
+    }
+
     /**
      * Keeps the PC's video settings in step with the General profile. Leaving a profile saves its values; entering one
      * restores the values saved for it (or Moonlight's defaults the first time). The PC has no PlayStation-style route,
