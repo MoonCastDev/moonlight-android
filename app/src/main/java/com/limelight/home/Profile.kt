@@ -109,6 +109,16 @@ object Profile {
         }
     }
 
+    /**
+     * True when the Away profile holds PC settings of its own: it is applied now, or it was left once (leaving a
+     * profile saves every PC setting into it). A Quick menu bitrate alone doesn't count.
+     */
+    @JvmStatic
+    fun awaySetUp(ctx: Context): Boolean {
+        val p = PreferenceManager.getDefaultSharedPreferences(ctx)
+        return (p.getString(APPLIED, "home") ?: "home") == "away" || p.contains("pcprof_away_list_resolution")
+    }
+
     /** Sets the Away profile's PC Int setting [key] (null: its default) without switching to Away. */
     @JvmStatic
     fun setAwayInt(ctx: Context, key: String, value: Int?) {

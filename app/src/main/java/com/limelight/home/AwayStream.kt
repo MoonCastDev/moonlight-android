@@ -12,7 +12,8 @@ import com.limelight.preferences.PreferenceConfiguration
  * the chosen profile are never changed.
  *
  *  - Home chosen and "Switch to Away automatically" on (the default): the stream uses the Away profile's resolution,
- *    frame rate, bitrate, codec, HDR and 4:4:4. Custom 1-3 and Away keep their own values.
+ *    frame rate, bitrate, codec, HDR and 4:4:4. When Away was never set up, Home's values stay (with a bitrate
+ *    picked in the Quick menu while away, if any). Custom 1-3 and Away keep their own values.
  *  - Whatever the profile: no PyroWave (the codec setting is used, HEVC when it was Automatic), and at most
  *    [CAP_KBPS], unless the Away profile itself sets a higher bitrate (then that is respected).
  */
@@ -78,7 +79,14 @@ object AwayStream {
         var yuv = Yuv444.wanted(ctx)
         // the bitrate the Away profile sets on purpose (0: Auto), which may go over the cap
         var awayKbps = if (mode == "away") p.getInt("seekbar_bitrate_kbps", 0) else 0
-        if (auto) {
+        // Away never set up: Home's own values stay (only the guards below apply), with a bitrate picked in the
+        // Quick menu while away, if any
+        val useAway = auto && Profile.awaySetUp(ctx)
+        if (auto && !useAway) {
+            awayKbps = (Profile.awayValue(ctx, "seekbar_bitrate_kbps") as? Int) ?: 0
+            if (awayKbps > 0) cfg.bitrate = awayKbps
+        }
+        if (useAway) {
             val res = (Profile.awayValue(ctx, "list_resolution") as? String)
                     ?.takeIf { r -> r.split("x").let { it.size == 2 && it.all { n -> (n.toIntOrNull() ?: 0) > 0 } } } ?: "1280x720"
             val fps = (Profile.awayValue(ctx, "list_fps") as? String)?.takeIf { it.toIntOrNull() != null } ?: "60"
@@ -112,9 +120,9 @@ object AwayStream {
             PreferenceConfiguration.FormatOption.FORCE_AV1 -> "AV1"
             else -> "${cfg.height}p${cfg.fps}"
         }
-        LimeLog.info("Away stream: profile $mode" + (if (auto) " -> Away settings" else "") + ", ${cfg.width}x${cfg.height} ${cfg.fps} fps, " +
+        LimeLog.info("Away stream: profile $mode" + (if (useAway) " -> Away settings" else if (auto) " (Away not set up: Home values)" else "") + ", ${cfg.width}x${cfg.height} ${cfg.fps} fps, " +
                 "${cfg.bitrate / 1000} Mbps, ${cfg.videoFormat}" + (if (droppedPyro) ", no PyroWave" else "") + (if (capped) ", capped" else ""))
-        val msg = if (auto || droppedPyro || capped)
+        val msg = if (useAway || droppedPyro || capped)
             "Away from home: $codec at ${cfg.bitrate / 1000} Mbps" + (if (droppedPyro || capped) " (PyroWave and high bitrates are for your home network)" else "")
         else null
         return Plan(true, auto, cap, yuv, msg)
