@@ -163,8 +163,7 @@ class HandheldHomeActivity : Activity() {
         if (stream.getBoolean(com.limelight.home.Pyrowave.PREF, false) && prefs.getString("mc_style_pc", null) != "pyro")
             stream.edit().putBoolean(com.limelight.home.Pyrowave.PREF, false).apply()
         syncNativeRes()
-        MoveToTv.handler = TvSender
-        com.limelight.home.PlayStyleLink.handler = PlayStyles.Link   // the PC Quick menu's Play styles   // the players' Quick menu offers "Move to <TV>" through this
+        MoveToTv.handler = TvSender   // the players' Quick menu offers "Move to <TV>" through this
         // Rebuilt for a theme change (recreate): come back to the same page, not Home (#44)
         b?.getString(STATE_PAGE)?.let { n -> Page.values().firstOrNull { it.name == n }?.let { page = it } }
         b?.getString(STATE_GROUP)?.let { settingsGroup = it }
@@ -190,17 +189,6 @@ class HandheldHomeActivity : Activity() {
     /** Controller mode's "Play here instead": start that game here once it's known (PCs may still be loading). */
     private var pendingPlay: String? = null
     private fun takeIntent(i: Intent?) {
-        // the PC Quick menu: a held play style's Fine-tune; leaving it starts the stream again
-        i?.getStringExtra(EXTRA_TUNE_STYLE)?.let { id ->
-            @Suppress("DEPRECATION") val resume = i.getParcelableExtra<Intent>(EXTRA_RESUME)
-            val uuid = i.getStringExtra(EXTRA_TUNE_PC)
-            i.removeExtra(EXTRA_TUNE_STYLE); i.removeExtra(EXTRA_RESUME)
-            if (overlayKind != null) hideOverlay()
-            cards.openTune(uuid, id, resume)
-            page = Page.SETTINGS
-            render(force = true)
-            return
-        }
         val k = i?.getStringExtra(EXTRA_PLAY_HERE) ?: return
         i.removeExtra(EXTRA_PLAY_HERE)
         pendingPlay = k
@@ -2742,9 +2730,6 @@ class HandheldHomeActivity : Activity() {
         private const val STATE_GROUP = "hh_settings_group"
         private const val STATE_CARDS = "hh_settings_cards"
         const val EXTRA_PLAY_HERE = "play_here"
-        const val EXTRA_TUNE_STYLE = "mc_tune_style"
-        const val EXTRA_TUNE_PC = "mc_tune_pc"
-        const val EXTRA_RESUME = "mc_resume_game"
         private const val REQ_PSN_REGISTER = 41
         internal const val REQ_PSN = 42
         private const val REQ_PICTURE = 43

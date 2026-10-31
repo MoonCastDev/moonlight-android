@@ -1653,10 +1653,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             items.add(new com.limelight.home.QuickMenu.Item("⌨", "Keyboard", "On-screen", false, this::toggleKeyboard).asToggle());
             items.add(new com.limelight.home.QuickMenu.Item("ⓘ", "Streaming status", com.limelight.home.StatsLevel.label(statsLevel), false, this::toggleStatus)
                     .asToggle().liveDetail(() -> com.limelight.home.StatsLevel.label(statsLevel)));
-            // the handheld: its play styles (picking one reconnects, holding one fine-tunes it); the TV: the bitrate
-            com.limelight.home.QuickMenu.Item styles = com.limelight.home.PlayStyleLink.item(quickMenu, Game.this, this::openQuickMenu, this::reconnectForStyle, this::fineTuneStyle);
-            items.add(styles != null ? styles
-                    : com.limelight.home.QuickBitrate.item(quickMenu, Game.this, "pc", prefConfig.bitrate / 1000, this::openQuickMenu, this::reconnectForBitrate));
+            items.add(com.limelight.home.QuickBitrate.item(quickMenu, Game.this, "pc", prefConfig.bitrate / 1000, this::openQuickMenu, this::reconnectForBitrate));
             items.add(new com.limelight.home.QuickMenu.Item("✚", "Controllers", com.limelight.home.QuickMenu.pads().size() + " connected", false, this::showControllers).staysOpen(null));
             items.add(new com.limelight.home.QuickMenu.Item("▤", "Task Manager", "Windows: Ctrl + Shift + Esc", false, this::openTaskManager).staysOpen("Opened on the PC"));
             // handheld only: send the game to the last MoonCast TV (it ends this stream, the game keeps running)
@@ -1906,34 +1903,6 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     }
 
     /** Quick menu, Bitrate: the new one is saved; leave quietly and open the same game again with it (it keeps running). */
-    /** Quick menu, Play styles: a style was picked; reconnect with its settings (Polaris resumes the game). */
-    private void reconnectForStyle() {
-        LimeLog.info("Quick menu: play style changed, reconnecting");
-        Toast.makeText(this, "Changing play style…", Toast.LENGTH_SHORT).show();
-        Intent again = new Intent(getIntent());
-        again.removeExtra(EXTRA_START_RETRY);
-        displayedFailureDialog = true;
-        endedByUser = true;
-        finish();
-        startActivity(again);
-    }
-
-    /**
-     * Quick menu, Play styles, a style held: its Fine-tune in the handheld's Settings. The stream ends here and
-     * starts again, with whatever was changed, when that page is left.
-     */
-    private void fineTuneStyle(String id) {
-        com.limelight.home.PlayStyleLink.Handler h = com.limelight.home.PlayStyleLink.handler;
-        if (h == null) return;
-        LimeLog.info("Quick menu: fine-tuning play style " + id + ", the stream comes back after");
-        Intent again = new Intent(getIntent());
-        again.removeExtra(EXTRA_START_RETRY);
-        displayedFailureDialog = true;
-        endedByUser = true;
-        h.fineTune(this, id, getIntent().getStringExtra(EXTRA_PC_UUID), again);
-        finish();
-    }
-
     private void reconnectForBitrate() {
         LimeLog.info("Quick menu: bitrate changed, reconnecting");
         Toast.makeText(this, "Changing bitrate…", Toast.LENGTH_SHORT).show();
