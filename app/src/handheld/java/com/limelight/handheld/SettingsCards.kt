@@ -89,33 +89,35 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
     /** The in-game Quick menu held a style: its Fine-tune, for the PC [uuid]; B starts [r] (the game) again. */
     fun openTune(uuid: String?, id: String, r: android.content.Intent?) {
         classic = false; screen = if (uuid != null) "pc:$uuid" else "pc:any"; lastCard = screen
-        tab = "play"; editing = id; lastStyle = id; strip = null; resume = r; fresh = true
+        tab = "fine"; tuning = id; editing = null; lastStyle = id; strip = null; resume = r; fresh = true
     }
 
     /** The PC play style last fine-tuned or renamed, where focus goes back to on the style cards. */
     private var lastStyle: String? = null
+    /** Hold A on a PC style: the Fine-tune tab edits that style's own values instead of the live settings. */
+    private var tuning: String? = null
 
-    fun save() = "${if (classic) 1 else 0}|$screen|$tab|${lastCard ?: ""}|${editing ?: ""}"
+    fun save() = "${if (classic) 1 else 0}|$screen|$tab|${lastCard ?: ""}|${editing ?: ""}|${tuning ?: ""}"
     fun restore(s: String) {
         val p = s.split('|')
         if (p.size < 3) return
         classic = p[0] == "1"; screen = p[1]; tab = p[2]; lastCard = p.getOrNull(3)?.ifEmpty { null }
-        editing = p.getOrNull(4)?.ifEmpty { null }
+        editing = p.getOrNull(4)?.ifEmpty { null }; tuning = p.getOrNull(5)?.ifEmpty { null }
     }
 
-    fun sig() = "$classic/$screen/$tab/${editing ?: ""}"
+    fun sig() = "$classic/$screen/$tab/${editing ?: ""}/${tuning ?: ""}"
 
     /** True once after moving to another screen: the page builds in and focus starts on its first item. */
     fun takeFresh(): Boolean { val f = fresh; fresh = false; return f }
 
     /** Settings opens on the cards, or straight on [to] (Home's Controllers, Controller settings). */
     fun reset(to: String = "home") {
-        classic = false; screen = to; tab = tabsOf(to).firstOrNull()?.first ?: ""; fresh = false; editing = null; resume = null
+        classic = false; screen = to; tab = tabsOf(to).firstOrNull()?.first ?: ""; fresh = false; editing = null; tuning = null; resume = null
     }
 
     private fun open(s: String) {
         if (screen == "home") lastCard = s
-        screen = s; tab = tabsOf(s).firstOrNull()?.first ?: ""; editing = null
+        screen = s; tab = tabsOf(s).firstOrNull()?.first ?: ""; editing = null; tuning = null
         fresh = true
         a.render(force = true)
     }
@@ -124,11 +126,12 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
     fun back(): Boolean = when {
         classic -> { classic = false; fresh = true; a.render(force = true); true }
         resume != null -> {
-            val r = resume!!; resume = null; editing = null; screen = "home"; tab = ""; fresh = true
+            val r = resume!!; resume = null; editing = null; tuning = null; screen = "home"; tab = ""; fresh = true
             try { a.startActivity(r) } catch (e: Exception) { a.toast("Couldn't start the game again. Start it from Home.") }
             a.render(force = true); true
         }
         editing != null -> { lastStyle = editing; editing = null; fresh = true; a.render(force = true); true }
+        tuning != null -> { lastStyle = tuning; tuning = null; tab = "play"; fresh = true; a.render(force = true); true }
         screen != "home" -> { screen = "home"; tab = ""; fresh = true; a.render(force = true); true }
         else -> false
     }
@@ -165,10 +168,17 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
         val h = ArrayList<Pair<String, String>>()
         if (screen != "home" && tabsOf(screen).size > 1) h += "L R" to "Tabs"
         val pcPlay = kind() == "pc" && tab == "play"
-        if (pcPlay && editing != null) { h += "Y" to "Rename"; h += "X" to "Exact bitrate" }
-        else if (pcPlay) { h += "Y" to "Rename"; h += "Hold A" to "Fine-tune" }
+        if (pcPlay && editing == null) {
+            h += "A" to "Use"; h += "Hold A" to "Fine-tune"; h += "X" to "Style page"; h += "Y" to "Rename"
+            h += "B" to if (resume != null) "Back to the game" else "Back"
+            return h
+        }
+        if (pcPlay) { h += "Y" to "Rename"; h += "X" to "Exact bitrate" }
         else if (screen != "home" && tab == "play") h += "X" to "Fine-tune"
-        if (screen != "home" && tab == "fine") { h += "Y" to if (kind() == "pc") "Save into a style" else "Save as my own"; h += "X" to "Details" }
+        if (screen != "home" && tab == "fine") {
+            h += "Y" to when { kind() != "pc" -> "Save as my own"; tuning != null -> "Rename"; else -> "Save into a style" }
+            h += "X" to "Details"
+        }
         h += "B" to if (resume != null) "Back to the game" else "Back"
         h += "A" to when { screen == "home" -> "Open"; pcPlay && editing != null -> "Change"; tab == "play" -> "Use"; else -> "OK" }
         return h
@@ -180,7 +190,7 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
         when (code) {
             KeyEvent.KEYCODE_BUTTON_X -> {
                 if (tab == "play" && kind() == "pc") {
-                    if (editing == null) focusedStyle()?.let { editStyle(it) } ?: showTab("fine")
+                    if (editing == null) focusedStyle()?.let { stylePage(it) } ?: showTab("fine")
                     else (a.currentFocus?.tag as? String)?.let { details[it] }?.invoke()
                     return true
                 }
@@ -192,7 +202,11 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
                     (editing?.let { id -> pcStyles().firstOrNull { it.id == id } } ?: focusedStyle())?.let { renameStyle(it) }
                     return true
                 }
-                if (tab == "fine") { if (kind() == "pc") saveIntoStyle() else saveAsOwn(); return true }
+                if (tab == "fine") {
+                    val t = tuning?.let { id -> pcStyles().firstOrNull { it.id == id } }
+                    if (kind() != "pc") saveAsOwn() else if (t != null) renameStyle(t) else saveIntoStyle()
+                    return true
+                }
             }
         }
         return false
@@ -246,7 +260,7 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
 
     private fun showTab(t: String) {
         if (tabsOf(screen).none { it.first == t }) return
-        tab = t; fresh = true; editing = null
+        tab = t; fresh = true; editing = null; tuning = null
         a.render(force = true)
     }
 
@@ -259,12 +273,13 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
         if (tabs.isNotEmpty() && tabs.none { it.first == tab }) tab = tabs.first().first
         if (tab != "play" || kind() != "pc" || pcStyles().none { it.id == editing }) editing = null
         if (editing == null) strip = null
+        if (tab != "fine" || kind() != "pc" || pcStyles().none { it.id == tuning }) tuning = null
         val col = sw.col().apply { clipChildren = false }
         if (tabs.size > 1) col.addView(a.part(tabRow(tabs)), sw.lp(-1, -2).apply { leftMargin = sw.px(sw.edge); topMargin = sw.px(6) })
         val body: View = when (kind()) {
             "pc" -> when (tab) {
                 "play" -> editing?.let { id -> pcStyles().firstOrNull { it.id == id } }?.let { styleTunePage(it) } ?: playPage("pc")
-                "fine" -> finePage("pc")
+                "fine" -> tuning?.let { id -> pcStyles().firstOrNull { it.id == id } }?.let { tunedFine(it) } ?: finePage("pc")
                 "away" -> list { pcAwayRows(it) }
                 else -> list { pcPowerRows(it) }
             }
@@ -583,8 +598,16 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
     private fun focusedStyle(): PlayStyles.Style? = (a.currentFocus?.tag as? String)?.takeIf { it.startsWith("style:") }
             ?.removePrefix("style:")?.let { id -> pcStyles().firstOrNull { it.id == id } }
 
+    /** Hold A (or a long touch) on a style: the Fine-tune tab, editing that style's own values. */
     private fun editStyle(st: PlayStyles.Style) {
-        editing = st.id; lastStyle = st.id; fresh = true; strip = null
+        tab = "fine"; tuning = st.id; editing = null; lastStyle = st.id; fresh = true; strip = null
+        FeelSounds.play(a, FeelSounds.Cue.TAB, 0f)
+        a.render(force = true)
+    }
+
+    /** X on a style: its own page (a list of every setting, Rename, Change icon, Colour). */
+    private fun stylePage(st: PlayStyles.Style) {
+        editing = st.id; tuning = null; lastStyle = st.id; fresh = true; strip = null
         FeelSounds.play(a, FeelSounds.Cue.TAB, 0f)
         a.render(force = true)
     }
@@ -706,7 +729,7 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
         }
         val what = when (k) { "pc" -> "PC"; "ps" -> "PS5"; else -> "Xbox" }
         col.addView(a.part(sw.text("How should $what games play?", 34, sw.ink, 800)), sw.lp(-1, -2).apply { leftMargin = sw.px(e); topMargin = sw.px(26) })
-        val sub = StringBuilder(if (k == "pc") "Pick one. Hold it (or X) to fine-tune it, Y renames it. Now: " else "Pick one. Everything else follows; you can still fine-tune it. Now: ")
+        val sub = StringBuilder(if (k == "pc") "Pick one. Hold it to fine-tune it; X opens its page. Now: " else "Pick one. Everything else follows; you can still fine-tune it. Now: ")
         sub.append(nowName)
         if (custom) sub.append(", in your own ").append(Profile.name(a))
         else if (Profile.isAway(a)) sub.append(if (k == "ps") ". The Away profile is on: Away from home sets what the PS5 uses" else ", in the Away profile")
@@ -864,10 +887,42 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
                 addView(row)
             }), sw.lp(-1, -2).apply { topMargin = sw.px(18) })
         }
-        col.addView(finePage("pc", st), LinearLayout.LayoutParams(-1, 0, 1f))
+        col.addView(list { l ->
+            val rows = sw.col().apply { background = sw.round(sw.panel, CORNER); setPadding(0, sw.px(6), 0, sw.px(6)) }
+            val v = styleVals(st)
+            val rec = if (st.pyro) sizeOf(v.s(RES, a.nativeResolution())).let { (w, h) ->
+                com.limelight.home.Pyrowave.recommendedKbps(w, h, fpsNum(v.s(FPS, "60"))) } else null
+            pcValues(rows, v, st, rec, asList = true)
+            resetRow(rows, st)
+            l.addView(sw.text(if (PlayStyles.inUseId(a) == st.id) "In use: changes apply now." else "This style's own values.", 22, sw.sub, 600),
+                    sw.lp(-1, -2).apply { bottomMargin = sw.px(14) })
+            l.addView(rows, sw.lp(-1, -2))
+        }, LinearLayout.LayoutParams(-1, 0, 1f))
         first?.let { a.primaryView = it }
         return col
     }
+
+    /** Hold A on a style: the Fine-tune tab (tiles and values) for that style's own values, under an "Editing" line. */
+    private fun tunedFine(st: PlayStyles.Style): View {
+        val col = sw.col().apply { clipChildren = false }
+        val color = pcColor(st)
+        col.addView(a.part(sw.row().apply {
+            addView(iconBox(pcIcon(st), color, 52), sw.lp(52, 52))
+            addView(sw.text("Editing: ${pcName(st)}" + (if (st.pyro) " (experimental)" else ""), 26, sw.ink, 800),
+                    sw.lp(-2, -2).apply { leftMargin = sw.px(16) })
+        }), sw.lp(-1, -2).apply { leftMargin = sw.px(sw.edge); topMargin = sw.px(16) })
+        col.addView(finePage("pc", st), LinearLayout.LayoutParams(-1, 0, 1f))
+        return col
+    }
+
+    private fun resetRow(rows: LinearLayout, st: PlayStyles.Style) =
+        vrow(rows, "style:reset", "Reset to default", "") {
+            a.confirm("Reset ${pcName(st)}?", "Values, icon and colour go back to the start. The name stays.", "Reset") {
+                PlayStyles.reset(a, st)
+                if (PlayStyles.inUseId(a) == st.id) usePc(st, quiet = true) else a.render(force = true)
+                a.toast("${pcName(st)} is back to its first values")
+            }
+        }
 
     /** Y on Fine-tune: keep what's set now as one of your own (Custom 1-3). */
     private fun saveAsOwn() {
@@ -923,13 +978,7 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
                 val rec = if (st.pyro) sizeOf(sv!!.s(RES, a.nativeResolution())).let { (w, h) ->
                     com.limelight.home.Pyrowave.recommendedKbps(w, h, fpsNum(sv.s(FPS, "60"))) } else null
                 pcValues(values, sv!!, st, rec)
-                vrow(values, "style:reset", "Reset to default", "") {
-                    a.confirm("Reset ${pcName(st)}?", "Values, icon and colour go back to the start. The name stays.", "Reset") {
-                        PlayStyles.reset(a, st)
-                        if (PlayStyles.inUseId(a) == st.id) usePc(st, quiet = true) else a.render(force = true)
-                        a.toast("${pcName(st)} is back to its first values")
-                    }
-                }
+                resetRow(values, st)
             }
             k == "pc" -> pcValues(values, live, null, null)
             k == "ps" -> psValues(values)
@@ -1100,7 +1149,7 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
      * Fine-tune, which adds its on/off rows: Ultra low latency, or PyroWave's). [pyroRec]: the PyroWave style's
      * recommended bitrate, its Auto.
      */
-    private fun pcValues(list: LinearLayout, v: Vals, st: PlayStyles.Style?, pyroRec: Int?) {
+    private fun pcValues(list: LinearLayout, v: Vals, st: PlayStyles.Style?, pyroRec: Int?, asList: Boolean = false) {
         a.syncNativeRes()
         val native = a.nativeResolution()
         // Native first, then the fixed sizes, then Custom… (any width × height)
@@ -1158,16 +1207,44 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
             val cur = v.s(key, def)
             vrow(list, key, title, opts.firstOrNull { it.second == cur }?.first ?: cur) { pick(title, body, opts, cur) { v.put(key, it) } }
         }
+        fun onOffRow(key: String, title: String, sub: String? = null) {
+            val on = v.b(key, false)
+            vrow(list, key, title, onOff(on), sub?.let { sw.text(it, 22, sw.sub, 600, 2) }) {
+                v.put(key, !on); FeelSounds.play(a, FeelSounds.Cue.TOGGLE); a.render(force = true)
+            }
+        }
         // a play style: PyroWave is its codec; the other styles pick theirs
         if (st?.pyro != true) choose(CODEC, "Video codec", "HEVC and AV1 look better at the same bitrate",
                 listOf("Auto" to "auto", "H.264" to "neverh265", "HEVC" to "forceh265", "AV1" to "forceav1"), "auto")
+        // a style's own page (a list): its on/off settings are rows too; GPU boost sits where the others have Ultra low latency
+        if (asList && st != null) {
+            onOffRow(HDR, "HDR", if (screenHdr()) null else "This screen doesn't show HDR10.")
+            if (st.pyro) onOffRow(PW_BOOST, "PyroWave: GPU boost", "Steadier decoding. Uses more battery.")
+            else onOffRow(ULL, "Ultra low latency", "The decoder's lowest delay.")
+        }
         choose(SHAPE, "Picture shape", "Fit, fill and crop, or stretch.",
                 listOf("Fit" to "fit", "Fill" to "fill", "Stretch" to "stretch"), pcShapeDefault())
         choose(PACING, "Frame pacing", "Smoother motion costs a little delay.",
                 listOf("Lowest delay" to "latency", "Balanced" to "balanced", "Smoothest" to "smoothness"), "latency")
-        // a style's on/off settings are its tiles; PyroWave's dithering has three values, so it's a row
+        if (asList && st != null) {
+            val atNative = v.s(RES, a.nativeResolution()) == a.nativeResolution()
+            choose(FSR, "Super resolution", fsrLine(atNative), listOf("Off" to "off", "FSR 1.0" to "fsr1"), "off")
+            (list.getChildAt(list.childCount - 1) as? LinearLayout)?.addView(sw.text(fsrLine(atNative), 22, sw.sub, 600, 2),
+                    sw.lp(-1, -2).apply { topMargin = sw.px(10) })
+            if (v.s(FSR, "off") == "fsr1") {
+                val sharp = v.i(FSR_SHARP, com.limelight.binding.video.FsrRenderer.DEFAULT_SHARPNESS)
+                vrow(list, FSR_SHARP, "Sharpening", "$sharp%") {
+                    pick("Sharpening", "Lower it if you see halos.", listOf(0, 20, 40, 60, 80, 100).map { "$it%" to it.toString() }, sharp.toString()) {
+                        v.put(FSR_SHARP, it.toInt()) }
+                }
+            }
+            onOffRow(RANGE, "Full range", "Deeper blacks, if this screen shows them.")
+            if (st.pyro) onOffRow(Y444, "YUV 4:4:4", "Sharper text and colour edges.")
+        }
+        // PyroWave's dithering has three values, so it's a row on both pages
         if (st?.pyro == true) choose(PW_DITHER, "PyroWave: spatial dithering", "Hides colour banding.",
                 listOf("Off" to "off", "Low" to "low", "High" to "high"), "off")
+        if (asList && st?.pyro == true) onOffRow(PW_FRONT, "PyroWave: front buffer", "Lower delay. Turn off if it tears.")
     }
 
     private fun fsrLine(atNative: Boolean) = if (atNative) "No effect at Native resolution." else "Sharpens a lower resolution to fit this screen."
