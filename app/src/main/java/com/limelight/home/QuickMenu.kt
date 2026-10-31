@@ -39,7 +39,18 @@ class QuickMenu(private val act: Activity) {
         var live: Detail? = null
         fun staysOpen(flash: String?): Item = apply { stays = true; this.flash = flash }
         fun liveDetail(d: Detail): Item = apply { stays = true; live = d }
+
+        /** A drawn icon (a play style's) in place of [icon]'s text, on a chip tinted with [iconColor]. */
+        var iconView: IconView? = null
+        var iconColor = 0
+        fun drawnIcon(color: Int, v: IconView): Item = apply { iconView = v; iconColor = color }
+
+        /** Holding A (HOLD_MS) or a long touch runs this instead of [action] (a play style's Fine-tune). */
+        var hold: Runnable? = null
+        fun onHold(r: Runnable): Item = apply { hold = r }
     }
+
+    fun interface IconView { fun make(): View }
 
     fun interface Detail { fun get(): String }
 
@@ -104,6 +115,7 @@ class QuickMenu(private val act: Activity) {
                 addView(tv.text(it.detail ?: "", 19, tv.p.dust, tv.ui(600)).also { d ->
                     dv.add(d); if (it.detail == null) d.visibility = View.GONE })
                 setOnClickListener { _ -> choose(i) }   // touch screens (Odin)
+                it.hold?.let { h -> setOnLongClickListener { _ -> held(h); true } }
                 minimumHeight = tv.px(80)   // at least 80; a long label with its detail grows instead of being cut
                 setPadding(tv.px(20), tv.px(10), tv.px(20), tv.px(10))
                 list.addView(this, tv.lp(-1, -2))
@@ -188,7 +200,12 @@ class QuickMenu(private val act: Activity) {
             t.row().apply {
                 setPadding(t.px(24), t.px(14), t.px(24), t.px(14))
                 minimumHeight = t.px(100)
-                addView(txt(it.icon, 18, 0xFFFFFFFF.toInt(), 800).apply {
+                val drawn = it.iconView
+                if (drawn != null) addView(FrameLayout(act).apply {
+                    background = t.round((it.iconColor and 0x00FFFFFF) or 0x2E000000, 12)
+                    addView(drawn.make(), FrameLayout.LayoutParams(t.px(34), t.px(34), Gravity.CENTER))
+                }, t.lp(52, 52).apply { rightMargin = t.px(22) })
+                else addView(txt(it.icon, 18, 0xFFFFFFFF.toInt(), 800).apply {
                     gravity = Gravity.CENTER; background = t.round(if (it.danger) 0xFFE9605A.toInt() else 0xFF5B6170.toInt(), 12)
                 }, t.lp(52, 52).apply { rightMargin = t.px(22) })
                 addView(t.col().apply {
@@ -197,6 +214,7 @@ class QuickMenu(private val act: Activity) {
                             t.lp(-2, -2).apply { topMargin = t.px(4) })
                 }, LinearLayout.LayoutParams(0, -2, 1f))
                 setOnClickListener { _ -> choose(i) }
+                it.hold?.let { h -> setOnLongClickListener { _ -> held(h); true } }
                 list.addView(this, t.lp(-1, -2).apply { topMargin = t.px(10) })
             }
         }
@@ -277,6 +295,7 @@ class QuickMenu(private val act: Activity) {
 
     private fun close() {
         ui.removeCallbacks(tick)
+        ui.removeCallbacks(holdRun); holdKey = 0
         root?.let { (it.parent as? ViewGroup)?.removeView(it) }
         root = null
     }
@@ -338,13 +357,36 @@ class QuickMenu(private val act: Activity) {
         }, 1800)
     }
 
+    // A held on an item with a hold action: the hold after HOLD_MS, else the item on release
+    private var holdKey = 0
+    private var holdFired = false
+    private val holdRun = Runnable { holdFired = true; items.getOrNull(sel)?.hold?.let { held(it) } }
+
+    private fun held(h: Runnable) {
+        FeelSounds.play(act, FeelSounds.Cue.SELECT, PAN)
+        chosenAt = SystemClock.uptimeMillis()
+        close()
+        h.run()
+    }
+
     /** Key events while the menu is open. Always consumes them. */
     fun onKey(e: KeyEvent): Boolean {
+        val confirm = e.keyCode == KeyEvent.KEYCODE_BUTTON_A || e.keyCode == KeyEvent.KEYCODE_DPAD_CENTER || e.keyCode == KeyEvent.KEYCODE_ENTER
+        if (confirm && e.action == KeyEvent.ACTION_UP && holdKey == e.keyCode) {
+            ui.removeCallbacks(holdRun)
+            holdKey = 0
+            if (!holdFired) choose(sel)
+            holdFired = false
+            return true
+        }
         if (e.action != KeyEvent.ACTION_DOWN) return true
         when (e.keyCode) {
             KeyEvent.KEYCODE_DPAD_UP -> move(-1)
             KeyEvent.KEYCODE_DPAD_DOWN -> move(1)
-            KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> if (e.repeatCount == 0) choose(sel)
+            KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> if (e.repeatCount == 0) {
+                if (items.getOrNull(sel)?.hold != null) { holdKey = e.keyCode; holdFired = false; ui.postDelayed(holdRun, HOLD_MS) }
+                else choose(sel)
+            }
             KeyEvent.KEYCODE_BUTTON_B, KeyEvent.KEYCODE_BACK -> if (e.repeatCount == 0) hide()
         }
         return true
@@ -363,6 +405,8 @@ class QuickMenu(private val act: Activity) {
     companion object {
         /** The panel sits on the right, so its sounds lean right. */
         private const val PAN = 0.4f
+        /** How long A is held on an item for its hold action. */
+        private const val HOLD_MS = 500L
 
         /** Physical game pads connected now (not the TV remote). */
         @JvmStatic fun pads(): List<InputDevice> = InputDevice.getDeviceIds().toList().mapNotNull { InputDevice.getDevice(it) }.filter { d ->
