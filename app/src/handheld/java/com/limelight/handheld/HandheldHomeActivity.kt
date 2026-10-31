@@ -159,6 +159,9 @@ class HandheldHomeActivity : Activity() {
             stream.edit().putBoolean(PreferenceConfiguration.NATIVE_RES_PREF_STRING,
                     stream.getString("list_resolution", null).let { it == null || it !in RES_STEPS.map { s -> s.second } || it == nativeResolution() }).apply()
 
+        // PyroWave comes only with Settings' PyroWave play style: on from an older build (the classic switch), it goes off
+        if (stream.getBoolean(com.limelight.home.Pyrowave.PREF, false) && prefs.getString("mc_style_pc", null) != "pyro")
+            stream.edit().putBoolean(com.limelight.home.Pyrowave.PREF, false).apply()
         syncNativeRes()
         MoveToTv.handler = TvSender   // the players' Quick menu offers "Move to <TV>" through this
         // Rebuilt for a theme change (recreate): come back to the same page, not Home (#44)
@@ -1562,15 +1565,26 @@ class HandheldHomeActivity : Activity() {
                 val unlock = stream.getBoolean("checkbox_unlock_fps", false)
                 val fpsSteps = listOf("30", "60", "90", "120") + (if (unlock) listOf("144", "240") else emptyList())
                 val fpsMax = if (unlock) 240 else 120
-                choice(list, stream, "list_fps", "Frame rate", "60 is the smoothest. 30 uses less data and battery", fpsSteps.map { it to it }, "60")
+                // Native first: this screen's refresh rate (mc_native_fps), then the steps
+                val hz = PreferenceConfiguration.nativeFps(this).toString()
+                val nativeFps = stream.getBoolean(PreferenceConfiguration.NATIVE_FPS_PREF_STRING, false)
+                val fpsOpts = listOf("native") + fpsSteps
+                val curFps = if (nativeFps) "native" else stream.getString("list_fps", "60") ?: "60"
+                action(list, "list_fps", "Frame rate", "Native matches this screen ($hz Hz). 30 saves battery",
+                        if (curFps == "native") "Native ($hz)" else curFps) {
+                    val next = fpsOpts[(fpsOpts.indexOf(curFps) + 1) % fpsOpts.size]
+                    stream.edit().putString("list_fps", if (next == "native") hz else next)
+                            .putBoolean(PreferenceConfiguration.NATIVE_FPS_PREF_STRING, next == "native").apply()
+                    render(force = true)
+                }
                 // #42: any PC frame rate, saved straight into list_fps as a number
                 val fps = stream.getString("list_fps", "60") ?: "60"
-                val customFps = fps !in fpsSteps
+                val customFps = !nativeFps && fps !in fpsSteps
                 action(list, "list_fps-custom", "Custom frame rate", "Any rate between the steps above, 15 to $fpsMax fps", if (customFps) "$fps fps" else "Off") {
                     entry("Custom frame rate", "In fps, from 15 to $fpsMax. The PC streams at the rate you pick.", "For example 45", if (customFps) fps else "", true) { raw ->
                         val v = raw.trim().toIntOrNull()
                         if (v == null || v !in 15..fpsMax) "A number from 15 to $fpsMax."
-                        else { stream.edit().putString("list_fps", v.toString()).apply(); render(force = true); null }
+                        else { stream.edit().putString("list_fps", v.toString()).putBoolean(PreferenceConfiguration.NATIVE_FPS_PREF_STRING, false).apply(); render(force = true); null }
                     }
                 }
                 flip(list, stream, "checkbox_unlock_fps", "Unlock all frame rates", "Adds 144 and 240, and Custom up to 240, for PCs and screens that can do it", false) {
@@ -1594,33 +1608,17 @@ class HandheldHomeActivity : Activity() {
                 }
                 // Super resolution: AMD FSR 1.0 upscales a stream smaller than the screen, then sharpens it (PS5 for now)
                 choice(list, stream, com.limelight.binding.video.FsrRenderer.PREF, "Super resolution",
-                        "Sharper picture when the stream is smaller than this screen (AMD FSR 1.0), on PC, PS5 and Xbox. Not with HDR. Uses a little of the GPU",
+                        if (stream.getBoolean(PreferenceConfiguration.NATIVE_RES_PREF_STRING, false)) "No effect at Native resolution."
+                        else "Sharpens a lower resolution to fit this screen.",
                         listOf("Off" to "off", "FSR 1.0" to "fsr1"), "off")
                 if (stream.getString(com.limelight.binding.video.FsrRenderer.PREF, "off") == "fsr1")
                     intChoice(list, com.limelight.binding.video.FsrRenderer.SHARPNESS_PREF, "Sharpening", "How crisp FSR makes edges. Lower it if you see halos",
                             listOf(0, 20, 40, 60, 80, 100), com.limelight.binding.video.FsrRenderer.DEFAULT_SHARPNESS) { "$it%" }
                 choice(list, stream, "video_format", "Video codec", "HEVC and AV1 look better at the same bitrate",
                         listOf("Auto" to "auto", "H.264" to "neverh265", "HEVC" to "forceh265", "AV1" to "forceav1"), "auto")
-                toggle(list, "checkbox_enable_hdr", "HDR", "Only when the PC, the game and this screen support it. With PyroWave: HDR / 10-bit SDR", false)
+                toggle(list, "checkbox_enable_hdr", "HDR", "When the PC, the game and this screen support it.", false)
                 // YUV 4:4:4: only with PyroWave, set by Settings' PyroWave play style (no row of its own any more)
-                // PyroWave: only where this device's GPU can decode it (arm64, Vulkan); hidden elsewhere
-                if (com.limelight.home.Pyrowave.deviceCan(this)) {
-                    val pc = com.limelight.preferences.PreferenceConfiguration.readPreferences(this)
-                    val rec = com.limelight.home.Pyrowave.recommendedKbps(pc.width, pc.height, pc.fps) / 1000
-                    toggle(list, com.limelight.home.Pyrowave.PREF, "PyroWave (wired / fast Wi-Fi only)",
-                            "Lowest delay, with a lot of bitrate: about $rec Mbps at your resolution and frame rate. Needs a PC with PyroWave " +
-                            "in Sunshine; otherwise your codec above is used. HDR above applies to it too. No Super resolution", false)
-                    // The PyroWave group: Moonlight X's Vulkan options for its renderer, and the GPU boost
-                    if (com.limelight.home.Pyrowave.wanted(this)) {
-                        choice(list, stream, "spatial_dithering", "PyroWave: spatial dithering",
-                                "Adds fine moving noise that hides colour banding, most visible in HDR gradients",
-                                listOf("Off" to "off", "Low" to "low", "High" to "high"), "off")
-                        toggle(list, "checkbox_front_buffer", "PyroWave: front buffer rendering",
-                                "Draws each frame straight into the image the screen is showing, skipping the system's queue for lower delay. Turn off if you see tearing, flickering or corrupted video", false)
-                        toggle(list, "checkbox_pyrowave_gpu_boost", "PyroWave: GPU boost",
-                                "Gives the GPU light work between frames so it keeps its clock up, making decoding faster and steadier. Uses more power and runs warmer, so drains the battery faster", false)
-                    }
-                }
+                // PyroWave: only in Settings' PyroWave play style (the PC card), not here
                 toggle(list, "checkbox_full_range", "Full range colour", "Experimental: deeper blacks and brighter whites. On screens that don't handle it, dark and light detail is lost", false)
                 choice(list, stream, "list_video_scale_mode", "Picture shape", "Fit with bars, fill and crop, or stretch",
                         listOf("Fit" to "fit", "Fill" to "fill", "Stretch" to "stretch"), if (stream.getBoolean("checkbox_stretch_video", false)) "stretch" else "fit")
@@ -2599,6 +2597,10 @@ class HandheldHomeActivity : Activity() {
             stream.edit().putBoolean(PreferenceConfiguration.NATIVE_RES_PREF_STRING, true).apply()
         if (stream.getBoolean(PreferenceConfiguration.NATIVE_RES_PREF_STRING, false) && stream.getString("list_resolution", null) != nativeResolution())
             stream.edit().putString("list_resolution", nativeResolution()).let { if (commit) it.commit() else it.apply() }
+        // Native frame rate: list_fps holds this screen's refresh rate, as the stream will use
+        val hz = PreferenceConfiguration.nativeFps(this).toString()
+        if (stream.getBoolean(PreferenceConfiguration.NATIVE_FPS_PREF_STRING, false) && stream.getString("list_fps", null) != hz)
+            stream.edit().putString("list_fps", hz).let { if (commit) it.commit() else it.apply() }
     }
 
     internal fun nativeResolution(): String = PreferenceConfiguration.nativeResolution(this)
@@ -2612,6 +2614,8 @@ class HandheldHomeActivity : Activity() {
     // ---------------------------------------------------------------- input
 
     override fun dispatchKeyEvent(e: KeyEvent): Boolean {
+        // a held A on a PC play style opens its Fine-tune; a short press still picks it
+        if (page == Page.SETTINGS && overlayKind == null && !cards.classic && cards.holdKey(e)) return true
         if (e.action == KeyEvent.ACTION_DOWN && overlayKind == null && e.repeatCount == 0) {
             if (page == Page.SETTINGS && !cards.classic && cards.key(e.keyCode)) return true
             when (e.keyCode) {

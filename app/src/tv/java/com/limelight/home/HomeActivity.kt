@@ -119,6 +119,12 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         super.onCreate(b)
         resources.configuration.let { laidOut = "${it.screenWidthDp}x${it.screenHeightDp}@${it.densityDpi}" }
         Profile.syncPcSettings(this)
+        // PyroWave and YUV 4:4:4 are the handheld's PyroWave play style only; the TV offers neither, so an older
+        // build's switches go off here
+        android.preference.PreferenceManager.getDefaultSharedPreferences(this).let { p ->
+            if (p.getBoolean(Pyrowave.PREF, false) || p.getBoolean(Yuv444.PREF, false))
+                p.edit().putBoolean(Pyrowave.PREF, false).putBoolean(Yuv444.PREF, false).apply()
+        }
         com.limelight.PhoneLink.sessionListener = com.limelight.PhoneLink.SessionListener { uuid ->
             runOnUiThread { pcs.remove(uuid); apps.remove(uuid); rawLists.remove(uuid); render(force = true) }
         }
@@ -1045,26 +1051,8 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                             listOf(0, 20, 40, 60, 80, 100), com.limelight.binding.video.FsrRenderer.DEFAULT_SHARPNESS) { "$it%" }
                 choice(list, "video_format", "Video codec", "HEVC and AV1 look better at the same bitrate",
                         listOf("Auto" to "auto", "H.264" to "neverh265", "HEVC" to "forceh265", "AV1" to "forceav1"), "auto")
-                toggle(list, "checkbox_enable_hdr", "HDR", "Only when the PC, the game and this TV support it. With PyroWave: HDR / 10-bit SDR", false)
-                // YUV 4:4:4 is no longer a setting of its own: the handheld's PyroWave style turns it on with PyroWave
-                // PyroWave: only where this TV's GPU can decode it (arm64, Vulkan); hidden elsewhere
-                if (com.limelight.home.Pyrowave.deviceCan(this)) {
-                    val pc = com.limelight.preferences.PreferenceConfiguration.readPreferences(this)
-                    val rec = com.limelight.home.Pyrowave.recommendedKbps(pc.width, pc.height, pc.fps) / 1000
-                    toggle(list, com.limelight.home.Pyrowave.PREF, "PyroWave (wired / fast Wi-Fi only)",
-                            "Lowest delay, with a lot of bitrate: about $rec Mbps at your resolution and frame rate. Needs a PC with PyroWave " +
-                            "in Sunshine; otherwise your codec above is used. HDR above applies to it too. No Super resolution", false)
-                    // The PyroWave group: Moonlight X's Vulkan options for its renderer, and the GPU boost
-                    if (com.limelight.home.Pyrowave.wanted(this)) {
-                        choice(list, "spatial_dithering", "PyroWave: spatial dithering",
-                                "Adds fine moving noise that hides colour banding, most visible in HDR gradients",
-                                listOf("Off" to "off", "Low" to "low", "High" to "high"), "off")
-                        toggle(list, "checkbox_front_buffer", "PyroWave: front buffer rendering",
-                                "Draws each frame straight into the image the screen is showing, skipping the system's queue for lower delay. Turn off if you see tearing, flickering or corrupted video", false)
-                        toggle(list, "checkbox_pyrowave_gpu_boost", "PyroWave: GPU boost",
-                                "Gives the GPU light work between frames so it keeps its clock up, making decoding faster and steadier. Uses more power and runs warmer, so drains the battery faster", false)
-                    }
-                }
+                toggle(list, "checkbox_enable_hdr", "HDR", "When the PC, the game and this TV support it.", false)
+                // PyroWave and YUV 4:4:4: only in the handheld's PyroWave play style, not on the TV
                 toggle(list, "checkbox_full_range", "Full-range colour", "Deeper blacks, if this TV shows them correctly", false)
                 choice(list, "list_video_scale_mode", "Picture shape", "When the stream's shape doesn't match this TV: fit with bars, fill and crop, or stretch",
                         listOf("Fit" to "fit", "Fill" to "fill", "Stretch" to "stretch"),

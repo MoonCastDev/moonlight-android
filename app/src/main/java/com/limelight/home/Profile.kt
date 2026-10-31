@@ -50,7 +50,7 @@ object Profile {
     private val NEW_KEYS = listOf("mc_super_resolution", "mc_fsr_sharpness",
         "ps5_resolution", "ps5_fps_home", "ps5_bitrate_home", "ps5_bitrate_home_custom", "ps5_codec",
         "ps5_away_quality", "away_fps", "away_bitrate", "away_bitrate_custom", "away_codec", "ps5_decoder_latency",
-        "xbox_bitrate") + ConsolePicture.KEYS
+        "xbox_bitrate", "mc_native_fps") + ConsolePicture.KEYS
 
     /** Streaming settings that belong to a profile (PC, audio and Xbox picture). A switch saves and restores these. */
     private val PC_KEYS = listOf(

@@ -450,6 +450,30 @@ public class PreferenceConfiguration {
                 Build.FINGERPRINT.contains("PPR1.180610.011/4079208_2235.1395");
     }
 
+    /** MoonCast: when true, the stream frame rate is [nativeFps], this screen's fastest refresh rate. */
+    public static final String NATIVE_FPS_PREF_STRING = "mc_native_fps";
+
+    /**
+     * MoonCast: Native frame rate, the fastest refresh rate the screen [context] is on can run at (the mode Game's
+     * refresh-rate matching then picks), rounded to a whole number: 120 on a 120 Hz screen, 60 on most others.
+     */
+    public static int nativeFps(Context context) {
+        float hz = 60f;
+        try {
+            Display d = null;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                try { d = context.getDisplay(); } catch (UnsupportedOperationException ignored) { }
+            }
+            if (d == null) d = ((WindowManager) context.getSystemService(Context.WINDOW_SERVICE)).getDefaultDisplay();
+            hz = d.getRefreshRate();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                for (Display.Mode m : d.getSupportedModes()) hz = Math.max(hz, m.getRefreshRate());
+            }
+        } catch (RuntimeException ignored) { }
+        int fps = Math.round(hz);
+        return fps < 24 ? 60 : Math.min(fps, 240);
+    }
+
     /** MoonCast: when true, the stream resolution is [nativeResolution] of the screen it starts on. */
     public static final String NATIVE_RES_PREF_STRING = "mc_native_res";
     /** True when the stream is Native: the whole screen in its own shape, so no bars (a near-square foldable too). */
@@ -684,6 +708,10 @@ public class PreferenceConfiguration {
             String n = nativeResolution(context);
             config.width = getWidthFromResolutionString(n);
             config.height = getHeightFromResolutionString(n);
+        }
+        // MoonCast: Native frame rate, this screen's refresh rate (list_fps holds the same number for the settings pages)
+        if (prefs.getBoolean(NATIVE_FPS_PREF_STRING, false)) {
+            config.fps = nativeFps(context);
         }
 
         if (!prefs.contains(SMALL_ICONS_PREF_STRING)) {
