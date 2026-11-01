@@ -11,10 +11,13 @@ import android.preference.PreferenceManager
 object Profile {
     const val PREF = "stream_profile"
 
-    /** Every profile: Home, Away and three of your own (Saleh). */
-    val MODES = listOf("home", "away", "custom1", "custom2", "custom3")
+    /**
+     * The profiles: Home and Away. The handheld's PC play styles replaced the three of your own (custom1-3): one left
+     * chosen becomes Home ([syncPcSettings] keeps its saved settings on disk, unused).
+     */
+    val MODES = listOf("home", "away")
 
-    /** "home", "away", "custom1", "custom2" or "custom3", as chosen in Settings. Anything else (an old "auto") is Home. */
+    /** "home" or "away", as chosen in Settings. Anything else (an old "auto", a custom profile) is Home. */
     @JvmStatic
     fun mode(ctx: Context): String =
         PreferenceManager.getDefaultSharedPreferences(ctx).getString(PREF, "home")?.takeIf { it in MODES } ?: "home"
@@ -137,6 +140,8 @@ object Profile {
     @JvmStatic
     fun syncPcSettings(ctx: Context) {
         val p = PreferenceManager.getDefaultSharedPreferences(ctx)
+        // a custom profile (gone) still chosen: Home. Its settings were saved under its name and stay there
+        p.getString(PREF, null)?.let { if (it !in MODES) p.edit().putString(PREF, "home").apply() }
         val want = mode(ctx)
         val applied = p.getString(APPLIED, "home") ?: "home"
         if (applied == want) return

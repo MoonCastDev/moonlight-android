@@ -1751,20 +1751,13 @@ class HandheldHomeActivity : Activity() {
         }
     }
 
-    /** Settings, Picture: the streaming profile (Home, Away, your own), and Rename for your own. */
+    /** Settings, Picture: the streaming profile (Home or Away) and Away's automatic switch. */
     internal fun profileRows(list: LinearLayout) {
         // Home and Away: one switch for PC, PlayStation and Xbox. Each profile keeps its own settings.
-        choice(list, stream, Profile.PREF, "Streaming profile", "Home: best quality on your network. Away: lighter settings for PlayStation Network and slower links. Custom: your own sets",
+        choice(list, stream, Profile.PREF, "Streaming profile", "Home: best quality on your network. Away: lighter settings for PlayStation Network and slower links",
                 Profile.choices(this), "home")
         toggle(list, Profile.AUTO_AWAY_PREF, "Switch to Away automatically",
                 "When Home is chosen and the PC is reached over the internet, that stream uses the Away settings. Away from home there's never PyroWave or more than 100 Mbps", true)
-        if (Profile.isCustom(this)) {
-            val m = Profile.mode(this)
-            action(list, "profile:rename", "Rename this profile", "Its name shows wherever the profile does", Profile.name(this, m)) {
-                entry("Rename this profile", "Up to 24 letters.", "A name", Profile.name(this, m), "text") { v ->
-                    if (v.isBlank()) "Type a name" else { Profile.rename(this, m, v); render(force = true); null } }
-            }
-        }
     }
 
     internal fun psnRow(list: LinearLayout) {

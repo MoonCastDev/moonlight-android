@@ -41,7 +41,6 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
         const val CORNER = 24
         private const val PURPLE = 0xFF8B5CF6.toInt()
         private const val ORANGE = 0xFFF29A2E.toInt()
-        private val CUSTOM = listOf("custom1", "custom2", "custom3")
         private val DECODER = com.limelight.Ps5StreamActivity.DECODER_PREF
         // the PC stream keys the play styles set (the classic list's)
         private const val RES = "list_resolution"
@@ -125,7 +124,7 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
     private fun xbOf(s: String = screen): Xbox.Console? = if (kind(s) == "xb") a.xboxes.firstOrNull { it.id == s.substringAfter(':') } else null
 
     private fun tabsOf(s: String): List<Pair<String, String>> = when (kind(s)) {
-        "pc" -> listOfNotNull("play" to "Play style", "fine" to "Fine-tune", "away" to "Away from home", pcOf(s)?.let { "power" to "Power & wake" })
+        "pc" -> listOfNotNull("fine" to "Fine-tune", "play" to "Play style", "away" to "Away from home", pcOf(s)?.let { "power" to "Power & wake" })
         "ps" -> listOf("play" to "Play style", "fine" to "Fine-tune", "away" to "Away from home", "power" to "Power & sign-in")
         "xb" -> listOf("play" to "Play style", "fine" to "Fine-tune", "sign" to "Sign-in")
         "dev" -> listOf("screen" to "Screen", "sound" to "Sound", "look" to "Look")
@@ -154,7 +153,7 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
         if (pcPlay && editing != null) { h += "Y" to "Rename"; h += "X" to "Exact bitrate" }
         else if (pcPlay) { h += "Y" to "Rename"; h += "Hold A" to "Fine-tune" }
         else if (screen != "home" && tab == "play") h += "X" to "Fine-tune"
-        if (screen != "home" && tab == "fine") { h += "Y" to if (kind() == "pc") "Save into a style" else "Save as my own"; h += "X" to "Details" }
+        if (screen != "home" && tab == "fine") { if (kind() == "pc") h += "Y" to "Save into a style"; h += "X" to "Details" }
         h += "B" to "Back"
         h += "A" to when { screen == "home" -> "Open"; pcPlay && editing != null -> "Change"; tab == "play" -> "Use"; else -> "OK" }
         return h
@@ -178,7 +177,7 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
                     (editing?.let { id -> pcStyles().firstOrNull { it.id == id } } ?: focusedStyle())?.let { renameStyle(it) }
                     return true
                 }
-                if (tab == "fine") { if (kind() == "pc") saveIntoStyle() else saveAsOwn(); return true }
+                if (tab == "fine" && kind() == "pc") { saveIntoStyle(); return true }
             }
         }
         return false
@@ -244,7 +243,7 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
         val tabs = tabsOf(screen)
         if (tabs.isNotEmpty() && tabs.none { it.first == tab }) tab = tabs.first().first
         if (tab != "play" || kind() != "pc" || pcStyles().none { it.id == editing }) editing = null
-        if (editing == null) iconPick = false
+        if (editing == null) strip = null
         val col = sw.col().apply { clipChildren = false }
         if (tabs.size > 1) col.addView(a.part(tabRow(tabs)), sw.lp(-1, -2).apply { leftMargin = sw.px(sw.edge); topMargin = sw.px(6) })
         val body: View = when (kind()) {
@@ -673,7 +672,7 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
             ?.removePrefix("style:")?.let { id -> pcStyles().firstOrNull { it.id == id } }
 
     private fun editStyle(st: PcStyle) {
-        editing = st.id; lastStyle = st.id; fresh = true; iconPick = false
+        editing = st.id; lastStyle = st.id; fresh = true; strip = null
         FeelSounds.play(a, FeelSounds.Cue.TAB, 0f)
         a.render(force = true)
     }
@@ -769,7 +768,6 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
     private fun playPage(k: String): View {
         val col = sw.col().apply { clipChildren = false }
         val e = sw.edge
-        val custom = Profile.isCustom(a)
         val cards = ArrayList<StyleCardData>()
         val nowName: String
         if (k == "pc") {
@@ -779,8 +777,8 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
             nowName = if (exact) pcName(picked) else "${pcName(picked)} (changed)"
             list.forEach { st ->
                 val inUse = st === picked
-                cards += StyleCardData(st.id, pcIcon(st), st.color, pcName(st), if (st.pyro) "Experimental" else null, pcLines(st),
-                        when { inUse && exact -> "✓ In use"; inUse -> "✓ In use, changed"; else -> st.note }, inUse, { usePc(st) }, { editStyle(st) })
+                cards += StyleCardData(st.id, pcIcon(st), pcColor(st), pcName(st), if (st.pyro) "Experimental" else null, pcLines(st),
+                        when { inUse && exact -> "✓ In use"; inUse -> "✓ In use, changed"; else -> "" }, inUse, { usePc(st) }, { editStyle(st) })
             }
         } else {
             val list = styles(k)
@@ -788,17 +786,16 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
             val near = if (now == null) nearest(k, list) else null
             nowName = now?.name ?: "${near!!.name} (changed)"
             list.forEach { s ->
-                val inUse = !custom && s === now
+                val inUse = s === now
                 cards += StyleCardData(s.id, s.icon, s.color, s.name, null, listOf(s.l1, s.l2),
-                        when { inUse -> "✓ In use"; !custom && s === near -> "✓ In use, changed"; else -> s.note }, inUse || (!custom && s === near), { use(k, s) })
+                        when { inUse -> "✓ In use"; s === near -> "✓ In use, changed"; else -> s.note }, inUse || s === near, { use(k, s) })
             }
         }
         val what = when (k) { "pc" -> "PC"; "ps" -> "PS5"; else -> "Xbox" }
         col.addView(a.part(sw.text("How should $what games play?", 34, sw.ink, 800)), sw.lp(-1, -2).apply { leftMargin = sw.px(e); topMargin = sw.px(26) })
         val sub = StringBuilder(if (k == "pc") "Pick one. Hold it (or X) to fine-tune it, Y renames it. Now: " else "Pick one. Everything else follows; you can still fine-tune it. Now: ")
         sub.append(nowName)
-        if (custom) sub.append(", in your own ").append(Profile.name(a))
-        else if (Profile.isAway(a)) sub.append(if (k == "ps") ". The Away profile is on: Away from home sets what the PS5 uses" else ", in the Away profile")
+        if (Profile.isAway(a)) sub.append(if (k == "ps") ". The Away profile is on: Away from home sets what the PS5 uses" else ", in the Away profile")
         if (k == "pc" && a.pcs.values.count { a.paired(it) } > 1) sub.append(". Shared by all your PCs")
         if (k == "ps") sub.append(". Picture shape, Super resolution and pacing stay the same as the PC until you change them")
         sub.append('.')
@@ -845,7 +842,7 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
                     cycle("xbox_rumble", listOf("off", "weak", "medium", "strong"), str("xbox_rumble", "strong")) })
             }
         }
-        // Home / Away / your own: the same switch as the classic Streaming profile row
+        // Home / Away: the same switch as the classic Streaming profile row
         add(chip("chip:profile", "Home / Away · ${Profile.name(a)}") {
             val m = Profile.MODES
             stream.edit().putString(Profile.PREF, m[(m.indexOf(Profile.mode(a)) + 1) % m.size]).apply()
@@ -893,8 +890,17 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
 
     private fun pcIcon(st: PcStyle): String = a.prefs.getString("mc_pcstyle_icon_${st.id}", null)?.takeIf { k -> ICONS.any { it.first == k } } ?: st.icon
 
-    /** Change icon on a style's Fine-tune: the icon strip is showing. */
-    private var iconPick = false
+    /** The colours a style's icon can have (Colour); cyan is the theme's own. Stored as mc_pcstyle_color_<id>. */
+    private val COLORS = listOf("cyan" to 0, "green" to Sw.C_GREEN, "purple" to PURPLE, "orange" to ORANGE,
+            "red" to 0xFFE9605A.toInt(), "pink" to 0xFFEC5FA8.toInt(), "blue" to Sw.C_BLUE, "yellow" to 0xFFF2C94C.toInt())
+
+    private fun colorOf(name: String): Int? = COLORS.firstOrNull { it.first == name }?.let { if (it.first == "cyan") sw.ring else it.second }
+
+    /** A style's icon colour: its own (Colour), else its first one. */
+    private fun pcColor(st: PcStyle): Int = a.prefs.getString("mc_pcstyle_color_${st.id}", null)?.let { colorOf(it) } ?: st.color
+
+    /** Change icon or Colour on a style's page: which strip is showing ("icon", "color"), or null. */
+    private var strip: String? = null
 
     private fun iconBox(icon: String, color: Int, size: Int) = FrameLayout(a).apply {
         background = sw.round((color and 0x00FFFFFF) or 0x2E000000, 18)
@@ -907,42 +913,50 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
         val page = list { l ->
             val inUse = a.prefs.getString("mc_style_pc", null) == st.id
             val icon = pcIcon(st)
-            // the header: its icon and name, Rename and Change icon
+            // the header: its icon and name, Rename, Change icon and Colour
+            val color = pcColor(st)
             l.addView(sw.row().apply {
-                addView(iconBox(icon, st.color, 76), sw.lp(76, 76))
+                addView(iconBox(icon, color, 76), sw.lp(76, 76))
                 addView(sw.col().apply {
                     addView(sw.text(pcName(st), 34, sw.ink, 800))
-                    addView(sw.text(if (st.pyro) "EXPERIMENTAL · FINE-TUNE" else "FINE-TUNE", 18, if (st.pyro) st.color else sw.sub, 800), sw.lp(-2, -2).apply { topMargin = sw.px(4) })
+                    addView(sw.text(if (st.pyro) "EXPERIMENTAL · FINE-TUNE" else "FINE-TUNE", 18, if (st.pyro) color else sw.sub, 800), sw.lp(-2, -2).apply { topMargin = sw.px(4) })
                 }, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = sw.px(22) })
             }, sw.lp(-1, -2))
             l.addView(sw.row().apply {
                 clipChildren = false
                 addView(chip("style:rename", "Rename") { renameStyle(st) }, LinearLayout.LayoutParams(-2, sw.tap(64)))
-                addView(chip("style:icon", if (iconPick) "Close icons" else "Change icon") { iconPick = !iconPick; a.render(force = true) },
+                addView(chip("style:icon", if (strip == "icon") "Close icons" else "Change icon") { strip = if (strip == "icon") null else "icon"; a.render(force = true) },
+                        LinearLayout.LayoutParams(-2, sw.tap(64)).apply { leftMargin = sw.px(16) })
+                addView(chip("style:color", if (strip == "color") "Close colours" else "Colour") { strip = if (strip == "color") null else "color"; a.render(force = true) },
                         LinearLayout.LayoutParams(-2, sw.tap(64)).apply { leftMargin = sw.px(16) })
             }, sw.lp(-1, -2).apply { topMargin = sw.px(18) })
-            if (iconPick) {
-                val strip = sw.row().apply { clipChildren = false }
-                ICONS.forEachIndexed { i, (k, label) ->
-                    val on = k == icon
+            strip?.let { which ->
+                val row = sw.row().apply { clipChildren = false }
+                val curColor = a.prefs.getString("mc_pcstyle_color_${st.id}", null)?.takeIf { colorOf(it) != null }
+                val opts: List<Pair<String, String>> = if (which == "icon") ICONS else COLORS.map { it.first to it.first.replaceFirstChar { c -> c.uppercase() } }
+                opts.forEachIndexed { i, (k, label) ->
+                    val c = if (which == "icon") color else colorOf(k) ?: color
+                    val on = if (which == "icon") k == icon else (curColor == k || (curColor == null && c == st.color))
                     val t = FrameLayout(a).apply {
-                        tag = "icon:$k"
-                        background = sw.round(if (on) sw.ring else sw.panel, 18)
-                        addView(StyleIcon(a, k, if (on) onRing() else st.color), sw.flp(48, 48, Gravity.CENTER))
+                        tag = "$which:$k"
+                        background = if (which == "icon") sw.round(if (on) sw.ring else sw.panel, 18)
+                                     else sw.round((c and 0x00FFFFFF) or 0x2E000000, 18, if (on) sw.ink else 0, 4)
+                        addView(StyleIcon(a, if (which == "icon") k else icon, if (which == "icon" && on) onRing() else c), sw.flp(48, 48, Gravity.CENTER))
                         contentDescription = label
                         sw.focusable(this); sw.pressable(this)
                         setOnClickListener {
-                            a.prefs.edit().apply { if (k == st.icon) remove("mc_pcstyle_icon_${st.id}") else putString("mc_pcstyle_icon_${st.id}", k) }.apply()
-                            iconPick = false; FeelSounds.play(a, FeelSounds.Cue.TOGGLE); a.render(force = true)
+                            if (which == "icon") a.prefs.edit().apply { if (k == st.icon) remove("mc_pcstyle_icon_${st.id}") else putString("mc_pcstyle_icon_${st.id}", k) }.apply()
+                            else a.prefs.edit().putString("mc_pcstyle_color_${st.id}", k).apply()
+                            strip = null; FeelSounds.play(a, FeelSounds.Cue.TOGGLE); a.render(force = true)
                         }
                     }
-                    if (on) first = t
-                    strip.addView(t, sw.lp(96, 96).apply { if (i > 0) leftMargin = sw.px(14) })
+                    if (on && first == null) first = t
+                    row.addView(t, sw.lp(96, 96).apply { if (i > 0) leftMargin = sw.px(14) })
                 }
                 l.addView(RowScroll(a, sw.px(20)).apply {
                     isHorizontalScrollBarEnabled = false; isFocusable = false; clipChildren = false; clipToPadding = false
                     overScrollMode = View.OVER_SCROLL_NEVER
-                    addView(strip)
+                    addView(row)
                 }, sw.lp(-1, -2).apply { topMargin = sw.px(18) })
             }
             l.addView(sw.text((if (inUse) "In use: changes apply now." else "Its own values. Picking it uses them.") + " B goes back.", 23, sw.sub, 600, 2),
@@ -953,8 +967,8 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
                 com.limelight.home.Pyrowave.recommendedKbps(w, h, fpsNum(v.s(FPS, "60"))) } else null
             pcValues(rows, v, st, rec)
             vrow(rows, "style:reset", "Reset to default", "") {
-                a.confirm("Reset ${pcName(st)}?", "Values and icon go back to the start. The name stays.", "Reset") {
-                    a.prefs.edit().remove("mc_pcstyle_${st.id}").remove("mc_pcstyle_icon_${st.id}").apply()
+                a.confirm("Reset ${pcName(st)}?", "Values, icon and colour go back to the start. The name stays.", "Reset") {
+                    a.prefs.edit().remove("mc_pcstyle_${st.id}").remove("mc_pcstyle_icon_${st.id}").remove("mc_pcstyle_color_${st.id}").apply()
                     if (a.prefs.getString("mc_style_pc", null) == st.id) usePc(st, quiet = true) else a.render(force = true)
                     a.toast("${pcName(st)} is back to its first values")
                 }
@@ -964,18 +978,6 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
         }
         first?.let { a.primaryView = it }
         return page
-    }
-
-    /** Y on Fine-tune: keep what's set now as one of your own (Custom 1-3). */
-    private fun saveAsOwn() {
-        val cur = Profile.mode(a)
-        val opts = CUSTOM.map { m ->
-            HandheldHomeActivity.Opt("✎", Sw.PC, Profile.name(a, m),
-                    if (m == cur) "In use now: changes already go into it" else "Replaces what it held with what's set now", if (m == cur) "Now" else null, m != cur) {
-                Profile.saveInto(a, m); a.toast("Saved into ${Profile.name(a, m)}. Pick it in Classic settings, Streaming profile, to use it")
-            }
-        }
-        a.dialog("Save as my own style", "Every PC, PS5 and Xbox setting in use now goes into the one you pick.", opts, listOf("Cancel" to {}))
     }
 
     // ---------------------------------------------------------------- Fine-tune
@@ -1007,9 +1009,8 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
         left.addView(grid, sw.lp(-2, -2))
         val name = nowLabel(k)
         val withDetails = tiles.filter { it.details != null }.joinToString(", ") { it.title }
-        left.addView(sw.text("Now: $name" + (if (Profile.isCustom(a)) ", in your own ${Profile.name(a)}" else "") +
-                ". Changing anything here makes it \"(changed)\"; " +
-                (if (k == "pc") "Y saves it into one of the play styles." else "Y saves it as one of your own (${CUSTOM.joinToString(", ") { Profile.name(a, it) }}).") +
+        left.addView(sw.text("Now: $name" +
+                ". Changing anything here makes it \"(changed)\"" + (if (k == "pc") "; Y saves it into one of the play styles." else ".") +
                 (if (withDetails.isNotEmpty()) " X on $withDetails shows more." else "") +
                 (if (k == "pc") " Every other option is in Classic settings." else ""), 22, sw.sub, 600, 4),
                 sw.lp(-1, -2).apply { topMargin = sw.px(24) })
@@ -1276,6 +1277,9 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
             FeelSounds.play(a, FeelSounds.Cue.FOCUS, 0f)
         }
         bar.onPick = { move(it) }
+        // a tap on the value ("40 Mbps") types an exact bitrate, as A on the row does
+        value.setOnClickListener { exact() }
+        value.setPadding(sw.px(12), sw.px(6), 0, sw.px(6))
         list.addView(sw.col().apply {
             tag = "set:$KBPS"
             if (list.childCount > 0) background = sw.topLine()
@@ -1526,7 +1530,6 @@ internal class SliderBar(ctx: Context, private val count: Int, private val fill:
         p.color = fill; cv.drawLine(xOf(0), y, xOf(at), y, p)
         // a tick per step, so the snapping shows
         p.style = Paint.Style.FILL
-        for (i in 0 until count) { p.color = if (i <= at) fill else track; cv.drawCircle(xOf(i), y, thick * 0.75f, p) }
         p.color = fill; cv.drawCircle(xOf(at), y, knob, p)
         p.style = Paint.Style.STROKE
     }

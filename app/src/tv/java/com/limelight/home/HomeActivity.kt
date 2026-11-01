@@ -1011,18 +1011,10 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         when (settingsGroup) {
             "video" -> {
                 // Home and Away: one switch for PC, PlayStation and Xbox. Each profile keeps its own settings.
-                choice(list, Profile.PREF, "Streaming profile", "Home: best quality on your network. Away: lighter settings for PlayStation Network and slower links. Custom: your own sets",
+                choice(list, Profile.PREF, "Streaming profile", "Home: best quality on your network. Away: lighter settings for PlayStation Network and slower links",
                         Profile.choices(this), "home")
                 toggle(list, Profile.AUTO_AWAY_PREF, "Switch to Away automatically",
                         "When Home is chosen and the PC is reached over the internet, that stream uses the Away settings. Away from home there's never PyroWave or more than 100 Mbps", true)
-                // a custom profile can be renamed, as on the handheld; the name shows wherever the profile does
-                if (Profile.isCustom(this)) {
-                    val m = Profile.mode(this)
-                    action(list, "set:profilename", "Rename this profile", "Its name shows wherever the profile does", Profile.name(this, m)) {
-                        entryDialog("Rename this profile", "Up to 24 letters.", "A name", Profile.name(this, m), false, maxLength = 24, onSave = { v ->
-                            if (v.isBlank()) "Type a name" else { Profile.rename(this, m, v); render(force = true); null } })
-                    }
-                }
                 // Native: this screen's real panel size (its display mode), as in Moonlight/Artemis' "Native (WxH)"
                 val native = nativeResolution()
                 val presets = listOf("720p" to "1280x720", "1080p" to "1920x1080", "1440p" to "2560x1440", "4K" to "3840x2160")
