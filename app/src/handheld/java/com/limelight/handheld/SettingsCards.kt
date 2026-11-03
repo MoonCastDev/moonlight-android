@@ -1209,13 +1209,20 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
                 else { v.put(KBPS, (Math.round(n * 2) * 500).toInt()); a.render(force = true); null }
             }
         }
-        bitrateSlider(list, listOf(0) + HandheldHomeActivity.BITRATE_STEPS.map { it * 1000 }, kbps, autoLabel, { v.put(KBPS, it) }, exact)
+        bitrateSlider(list, listOf(0) + HandheldHomeActivity.BITRATE_STEPS.map { it * 1000 }, kbps, autoLabel, { v.put(KBPS, it) }, exact,
+                if (bool(com.limelight.home.AutoBitrate.PREF, true)) "Bitrate (ceiling)" else "Bitrate")
         // Automatic bitrate: a setting of the profile (not of a play style), so it reads and writes the live settings
         run {
             val on = bool(com.limelight.home.AutoBitrate.PREF, true)
-            vrow(list, com.limelight.home.AutoBitrate.PREF, "Automatic bitrate", onOff(on), sw.text(com.limelight.home.AutoBitrate.SUBTITLE, 22, sw.sub, 600, 3)) {
+            val uuid = pcOf()?.uuid
+            vrow(list, com.limelight.home.AutoBitrate.PREF, "Automatic bitrate", onOff(on),
+                    sw.text(com.limelight.home.AutoBitrate.SUBTITLE + "\n" + com.limelight.home.AutoBitrate.settingsLine(a, uuid), 22, sw.sub, 600, 4)) {
                 stream.edit().putBoolean(com.limelight.home.AutoBitrate.PREF, !on).apply()
                 FeelSounds.play(a, FeelSounds.Cue.TOGGLE); a.render(force = true)
+            }
+            val limit = com.limelight.home.AutoBitrate.limitHere(a, uuid)
+            if (on && limit != null) vrow(list, "mc_auto_bitrate_forget", "Forget this network's limit", "${limit.rate / 1000} Mbps") {
+                com.limelight.home.AutoBitrate.forgetHere(a); a.render(force = true)
             }
         }
         fun choose(key: String, title: String, body: String?, opts: List<Pair<String, String>>, def: String) {
@@ -1265,7 +1272,8 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
      * Bitrate as a slider: [steps] in kbps (0 is Auto, [autoLabel]), snapping. D-pad left / right moves one step and a
      * finger drags it; each step is saved at once (no redraw). A or X types an exact value ([exact]).
      */
-    private fun bitrateSlider(list: LinearLayout, steps: List<Int>, kbps: Int, autoLabel: String, save: (Int) -> Unit, exact: () -> Unit) {
+    private fun bitrateSlider(list: LinearLayout, steps: List<Int>, kbps: Int, autoLabel: String, save: (Int) -> Unit, exact: () -> Unit,
+                              title: String = "Bitrate") {
         val onStep = steps.indexOf(kbps)
         var i = if (onStep >= 0) onStep else if (kbps == 0) 0 else steps.indices.minByOrNull { Math.abs(steps[it] - kbps) } ?: 0
         val value = sw.text("", 28, sw.ring, 800)
@@ -1293,7 +1301,7 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
             if (list.childCount > 0) background = sw.topLine()
             setPadding(sw.px(26), sw.px(22), sw.px(26), sw.px(22))
             addView(sw.row().apply {
-                addView(sw.text("Bitrate", 28, sw.ink, 700), LinearLayout.LayoutParams(0, -2, 1f))
+                addView(sw.text(title, 28, sw.ink, 700), LinearLayout.LayoutParams(0, -2, 1f))
                 addView(value, sw.lp(-2, -2).apply { leftMargin = sw.px(20) })
             }, sw.lp(-1, -2))
             addView(bar, sw.lp(-1, 44).apply { topMargin = sw.px(12) })

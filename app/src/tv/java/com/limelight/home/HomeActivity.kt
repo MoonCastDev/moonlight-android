@@ -1035,7 +1035,13 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                 val customRate = kbps != 0 && (kbps / 1000 !in QuickBitrate.PC_STEPS || kbps % 1000 != 0)
                 action(list, "set:customrate", "Custom bitrate", "Any value between the steps above, in Mbps",
                         if (customRate) "${kbps / 1000} Mbps" else "Off") { customBitrate(kbps) }
-                toggle(list, AutoBitrate.PREF, "Automatic bitrate", AutoBitrate.SUBTITLE, true)
+                toggle(list, AutoBitrate.PREF, "Automatic bitrate", AutoBitrate.SUBTITLE + " " + AutoBitrate.settingsLine(this, null), true)
+                AutoBitrate.limitHere(this, null)?.let { l ->
+                    if (AutoBitrate.enabled(this)) action(list, "set:autobitrate_forget", "Forget this network's limit",
+                            "Automatic bitrate learnt ${l.rate / 1000} Mbps here; forget it and start from the bitrate set", "${l.rate / 1000} Mbps") {
+                        AutoBitrate.forgetHere(this); render(force = true)
+                    }
+                }
                 choice(list, com.limelight.binding.video.FsrRenderer.PREF, "Super resolution",
                         "Sharper picture when the stream is smaller than this TV (AMD FSR 1.0), on PC, PS5 and Xbox. Not with HDR. Uses a little of the GPU",
                         listOf("Off" to "off", "FSR 1.0" to "fsr1"), "off")
@@ -1327,7 +1333,9 @@ class HomeActivity : Activity(), PhoneLink.Listener {
         val kbps = stream.getInt("seekbar_bitrate_kbps", 0)
         val cur = kbps / 1000
         val shown = if (cur == 0) "Auto" else "$cur Mbps"
-        settingRow(list, "seekbar_bitrate_kbps", "Bitrate", QuickBitrate.highHint(kbps) ?: "Auto picks one for the resolution. Raise it for a sharper picture on a fast network",
+        val auto = AutoBitrate.enabled(this)
+        settingRow(list, "seekbar_bitrate_kbps", if (auto) "Bitrate (ceiling)" else "Bitrate", QuickBitrate.highHint(kbps)
+                ?: if (auto) "The most Automatic bitrate uses. Auto picks one for the resolution" else "Auto picks one for the resolution. Raise it for a sharper picture on a fast network",
                 true, tv.text(shown, 23, tv.p.moon, tv.ui(700))) {
             val next = steps[(steps.indexOf(steps.firstOrNull { it >= cur } ?: 0) + 1) % steps.size]
             if (next == 0) stream.edit().remove("seekbar_bitrate_kbps").apply()

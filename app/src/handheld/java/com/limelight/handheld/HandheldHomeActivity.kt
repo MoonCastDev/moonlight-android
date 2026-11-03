@@ -1606,7 +1606,14 @@ class HandheldHomeActivity : Activity() {
                         else { stream.edit().putInt("seekbar_bitrate_kbps", (Math.round(v * 2) * 500).toInt()).apply(); render(force = true); null }
                     }
                 }
-                toggle(list, com.limelight.home.AutoBitrate.PREF, "Automatic bitrate", com.limelight.home.AutoBitrate.SUBTITLE, true)
+                toggle(list, com.limelight.home.AutoBitrate.PREF, "Automatic bitrate",
+                        com.limelight.home.AutoBitrate.SUBTITLE + " " + com.limelight.home.AutoBitrate.settingsLine(this, null), true)
+                com.limelight.home.AutoBitrate.limitHere(this, null)?.let { l ->
+                    if (com.limelight.home.AutoBitrate.enabled(this)) action(list, "mc_auto_bitrate_forget", "Forget this network's limit",
+                            "Automatic bitrate learnt ${l.rate / 1000} Mbps here; forget it and start from the bitrate set", "${l.rate / 1000} Mbps") {
+                        com.limelight.home.AutoBitrate.forgetHere(this); render(force = true)
+                    }
+                }
                 // Super resolution: AMD FSR 1.0 upscales a stream smaller than the screen, then sharpens it (PS5 for now)
                 choice(list, stream, com.limelight.binding.video.FsrRenderer.PREF, "Super resolution",
                         if (stream.getBoolean(PreferenceConfiguration.NATIVE_RES_PREF_STRING, false)) "No effect at Native resolution."
@@ -1901,7 +1908,9 @@ class HandheldHomeActivity : Activity() {
         val kbps = stream.getInt("seekbar_bitrate_kbps", 0)
         val cur = kbps / 1000
         val custom = kbps != 0 && (cur !in BITRATE_STEPS || kbps % 1000 != 0)
-        srow(list, "seekbar_bitrate_kbps", "Bitrate", com.limelight.home.QuickBitrate.highHint(kbps) ?: "Auto picks one for the resolution", value(if (kbps == 0) "Auto" else if (custom) "Custom" else "$cur Mbps")) {
+        val auto = com.limelight.home.AutoBitrate.enabled(this)
+        srow(list, "seekbar_bitrate_kbps", if (auto) "Bitrate (ceiling)" else "Bitrate", com.limelight.home.QuickBitrate.highHint(kbps)
+                ?: if (auto) "The most Automatic bitrate uses. Auto picks one for the resolution" else "Auto picks one for the resolution", value(if (kbps == 0) "Auto" else if (custom) "Custom" else "$cur Mbps")) {
             val next = steps[(steps.indexOf(steps.firstOrNull { it >= cur } ?: 0) + 1) % steps.size]
             if (next == 0) stream.edit().remove("seekbar_bitrate_kbps").apply() else stream.edit().putInt("seekbar_bitrate_kbps", next * 1000).apply()
             render(force = true)

@@ -1678,7 +1678,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                     () -> java.util.Arrays.asList(
                             com.limelight.home.QuickMenu.stat(String.format(java.util.Locale.US, "%.0f", com.limelight.home.StreamStats.INSTANCE.getFps()), "Frames per second"),
                             com.limelight.home.QuickMenu.stat(com.limelight.home.StreamStats.INSTANCE.getRttMs() + " ms", "Network delay"),
-                            com.limelight.home.QuickMenu.stat(com.limelight.home.AutoBitrate.label(streamKbps(), autoOn()),
+                            com.limelight.home.QuickMenu.stat(com.limelight.home.AutoBitrate.label(streamKbps(), autoOn(), autoBitrate != null ? autoBitrate.getLimitKbps() : 0),
                                     decoderRenderer != null && decoderRenderer.isPyrowaveActive() ? "Picture quality · PyroWave" : "Picture quality"),
                             com.limelight.home.QuickMenu.stat(String.format(java.util.Locale.US, "%.1f%%", com.limelight.home.StreamStats.INSTANCE.getLossPct()), "Lost frames"),
                             com.limelight.home.QuickMenu.stat(String.format(java.util.Locale.US, "%.1f ms", com.limelight.home.StreamStats.INSTANCE.getDecodeMs()), "Decode delay")),
@@ -1920,9 +1920,6 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         return autoPlan != null && autoPlan.on;
     }
 
-    /** Polaris's session for live bitrate changes (AutoBitrate.polarisSession), looked up once per stream. */
-    private volatile com.limelight.home.AutoBitrate.PolarisSession polarisSession;
-
     private NvHTTP hostHttp() throws java.io.IOException, CertificateException {
         Intent i = getIntent();
         X509Certificate cert = null;
@@ -1938,41 +1935,39 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         if (autoPlan == null || !autoPlan.on || autoBitrate != null) return;
         autoBitrate = new com.limelight.home.AutoBitrate.Controller(this, autoPlan, new com.limelight.home.AutoBitrate.Stream() {
             @Override
-            public boolean liveCapable() {
-                if (!polarisHost) return false;
-                try {
-                    polarisSession = com.limelight.home.AutoBitrate.polarisSession(hostHttp().polarisApi("polaris/v1/session/status", null));
-                } catch (Exception e) {
-                    LimeLog.warning("MoonCast: auto bitrate: Polaris session status: " + e);
-                    polarisSession = null;
-                }
-                return polarisSession != null;
+            public com.limelight.home.AutoBitrate.LiveControl probeLive() {
+                // every host is probed (a stock Sunshine just answers 404): what it can do, not what it's called
+                return com.limelight.home.AutoBitrate.probe((path, json) -> hostHttp().hostJsonApi(path, json));
             }
 
             @Override
-            public boolean setLive(int kbps) {
-                com.limelight.home.AutoBitrate.PolarisSession ps = polarisSession;
-                if (ps == null) return false;
-                try {
-                    String reply = hostHttp().polarisApi("polaris/v1/session/bitrate", com.limelight.home.AutoBitrate.polarisBitrateBody(ps, kbps));
-                    LimeLog.info("MoonCast: auto bitrate: Polaris set " + kbps / 1000 + " Mbps: " + (reply.length() > 200 ? reply.substring(0, 200) : reply));
-                    return new org.json.JSONObject(reply).optBoolean("status", false);
-                } catch (Exception e) {
-                    LimeLog.warning("MoonCast: auto bitrate: Polaris live bitrate: " + e);
-                    return false;
+            public boolean busy() {
+                if (isFinishing() || (quickMenu != null && quickMenu.isShowing())) return true;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    android.view.WindowInsets in = getWindow().getDecorView().getRootWindowInsets();
+                    return in != null && in.isVisible(android.view.WindowInsets.Type.ime());
                 }
+                return false;
             }
 
             @Override
-            public boolean reconnect(String note) {
-                if (isFinishing() || (quickMenu != null && quickMenu.isShowing())) return false;
+            public void reconnect(String note) {
                 reconnectForBitrate(note);
-                return true;
             }
 
             @Override
             public void toast(String text) {
                 if (!isFinishing()) Toast.makeText(Game.this, text, Toast.LENGTH_LONG).show();
+            }
+
+            @Override
+            public void suggest(String text, String button, Runnable action) {
+                if (isFinishing()) return;
+                new android.app.AlertDialog.Builder(Game.this)
+                        .setMessage(text)
+                        .setPositiveButton(button, (d, w) -> action.run())
+                        .setNegativeButton("Not now", null)
+                        .show();
             }
 
             @Override
@@ -1983,6 +1978,11 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             @Override
             public boolean pyro444() {
                 return pyro() && (decoderRenderer.getActiveVideoFormat() & MoonBridge.VIDEO_FORMAT_MASK_YUV444) != 0;
+            }
+
+            @Override
+            public float decodeMs() {
+                return com.limelight.home.StreamStats.INSTANCE.getDecodeMs();
             }
         }, prefConfig.width, prefConfig.height, prefConfig.fps);
         autoBitrate.start();
@@ -3450,7 +3450,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             String codec = codecName();
             chips.add(new com.limelight.home.StatsPill.Chip(String.format(us, "%.0f fps", st.getShownFps()),
                     String.format(us, "shown, %.0f received", st.getReceivedFps())));
-            chips.add(new com.limelight.home.StatsPill.Chip(com.limelight.home.AutoBitrate.label(streamKbps(), autoOn()), "bitrate"));
+            chips.add(new com.limelight.home.StatsPill.Chip(com.limelight.home.AutoBitrate.label(streamKbps(), autoOn(), autoBitrate != null ? autoBitrate.getLimitKbps() : 0), "bitrate"));
             chips.add(new com.limelight.home.StatsPill.Chip(st.getRttMs() + " ms", "network delay ± " + st.getRttVarMs() + " ms"));
             chips.add(new com.limelight.home.StatsPill.Chip(String.format(us, "%.1f ms", st.getDecodeMs()), "decode"));
             if (st.getHostAvgMs() >= 0) chips.add(new com.limelight.home.StatsPill.Chip(String.format(us, "%.1f ms", st.getHostAvgMs()),

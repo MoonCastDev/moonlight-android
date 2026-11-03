@@ -459,11 +459,11 @@ public class NvHTTP {
     }
 
     /**
-     * MoonCast: Polaris's own JSON API on the paired HTTPS port (the same client certificate as /launch), for
+     * MoonCast: a host's JSON API on the paired HTTPS port (Polaris's /polaris/v1/...) (the same client certificate as /launch), for
      * example "polaris/v1/session/status". [jsonBody] null: GET, otherwise a POST of that JSON. Returns the reply's
      * body; an HTTP error throws HostHttpResponseException with its code (the body, when JSON, is in the message).
      */
-    public String polarisApi(String path, String jsonBody) throws IOException {
+    public String hostJsonApi(String path, String jsonBody) throws IOException {
         HttpUrl url = getHttpsUrl(true).newBuilder().addPathSegments(path)
                 .addQueryParameter("uniqueid", uniqueId).build();
         Request.Builder rb = new Request.Builder().url(url);
