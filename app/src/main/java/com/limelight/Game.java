@@ -117,6 +117,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
     private PreferenceConfiguration prefConfig;
     private com.limelight.home.AwayStream.Plan awayPlan;
+    /** MoonCast: Automatic bitrate's plan for this stream (AutoBitrate.prepare) and its watcher once the stream runs. */
+    private com.limelight.home.AutoBitrate.Plan autoPlan;
+    private com.limelight.home.AutoBitrate.Controller autoBitrate;
     private SharedPreferences tombstonePrefs;
 
     private NvConnection conn;
@@ -233,6 +236,10 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         awayPlan = com.limelight.home.AwayStream.prepare(this, prefConfig,
                 getIntent().getStringExtra(EXTRA_HOST), getIntent().getStringExtra(EXTRA_PC_UUID));
         if (awayPlan.message != null) Toast.makeText(this, awayPlan.message, Toast.LENGTH_LONG).show();
+        // MoonCast: Automatic bitrate: start within what this PC got on this network lately
+        autoPlan = com.limelight.home.AutoBitrate.prepare(this, prefConfig, getIntent().getStringExtra(EXTRA_PC_UUID), awayPlan.away,
+                com.limelight.home.AwayStream.pyrowave(this));
+        if (autoPlan.note != null && awayPlan.message == null) Toast.makeText(this, autoPlan.note, Toast.LENGTH_LONG).show();
         trace(foldLabel(getResources().getConfiguration()) + ": stream " + prefConfig.width + "x" + prefConfig.height
                 + ", Native " + PreferenceConfiguration.nativeWholeScreen(this) + ", Polaris " + polarisHost);
         tombstonePrefs = Game.this.getSharedPreferences("DecoderTombstone", 0);
@@ -478,7 +485,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         if (com.limelight.home.AwayStream.pyrowave(this) && com.limelight.home.Pyrowave.deviceCan(this)) {
             supportedVideoFormats |= MoonBridge.VIDEO_FORMAT_PYROWAVE;
             boolean pyrowaveTenBit = prefConfig.enableHdr;
-            boolean pyrowave444 = com.limelight.home.AwayStream.yuv444(this);
+            // Automatic bitrate: 4:2:0 when the link holds PyroWave below 2/3 of its recommended rate
+            boolean pyrowave444 = com.limelight.home.AwayStream.yuv444(this) && autoPlan.allow444;
             if (pyrowaveTenBit) supportedVideoFormats |= MoonBridge.VIDEO_FORMAT_PYROWAVE_10BIT;
             if (pyrowave444) supportedVideoFormats |= MoonBridge.VIDEO_FORMAT_PYROWAVE_444;
             if (pyrowaveTenBit && pyrowave444) supportedVideoFormats |= MoonBridge.VIDEO_FORMAT_PYROWAVE_10BIT_444;
@@ -1133,6 +1141,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     protected void onDestroy() {
         super.onDestroy();
         com.limelight.home.AwayStream.end(awayPlan);
+        if (autoBitrate != null) autoBitrate.stop();
 
         PhoneGamepad.stopFor(conn);
         PhoneGamepad.streamEnded(playGen);   // a later stream from the TV's own home has its controllers again
@@ -1669,7 +1678,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                     () -> java.util.Arrays.asList(
                             com.limelight.home.QuickMenu.stat(String.format(java.util.Locale.US, "%.0f", com.limelight.home.StreamStats.INSTANCE.getFps()), "Frames per second"),
                             com.limelight.home.QuickMenu.stat(com.limelight.home.StreamStats.INSTANCE.getRttMs() + " ms", "Network delay"),
-                            com.limelight.home.QuickMenu.stat((prefConfig.bitrate / 1000) + " Mbps",
+                            com.limelight.home.QuickMenu.stat(com.limelight.home.AutoBitrate.label(streamKbps(), autoOn()),
                                     decoderRenderer != null && decoderRenderer.isPyrowaveActive() ? "Picture quality · PyroWave" : "Picture quality"),
                             com.limelight.home.QuickMenu.stat(String.format(java.util.Locale.US, "%.1f%%", com.limelight.home.StreamStats.INSTANCE.getLossPct()), "Lost frames"),
                             com.limelight.home.QuickMenu.stat(String.format(java.util.Locale.US, "%.1f ms", com.limelight.home.StreamStats.INSTANCE.getDecodeMs()), "Decode delay")),
@@ -1902,10 +1911,93 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         }
     }
 
+    /** The bitrate the stream runs at now, kbps: Automatic bitrate's, else the one it started with. */
+    private int streamKbps() {
+        return autoBitrate != null ? autoBitrate.getCurrentKbps() : prefConfig.bitrate;
+    }
+
+    private boolean autoOn() {
+        return autoPlan != null && autoPlan.on;
+    }
+
+    /** Polaris's session for live bitrate changes (AutoBitrate.polarisSession), looked up once per stream. */
+    private volatile com.limelight.home.AutoBitrate.PolarisSession polarisSession;
+
+    private NvHTTP hostHttp() throws java.io.IOException, CertificateException {
+        Intent i = getIntent();
+        X509Certificate cert = null;
+        byte[] der = i.getByteArrayExtra(EXTRA_SERVER_CERT);
+        if (der != null) cert = (X509Certificate) CertificateFactory.getInstance("X.509").generateCertificate(new ByteArrayInputStream(der));
+        return new NvHTTP(new ComputerDetails.AddressTuple(i.getStringExtra(EXTRA_HOST), i.getIntExtra(EXTRA_PORT, NvHTTP.DEFAULT_HTTP_PORT)),
+                i.getIntExtra(EXTRA_HTTPS_PORT, 0), i.getStringExtra(EXTRA_UNIQUEID), cert,
+                streamCrypto != null ? streamCrypto : PlatformBinding.getCryptoProvider(Game.this));
+    }
+
+    /** MoonCast: Automatic bitrate watches the stream that just started (AutoBitrate.Controller). */
+    private void startAutoBitrate() {
+        if (autoPlan == null || !autoPlan.on || autoBitrate != null) return;
+        autoBitrate = new com.limelight.home.AutoBitrate.Controller(this, autoPlan, new com.limelight.home.AutoBitrate.Stream() {
+            @Override
+            public boolean liveCapable() {
+                if (!polarisHost) return false;
+                try {
+                    polarisSession = com.limelight.home.AutoBitrate.polarisSession(hostHttp().polarisApi("polaris/v1/session/status", null));
+                } catch (Exception e) {
+                    LimeLog.warning("MoonCast: auto bitrate: Polaris session status: " + e);
+                    polarisSession = null;
+                }
+                return polarisSession != null;
+            }
+
+            @Override
+            public boolean setLive(int kbps) {
+                com.limelight.home.AutoBitrate.PolarisSession ps = polarisSession;
+                if (ps == null) return false;
+                try {
+                    String reply = hostHttp().polarisApi("polaris/v1/session/bitrate", com.limelight.home.AutoBitrate.polarisBitrateBody(ps, kbps));
+                    LimeLog.info("MoonCast: auto bitrate: Polaris set " + kbps / 1000 + " Mbps: " + (reply.length() > 200 ? reply.substring(0, 200) : reply));
+                    return new org.json.JSONObject(reply).optBoolean("status", false);
+                } catch (Exception e) {
+                    LimeLog.warning("MoonCast: auto bitrate: Polaris live bitrate: " + e);
+                    return false;
+                }
+            }
+
+            @Override
+            public boolean reconnect(String note) {
+                if (isFinishing() || (quickMenu != null && quickMenu.isShowing())) return false;
+                reconnectForBitrate(note);
+                return true;
+            }
+
+            @Override
+            public void toast(String text) {
+                if (!isFinishing()) Toast.makeText(Game.this, text, Toast.LENGTH_LONG).show();
+            }
+
+            @Override
+            public boolean pyro() {
+                return decoderRenderer != null && decoderRenderer.isPyrowaveActive();
+            }
+
+            @Override
+            public boolean pyro444() {
+                return pyro() && (decoderRenderer.getActiveVideoFormat() & MoonBridge.VIDEO_FORMAT_MASK_YUV444) != 0;
+            }
+        }, prefConfig.width, prefConfig.height, prefConfig.fps);
+        autoBitrate.start();
+    }
+
     /** Quick menu, Bitrate: the new one is saved; leave quietly and open the same game again with it (it keeps running). */
     private void reconnectForBitrate() {
-        LimeLog.info("Quick menu: bitrate changed, reconnecting");
-        Toast.makeText(this, "Changing bitrate…", Toast.LENGTH_SHORT).show();
+        reconnectForBitrate(null);
+    }
+
+    /** [note]: Automatic bitrate's reason (toasted), or null for the Quick menu's change. */
+    private void reconnectForBitrate(String note) {
+        LimeLog.info(note != null ? "Automatic bitrate: reconnecting (" + note + ")" : "Quick menu: bitrate changed, reconnecting");
+        Toast.makeText(this, note != null ? note : "Changing bitrate…", note != null ? Toast.LENGTH_LONG : Toast.LENGTH_SHORT).show();
+        if (autoBitrate != null) autoBitrate.stop();
         Intent again = new Intent(getIntent());
         again.removeExtra(EXTRA_START_RETRY);
         displayedFailureDialog = true;
@@ -2703,6 +2795,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     /** Stop the stream; [done] runs on the main thread once the PC was told (null: don't wait). */
     private void stopConnection(final Runnable done) {
         endedByUser = true;   // we stop it ourselves; a termination after this isn't a failure
+        if (autoBitrate != null) autoBitrate.stop();
         PhoneGamepad.stopFor(conn);
         if (connecting || connected) {
             connecting = connected = false;
@@ -2969,6 +3062,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
                 // The phone drives this stream as the controller (native receiver flow): feed its pad into our conn.
                 PhoneGamepad.start(conn, null);
+
+                startAutoBitrate();
 
                 // Hide the mouse cursor now after a short delay.
                 // Doing it before dismissing the spinner seems to be undone
@@ -3345,7 +3440,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             // Lite: the one-row card (test259's), centred at the top
             chips.add(new com.limelight.home.StatsPill.Chip(String.format(us, "%.0f", st.getFps()), "fps"));
             chips.add(new com.limelight.home.StatsPill.Chip(String.valueOf(st.getRttMs()), "ms delay"));
-            chips.add(new com.limelight.home.StatsPill.Chip(String.valueOf(prefConfig.bitrate / 1000), "Mbps"));
+            chips.add(new com.limelight.home.StatsPill.Chip(String.valueOf(streamKbps() / 1000), autoOn() ? "Mbps (auto)" : "Mbps"));
             chips.add(new com.limelight.home.StatsPill.Chip(String.format(us, "%.1f%%", st.getLossPct()), "lost"));
             chips.add(new com.limelight.home.StatsPill.Chip(String.format(us, "%.1f", st.getDecodeMs()), "ms decode"));
             String codec = codecName();
@@ -3355,7 +3450,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             String codec = codecName();
             chips.add(new com.limelight.home.StatsPill.Chip(String.format(us, "%.0f fps", st.getShownFps()),
                     String.format(us, "shown, %.0f received", st.getReceivedFps())));
-            chips.add(new com.limelight.home.StatsPill.Chip((prefConfig.bitrate / 1000) + " Mbps", "bitrate"));
+            chips.add(new com.limelight.home.StatsPill.Chip(com.limelight.home.AutoBitrate.label(streamKbps(), autoOn()), "bitrate"));
             chips.add(new com.limelight.home.StatsPill.Chip(st.getRttMs() + " ms", "network delay ± " + st.getRttVarMs() + " ms"));
             chips.add(new com.limelight.home.StatsPill.Chip(String.format(us, "%.1f ms", st.getDecodeMs()), "decode"));
             if (st.getHostAvgMs() >= 0) chips.add(new com.limelight.home.StatsPill.Chip(String.format(us, "%.1f ms", st.getHostAvgMs()),

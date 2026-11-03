@@ -1035,6 +1035,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                 val customRate = kbps != 0 && (kbps / 1000 !in QuickBitrate.PC_STEPS || kbps % 1000 != 0)
                 action(list, "set:customrate", "Custom bitrate", "Any value between the steps above, in Mbps",
                         if (customRate) "${kbps / 1000} Mbps" else "Off") { customBitrate(kbps) }
+                toggle(list, AutoBitrate.PREF, "Automatic bitrate", AutoBitrate.SUBTITLE, true)
                 choice(list, com.limelight.binding.video.FsrRenderer.PREF, "Super resolution",
                         "Sharper picture when the stream is smaller than this TV (AMD FSR 1.0), on PC, PS5 and Xbox. Not with HDR. Uses a little of the GPU",
                         listOf("Off" to "off", "FSR 1.0" to "fsr1"), "off")

@@ -458,6 +458,25 @@ public class NvHTTP {
         return openHttpConnectionToString(client, baseUrl, path, null);
     }
 
+    /**
+     * MoonCast: Polaris's own JSON API on the paired HTTPS port (the same client certificate as /launch), for
+     * example "polaris/v1/session/status". [jsonBody] null: GET, otherwise a POST of that JSON. Returns the reply's
+     * body; an HTTP error throws HostHttpResponseException with its code (the body, when JSON, is in the message).
+     */
+    public String polarisApi(String path, String jsonBody) throws IOException {
+        HttpUrl url = getHttpsUrl(true).newBuilder().addPathSegments(path)
+                .addQueryParameter("uniqueid", uniqueId).build();
+        Request.Builder rb = new Request.Builder().url(url);
+        if (jsonBody != null) rb.post(okhttp3.RequestBody.create(jsonBody, okhttp3.MediaType.get("application/json")));
+        else rb.get();
+        try (Response response = performAndroidTlsHack(httpClientShortConnectTimeout).newCall(rb.build()).execute()) {
+            ResponseBody body = response.body();
+            String text = body != null ? body.string() : "";
+            if (!response.isSuccessful()) throw new HostHttpResponseException(response.code(), text.isEmpty() ? response.message() : text);
+            return text;
+        }
+    }
+
     private String openHttpConnectionToString(OkHttpClient client, HttpUrl baseUrl, String path, String query) throws IOException {
         try {
             ResponseBody resp = openHttpConnection(client, baseUrl, path, query);

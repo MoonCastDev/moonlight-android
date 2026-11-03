@@ -1606,6 +1606,7 @@ class HandheldHomeActivity : Activity() {
                         else { stream.edit().putInt("seekbar_bitrate_kbps", (Math.round(v * 2) * 500).toInt()).apply(); render(force = true); null }
                     }
                 }
+                toggle(list, com.limelight.home.AutoBitrate.PREF, "Automatic bitrate", com.limelight.home.AutoBitrate.SUBTITLE, true)
                 // Super resolution: AMD FSR 1.0 upscales a stream smaller than the screen, then sharpens it (PS5 for now)
                 choice(list, stream, com.limelight.binding.video.FsrRenderer.PREF, "Super resolution",
                         if (stream.getBoolean(PreferenceConfiguration.NATIVE_RES_PREF_STRING, false)) "No effect at Native resolution."

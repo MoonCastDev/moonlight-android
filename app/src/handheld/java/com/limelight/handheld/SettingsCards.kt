@@ -1210,6 +1210,14 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
             }
         }
         bitrateSlider(list, listOf(0) + HandheldHomeActivity.BITRATE_STEPS.map { it * 1000 }, kbps, autoLabel, { v.put(KBPS, it) }, exact)
+        // Automatic bitrate: a setting of the profile (not of a play style), so it reads and writes the live settings
+        run {
+            val on = bool(com.limelight.home.AutoBitrate.PREF, true)
+            vrow(list, com.limelight.home.AutoBitrate.PREF, "Automatic bitrate", onOff(on), sw.text(com.limelight.home.AutoBitrate.SUBTITLE, 22, sw.sub, 600, 3)) {
+                stream.edit().putBoolean(com.limelight.home.AutoBitrate.PREF, !on).apply()
+                FeelSounds.play(a, FeelSounds.Cue.TOGGLE); a.render(force = true)
+            }
+        }
         fun choose(key: String, title: String, body: String?, opts: List<Pair<String, String>>, def: String) {
             val cur = v.s(key, def)
             vrow(list, key, title, opts.firstOrNull { it.second == cur }?.first ?: cur) { pick(title, body, opts, cur) { v.put(key, it) } }

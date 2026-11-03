@@ -223,6 +223,20 @@ Java_com_limelight_nvstream_jni_MoonBridge_getHostPyroWaveBitstreamId(JNIEnv *en
     return (*env)->NewStringUTF(env, LiGetHostPyroWaveBitstreamId());
 }
 
+// MoonCast: automatic bitrate (see LiGetVideoReceiveTotals() in Limelight.h): {packets, bytes, missing, unrecoverable frames}
+JNIEXPORT void JNICALL
+Java_com_limelight_nvstream_jni_MoonBridge_getVideoReceiveTotals(JNIEnv *env, jclass clazz, jlongArray out) {
+    uint64_t packets, bytes, missing;
+    jlong v[4];
+    if (out == NULL || (*env)->GetArrayLength(env, out) < 4) return;
+    LiGetVideoReceiveTotals(&packets, &bytes, &missing);
+    v[0] = (jlong)packets;
+    v[1] = (jlong)bytes;
+    v[2] = (jlong)missing;
+    v[3] = (jlong)LiGetVideoUnrecoverableFrames();
+    (*env)->SetLongArrayRegion(env, out, 0, 4, v);
+}
+
 JNIEXPORT jbyte JNICALL
 Java_com_limelight_nvstream_jni_MoonBridge_guessControllerType(JNIEnv *env, jclass clazz, jint vendorId, jint productId) {
     unsigned int unDeviceID = MAKE_CONTROLLER_ID(vendorId, productId);

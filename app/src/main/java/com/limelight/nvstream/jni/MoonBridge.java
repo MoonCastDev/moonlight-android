@@ -432,6 +432,10 @@ public class MoonBridge {
     // or empty. Hosts that send it (vibeshine) site 4:2:0 chroma at the center. Valid once the stream has started.
     public static native String getHostPyroWaveBitstreamId();
 
+    /** MoonCast: the video stream's totals so far into [out] (4 longs): packets and bytes received, packets missing by
+     *  RTP sequence, unrecoverable frames. Automatic bitrate. */
+    public static native void getVideoReceiveTotals(long[] out);
+
     public static native byte guessControllerType(int vendorId, int productId);
 
     public static native boolean guessControllerHasPaddles(int vendorId, int productId);
