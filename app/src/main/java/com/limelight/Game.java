@@ -1936,9 +1936,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         if (autoPlan == null || !autoPlan.on || autoBitrate != null) return;
         autoBitrate = new com.limelight.home.AutoBitrate.Controller(this, autoPlan, new com.limelight.home.AutoBitrate.Stream() {
             @Override
-            public com.limelight.home.AutoBitrate.LiveControl probeLive() {
+            public com.limelight.home.AutoBitrate.LiveControl probeLive(int requestKbps) {
                 // every host is probed (a stock Sunshine just answers 404): what it can do, not what it's called
-                return com.limelight.home.AutoBitrate.probe((path, json) -> hostHttp().hostJsonApi(path, json));
+                return com.limelight.home.AutoBitrate.probe((path, json) -> hostHttp().hostJsonApi(path, json), requestKbps);
             }
 
             @Override

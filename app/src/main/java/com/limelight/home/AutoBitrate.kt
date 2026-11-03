@@ -22,7 +22,9 @@ import java.net.Inet4Address
  * once a second the network is *good*, *strained* (round-trip time rising, or some loss under 2%) or *congested* (over
  * 2% missing by RTP sequence, or frames FEC couldn't recover). Congested for 3 s (5 s within 2 min of the last change)
  * steps down to 80% of what arrived, net of FEC and headers, never below a floor for the resolution and frame rate;
- * 60 s of good below the bitrate set steps up 20%, never above it (the user's or the play style's bitrate is the
+ * 57 good of the last 60 judged seconds, with no congested streak (2+ seconds in a row) among them, below the bitrate
+ * set steps up 20% (a lone second with a lost frame or a little loss counts against the window without resetting
+ * it: home Wi-Fi has a few), never above it (the user's or the play style's bitrate is the
  * ceiling). A step-up that turns congested within 60 s goes back and doubles the wait (60 s, 2, 4 ... 15 min). A
  * decoder slower than the frame interval with no loss is the device, not the network: the bitrate stays, and a hint
  * is shown once.
@@ -52,7 +54,9 @@ object AutoBitrate {
     const val CONGESTED_SECONDS = 3
     const val CAUTIOUS_SECONDS = 5
     const val CAUTIOUS_MS = 120_000L
-    const val GOOD_SECONDS = 60
+    /** Step-up window: judged seconds, and how many of them must be good. */
+    const val WINDOW_SECONDS = 60
+    const val WINDOW_GOOD = 57
     const val STEP_UP = 1.2
     const val UP_HOLD_MS = 60_000L
     const val UP_HOLD_MAX_MS = 15 * 60_000L
@@ -210,7 +214,7 @@ object AutoBitrate {
     class LiveControl(@JvmField val via: String, val set: (Int) -> Boolean)
 
     /** Probe -> capability -> how to call. A host is recognised by what answers, not by its name. */
-    class Probe(@JvmField val name: String, val run: (HostApi) -> LiveControl?)
+    class Probe(@JvmField val name: String, val run: (HostApi, Int) -> LiveControl?)
 
     /**
      * The probe table. Polaris (papi-ux/polaris, src/nvhttp.cpp at de8d152): GET /polaris/v1/session/status gives the
@@ -220,9 +224,15 @@ object AutoBitrate {
      * for the session's sole owner only (409 active_owner_required otherwise). Another host's call is a new row.
      */
     @JvmField
-    val PROBES: List<Probe> = listOf(Probe("polaris /polaris/v1/session/bitrate") { api ->
-        val s = polarisSession(api.call("polaris/v1/session/status", null))
-        if (s == null) null else LiveControl("Polaris session bitrate") { kbps ->
+    val PROBES: List<Probe> = listOf(Probe("polaris /polaris/v1/session/bitrate") { api, requestKbps ->
+        val found: PolarisSession? = polarisSession(api.call("polaris/v1/session/status", null).also { logRawOnce(it) }, requestKbps)
+        val first: PolarisSession = found ?: return@Probe null
+        LiveControl("Polaris session bitrate") { kbps ->
+            // bitrate_units comes only once the stream's handshake is recorded: a share that was a guess at the probe
+            // is looked up again before the first change
+            var s = first
+            if (s.estimated) polarisSession(api.call("polaris/v1/session/status", null), requestKbps)
+                    ?.takeIf { it.generation == first.generation }?.let { s = it }
             val reply = api.call("polaris/v1/session/bitrate", polarisBitrateBody(s, kbps))
             LimeLog.info(TAG + "Polaris: ${reply.take(160)}")
             JSONObject(reply).optBoolean("status", false)
@@ -231,10 +241,10 @@ object AutoBitrate {
 
     /** Runs the probes in order (worker thread); the first that answers wins. */
     @JvmStatic
-    fun probe(api: HostApi): LiveControl? {
+    fun probe(api: HostApi, requestKbps: Int): LiveControl? {
         for (p in PROBES) {
             try {
-                val c = p.run(api)
+                val c = p.run(api, requestKbps)
                 if (c != null) { LimeLog.info(TAG + "host offers live bitrate (${p.name})"); return c }
                 LimeLog.info(TAG + "probe ${p.name}: not for this stream")
             } catch (e: Exception) {
@@ -246,26 +256,47 @@ object AutoBitrate {
 
     class PolarisSession(@JvmField val appSessionId: String, @JvmField val generation: Long, @JvmField val encoderShare: Double,
                          /** The host capped this stream's request: never ask its encoder for more than it gave (kbps), else 0. */
-                         @JvmField val hostCapEncoderKbps: Int)
+                         @JvmField val hostCapEncoderKbps: Int,
+                         /** [encoderShare] is a guess (no bitrate_units yet, nor an encoder rate). */
+                         @JvmField val estimated: Boolean)
+
+    private var rawLogged = false
+
+    /** Debug builds: the first session status, as it came (its shape varies between Polaris builds). */
+    private fun logRawOnce(json: String) {
+        if (rawLogged || !com.limelight.BuildConfig.DEBUG) return
+        rawLogged = true
+        json.chunked(900).take(6).forEachIndexed { i, part -> LimeLog.info(TAG + "Polaris status raw [$i]: $part") }
+    }
 
     @JvmStatic
-    fun polarisSession(statusJson: String): PolarisSession? {
+    fun polarisSession(statusJson: String, requestKbps: Int): PolarisSession? {
         val j = JSONObject(statusJson)
         val id = j.optString("app_session_id", "")
         val gen = j.optLong("session_generation", 0)
         val owned = j.optBoolean("owned_by_client", true)
         val runtime = j.optBoolean("adaptive_runtime_update_supported", false)
-        val units = j.optJSONObject("bitrate_units")
+        // bitrate_units (src/stream_stats.cpp bitrate_units_json): a top-level object, present only once the stream's
+        // handshake is recorded; "encoder" holds the encoder's current bitrate_kbps
+        val units = j.optJSONObject("bitrate_units") ?: j.optJSONObject("encoder")?.optJSONObject("bitrate_units")
         // split_kbps: what the handshake split (the request after the host's caps); else the request itself
         val split = units?.optDouble("split_kbps", 0.0)?.takeIf { !it.isNaN() } ?: 0.0
         val asked = units?.optDouble("requested_kbps", 0.0)?.takeIf { !it.isNaN() } ?: 0.0
         val req = if (split > 0) split else asked
         val enc = units?.optDouble("encoder_kbps", 0.0)?.takeIf { !it.isNaN() } ?: 0.0
+        // no units: the encoder's own rate now against what this stream asked for
+        val encNow = j.optJSONObject("encoder")?.optDouble("bitrate_kbps", 0.0)?.takeIf { !it.isNaN() } ?: 0.0
         // the share of a request the encoder gets (FEC, audio and overhead taken off), as the handshake split it
-        val share = if (req > 0 && enc > 0) (enc / req).coerceIn(0.3, 1.0) else 0.8
-        LimeLog.info(TAG + "Polaris session: generation $gen, owned $owned, runtime bitrate $runtime, encoder ${enc.toInt()} of ${req.toInt()} kbps")
+        val (share, how) = when {
+            req > 0 && enc > 0 -> (enc / req).coerceIn(0.3, 1.0) to "bitrate_units ${enc.toInt()} of ${req.toInt()} kbps"
+            encNow > 0 && requestKbps > 0 -> (encNow / requestKbps).coerceIn(0.3, 1.0) to "encoder.bitrate_kbps ${encNow.toInt()} of $requestKbps asked"
+            else -> 0.8 to "a guess (no bitrate_units, no encoder rate)"
+        }
+        val estimated = !(req > 0 && enc > 0) && !(encNow > 0 && requestKbps > 0)
+        LimeLog.info(TAG + "Polaris session: generation $gen, owned $owned, runtime bitrate $runtime, encoder share " +
+                String.format(java.util.Locale.US, "%.2f", share) + " from $how")
         if (id.isEmpty() || gen <= 0 || !owned || !runtime) return null
-        return PolarisSession(id, gen, share, if (split > 0 && asked > split) enc.toInt() else 0)
+        return PolarisSession(id, gen, share, if (split > 0 && asked > split) enc.toInt() else 0, estimated)
     }
 
     /** The body of POST /polaris/v1/session/bitrate for a stream bitrate of [kbps] (encoder kbps, 1000-500000). */
@@ -358,7 +389,7 @@ object AutoBitrate {
     /** What the controller needs from the stream (Game). Main thread unless said. */
     interface Stream {
         /** Runs [PROBES] against this stream's host (worker thread). */
-        fun probeLive(): LiveControl?
+        fun probeLive(requestKbps: Int): LiveControl?
         /** A menu or the keyboard is open: no reconnect now. */
         fun busy(): Boolean
         /** Starts the stream again at what was learnt (the game keeps running). */
@@ -401,7 +432,9 @@ object AutoBitrate {
         private var lp = -1L; private var lb = 0L; private var lm = 0L; private var lu = 0L; private var lt = 0L
         private var congested = 0
         private val samples = ArrayList<Int>()
-        private var good = 0
+        /** The step-up window: the last judged seconds, 'G' good (using its bitrate), 'n' not good, 'C' congested. */
+        private val window = ArrayDeque<Char>()
+        private var upRetry = false
         private var slowDecode = 0
         private var deviceHinted = false
         private var rttBase = Int.MAX_VALUE
@@ -416,7 +449,7 @@ object AutoBitrate {
             startedAt = SystemClock.elapsedRealtime()
             LimeLog.info(TAG + "watching at ${currentKbps / 1000} Mbps (ceiling ${plan.ceilingKbps / 1000}, floor ${plan.floorKbps / 1000})")
             Thread({
-                val c = try { stream.probeLive() } catch (e: Exception) { LimeLog.warning(TAG + "probe: $e"); null }
+                val c = try { stream.probeLive(plan.startKbps) } catch (e: Exception) { LimeLog.warning(TAG + "probe: $e"); null }
                 ui.post {
                     live = c; probed = true
                     setMode(ctx, plan.uuid, if (c != null) Mode.LIVE else Mode.RECONNECT)
@@ -475,8 +508,13 @@ object AutoBitrate {
                 else -> Health.GOOD
             }
             if (health == Health.CONGESTED) { congested++; samples.add(wireKbps) } else { congested = 0; samples.clear() }
-            // good while the stream uses its bitrate (a quiet picture proves nothing about the link)
-            if (health != Health.GOOD) good = 0 else if (wireKbps * 10 >= currentKbps * 4) good++
+            // good while the stream uses its bitrate (a quiet picture proves nothing about the link: not judged)
+            val mark = when { health == Health.CONGESTED -> 'C'; health != Health.GOOD -> 'n'; wireKbps * 10 >= currentKbps * 4 -> 'G'; else -> null }
+            if (mark != null) { window.addLast(mark); while (window.size > WINDOW_SECONDS) window.removeFirst() }
+            val goodN = window.count { it == 'G' }
+            val streak = windowStreak()
+            if (mark != null) LimeLog.info(TAG + "window $goodN/${window.size} good" + (if (streak) ", congested streak" else "") +
+                    " ($mark, " + String.format(java.util.Locale.US, "%.1f%%", loss * 100) + ", $du lost, ${wireKbps / 1000}/${currentKbps / 1000} Mbps)")
             if (health != Health.GOOD && now - lastLogAt > 5000) {
                 lastLogAt = now
                 LimeLog.info(TAG + String.format(java.util.Locale.US, "%s: %.1f%% missing, %d frames lost, rtt %d ms (base %d), %d Mbps arrived at %d Mbps",
@@ -489,11 +527,20 @@ object AutoBitrate {
             }
             // a step-up that held for a minute is proven
             if (lastUpAt != 0L && now - lastUpAt >= UP_PROVE_MS) lastUpAt = 0L
-            if (good >= GOOD_SECONDS && currentKbps < plan.ceilingKbps && now - maxOf(lastChangeAt, startedAt) >= upHold) stepUp()
+            if (currentKbps >= plan.ceilingKbps || now - maxOf(lastChangeAt, startedAt) < upHold) return
+            if (upRetry) { upRetry = false; stepUp(); return }
+            if (window.size >= WINDOW_SECONDS && goodN >= WINDOW_GOOD && !streak) stepUp()
+        }
+
+        /** Two or more congested seconds in a row in the window. */
+        private fun windowStreak(): Boolean {
+            var run = 0
+            for (c in window) { run = if (c == 'C') run + 1 else 0; if (run >= 2) return true }
+            return false
         }
 
         private fun stepDown(carried: Int, loss: Double, du: Long, now: Long) {
-            congested = 0; samples.clear(); good = 0
+            congested = 0; samples.clear(); window.clear()
             var to = minOf(plan.ceilingKbps, capKbps(carried))
             // a step-up that turned congested within a minute: back to where it was (lower if the link says so), and
             // twice the wait before the next one
@@ -520,9 +567,9 @@ object AutoBitrate {
         }
 
         private fun stepUp() {
-            good = 0
+            window.clear()
             val to = minOf(plan.ceilingKbps, maxOf(currentKbps + 1000, (currentKbps * STEP_UP).toInt() / 1000 * 1000))
-            LimeLog.info(TAG + "good for $GOOD_SECONDS s at ${currentKbps / 1000} Mbps: up to ${to / 1000} Mbps (ceiling ${plan.ceilingKbps / 1000})")
+            LimeLog.info(TAG + "$WINDOW_GOOD+ of $WINDOW_SECONDS s good at ${currentKbps / 1000} Mbps: up to ${to / 1000} Mbps (ceiling ${plan.ceilingKbps / 1000})")
             val wire = (to * WIRE_OVERHEAD / SHARE).toInt()
             // a clean step-up raises the stored limit (back at the ceiling: no limit any more)
             plan.key?.let { remember(ctx, it, if (to >= plan.ceilingKbps) 0 else to, wire, upHold, upFails) }
@@ -571,7 +618,7 @@ object AutoBitrate {
             val now = SystemClock.elapsedRealtime()
             if (stream.busy()) {
                 LimeLog.info(TAG + "a menu or the keyboard is open: asking again in a moment")
-                if (down) congested = CONGESTED_SECONDS - 1 else good = GOOD_SECONDS - 1
+                if (down) congested = CONGESTED_SECONDS - 1 else upRetry = true
                 return
             }
             reconnects.removeAll { now - it > 60_000 }
