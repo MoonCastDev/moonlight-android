@@ -1678,7 +1678,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                     () -> java.util.Arrays.asList(
                             com.limelight.home.QuickMenu.stat(String.format(java.util.Locale.US, "%.0f", com.limelight.home.StreamStats.INSTANCE.getFps()), "Frames per second"),
                             com.limelight.home.QuickMenu.stat(com.limelight.home.StreamStats.INSTANCE.getRttMs() + " ms", "Network delay"),
-                            com.limelight.home.QuickMenu.stat(com.limelight.home.AutoBitrate.label(streamKbps(), autoOn(), autoBitrate != null ? autoBitrate.getLimitKbps() : 0),
+                            // short: the handheld's stat tiles are narrow (the stats card has the limit)
+                            com.limelight.home.QuickMenu.stat(com.limelight.home.AutoBitrate.shortLabel(streamKbps(), autoOn()),
                                     decoderRenderer != null && decoderRenderer.isPyrowaveActive() ? "Picture quality · PyroWave" : "Picture quality"),
                             com.limelight.home.QuickMenu.stat(String.format(java.util.Locale.US, "%.1f%%", com.limelight.home.StreamStats.INSTANCE.getLossPct()), "Lost frames"),
                             com.limelight.home.QuickMenu.stat(String.format(java.util.Locale.US, "%.1f ms", com.limelight.home.StreamStats.INSTANCE.getDecodeMs()), "Decode delay")),
@@ -2845,7 +2846,10 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                 + (prefConfig != null ? prefConfig.width + "x" + prefConfig.height : "?") + ", connected " + connected
                 + ", Native " + PreferenceConfiguration.nativeWholeScreen(Game.this) + " -> " + (needsRefit() ? "RECONNECT" : "no"));
         if (needsRefit()) {
-            if (!polarisHost || refitAllowed()) reconnectHere("size changed");
+            // Not Polaris: a reconnect wouldn't change the game's size (and a fresh launch loses progress): the
+            // picture just re-fits this screen, as on iOS
+            if (!polarisHost) trace("not Polaris: the picture re-fits; the stream keeps its size");
+            else if (refitAllowed()) reconnectHere("size changed");
             else trace("size keeps changing: keeping this stream's size");
         }
     };
@@ -3292,17 +3296,12 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         stoppedAwhile = false;
         endedByUser = true;
         if (!polarisHost) {
-            // Not Polaris (Sunshine, GFE): a PC sets its resolution when a game launches, so only a fresh launch fills
-            // the new screen; a reconnect alone kept the other screen's size inside the new frame. So a new size quits
-            // the game on the PC and starts it again (unsaved progress is lost). A foldable whose two screens are known
-            // streams one shape for both (foldableCompromise: the picture just re-fits), so there it only reconnects.
-            final boolean restart = sizeChanged();
-            trace((restart ? "restarting the game for this screen (" : "reconnecting (") + why + ")");
-            Toast.makeText(this, restart ? "Restarting the game for this screen…" : "Reconnecting…", Toast.LENGTH_SHORT).show();
-            stopConnection(() -> new Thread(() -> {
-                if (restart) quitAppOnHost();
-                runOnUiThread(() -> { if (!isFinishing()) recreate(); });
-            }, "mc-refit").start());
+            // Not Polaris (Sunshine, GFE): only here when the stream itself ended (its surface went away, or it was
+            // hidden): reconnect and resume. The game is never quit or restarted (as on iOS): a PC that keeps the
+            // launch resolution shows it re-fitted inside this screen. A size change alone doesn't come here (fitScreen).
+            trace("reconnecting (" + why + ")");
+            Toast.makeText(this, "Reconnecting…", Toast.LENGTH_SHORT).show();
+            stopConnection(() -> { if (!isFinishing()) recreate(); });
             return;
         }
         streamView.removeCallbacks(fitScreen);

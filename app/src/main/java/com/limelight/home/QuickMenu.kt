@@ -233,12 +233,18 @@ class QuickMenu(private val act: Activity) {
         return when (l.lowercase()) {
             "frames per second" -> v to "fps"
             "network delay" -> v to "delay"
-            "picture quality", "quality" -> if (v.endsWith(" Mbps")) v.removeSuffix(" Mbps") to "Mbps" else v to "quality"
+            "picture quality", "quality" -> mbpsTile(v)
             "lost frames", "lost packets" -> v to "lost"
             "playing for" -> v to "playing"
             "waiting for" -> v to "waiting"
-            else -> v to l.lowercase().substringBefore(' ')
+            else -> if (l.lowercase().startsWith("picture quality")) mbpsTile(v) else v to l.lowercase().substringBefore(' ')
         }
+    }
+
+    /** "60 Mbps" -> "60" over "Mbps"; Automatic bitrate's "60 Mbps auto" -> "60" over "Mbps auto". */
+    private fun mbpsTile(v: String): Pair<String, String> {
+        val i = v.indexOf(" Mbps")
+        return if (i > 0) v.substring(0, i) to v.substring(i + 1) else v to "quality"
     }
 
     /** Value size that fits a quarter of the panel: big for "60", smaller for "Connected". */

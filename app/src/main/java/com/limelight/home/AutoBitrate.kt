@@ -601,4 +601,8 @@ object AutoBitrate {
     @JvmStatic
     fun label(kbps: Int, on: Boolean, limitKbps: Int): String =
         "${kbps / 1000} Mbps" + when { !on -> ""; limitKbps > 0 -> " (auto · limit ${limitKbps / 1000})"; else -> " (auto)" }
+
+    /** The Quick menu's stat tile: "60 Mbps auto" (narrow tiles: no limit). */
+    @JvmStatic
+    fun shortLabel(kbps: Int, on: Boolean): String = "${kbps / 1000} Mbps" + if (on) " auto" else ""
 }
