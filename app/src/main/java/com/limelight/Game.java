@@ -1461,6 +1461,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         return handleKeyDown(event) || super.onKeyDown(keyCode, event);
     }
 
+    /** MoonCast diagnostics (test290): gamepad key downs logged so far. */
+    private int padDiag;
+
     @Override
     public boolean handleKeyDown(KeyEvent event) {
         // MoonCast Quick menu first: the stream view hands us keys before the IME and before the activity
@@ -1498,6 +1501,12 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             // Always try the controller handler first, unless it's an alphanumeric keyboard device.
             // Otherwise, controller handler will eat keyboard d-pad events.
             handled = controllerHandler.handleButtonDown(event);
+        }
+        if (padDiag < 40 && (event.getSource() & (InputDevice.SOURCE_GAMEPAD | InputDevice.SOURCE_JOYSTICK)) != 0) {
+            padDiag++;
+            LimeLog.info("MoonCast pad diag: Game key down " + KeyEvent.keyCodeToString(event.getKeyCode()) + " scan " + event.getScanCode()
+                    + " dev " + event.getDeviceId() + ": game controller " + ControllerHandler.isGameControllerDevice(event.getDevice())
+                    + ", ControllerHandler handled " + handled);
         }
 
         // Try the keyboard handler if it wasn't handled as a game controller

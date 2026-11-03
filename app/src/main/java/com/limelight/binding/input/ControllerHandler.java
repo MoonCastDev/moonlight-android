@@ -1035,6 +1035,7 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
         LimeLog.info("Analog stick deadzone: "+context.leftStickDeadzoneRadius+" "+context.rightStickDeadzoneRadius);
         LimeLog.info("Trigger deadzone: "+context.triggerDeadzone);
 
+        logContextDiag(dev, context);
         return context;
     }
 
@@ -1057,9 +1058,15 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
         // HACK for https://issuetracker.google.com/issues/163120692
         if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R) {
             if (event.getDeviceId() == -1) {
-                return defaultContext;
+                // MoonCast: Android 11 hands some pads' keys over as the "virtual" device -1. The default context has
+                // no remapping, so a pad on the generic layout (a DualSense on the JAL AQUOS) got raw buttons. Use
+                // the real pad's context instead: the one that moved last, else the only gamepad attached.
+                InputDeviceContext real = virtualDeviceTarget();
+                return real != null ? real : defaultContext;
             }
         }
+
+        if (event instanceof MotionEvent && event.getDeviceId() > 0) lastMotionDeviceId = event.getDeviceId();
 
         // Return the existing context if it exists
         InputDeviceContext context = inputDeviceContexts.get(event.getDeviceId());
@@ -1072,6 +1079,37 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
         inputDeviceContexts.put(event.getDeviceId(), context);
 
         return context;
+    }
+
+    /** The pad that sent motion last (a real device id), for Android 11's virtual device -1. */
+    private volatile int lastMotionDeviceId = -1;
+    private boolean virtualLogged;
+
+    private InputDeviceContext virtualDeviceTarget() {
+        int target = -1;
+        InputDevice last = lastMotionDeviceId > 0 ? InputDevice.getDevice(lastMotionDeviceId) : null;
+        if (last != null && hasJoystickAxes(last)) target = lastMotionDeviceId;
+        else {
+            for (int id : InputDevice.getDeviceIds()) {
+                InputDevice d = InputDevice.getDevice(id);
+                if (d == null || !hasJoystickAxes(d)) continue;
+                if (target != -1) return null;   // several pads and none moved yet: can't tell
+                target = id;
+            }
+        }
+        if (target == -1) return null;
+        InputDeviceContext c = inputDeviceContexts.get(target);
+        if (c == null) {
+            InputDevice d = InputDevice.getDevice(target);
+            if (d == null) return null;
+            c = createInputDeviceContextForDevice(d);
+            inputDeviceContexts.put(target, c);
+        }
+        if (!virtualLogged) {
+            virtualLogged = true;
+            LimeLog.info("MoonCast: Android 11 virtual input device -1: using the context of " + c.name + " (" + target + ")");
+        }
+        return c;
     }
 
     private byte maxByMagnitude(byte a, byte b) {
@@ -1343,6 +1381,46 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
 
     // Return a valid keycode, -2 to consume, or -1 to not consume the event
     // Device MAY BE NULL
+    // ---- MoonCast diagnostics (test290): what each pad's context chose and how its first events map ----
+    private static final java.util.Map<Integer, int[]> DIAG_COUNTS = new java.util.HashMap<>();
+
+    private static String axisName(int a) { return a < 0 ? "none" : MotionEvent.axisToString(a); }
+
+    private static void logContextDiag(InputDevice dev, InputDeviceContext c) {
+        StringBuilder r = new StringBuilder();
+        for (InputDevice.MotionRange m : dev.getMotionRanges()) {
+            r.append(MotionEvent.axisToString(m.getAxis())).append('[').append(m.getMin()).append("..").append(m.getMax())
+                    .append(" src 0x").append(Integer.toHexString(m.getSource())).append("] ");
+        }
+        boolean[] k = dev.hasKeys(KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_BUTTON_B, KeyEvent.KEYCODE_BUTTON_C,
+                KeyEvent.KEYCODE_BUTTON_X, KeyEvent.KEYCODE_BUTTON_Y, KeyEvent.KEYCODE_BUTTON_Z);
+        LimeLog.info(String.format("MoonCast pad diag: context for \"%s\" id %d %04x:%04x sources 0x%x keys A%b B%b C%b X%b Y%b Z%b; ranges %s",
+                dev.getName(), dev.getId(), dev.getVendorId(), dev.getProductId(), dev.getSources(), k[0], k[1], k[2], k[3], k[4], k[5], r));
+        LimeLog.info(String.format("MoonCast pad diag: chose LT %s RT %s RS %s/%s idleNeg %b nonStdDS4 %b linuxFace %b sonyGeneric %b",
+                axisName(c.leftTriggerAxis), axisName(c.rightTriggerAxis), axisName(c.rightStickXAxis), axisName(c.rightStickYAxis),
+                c.triggersIdleNegative, c.isNonStandardDualShock4, c.usesLinuxGamepadStandardFaceButtons, isSonyGenericLayout(dev)));
+    }
+
+    /** Logs the first 40 key and 20 motion events of a device (by event device id). */
+    private static boolean diagWanted(int deviceId, boolean key) {
+        synchronized (DIAG_COUNTS) {
+            int[] n = DIAG_COUNTS.get(deviceId);
+            if (n == null) { n = new int[2]; DIAG_COUNTS.put(deviceId, n); }
+            int i = key ? 0 : 1;
+            if (n[i] >= (key ? 40 : 20)) return false;
+            n[i]++;
+            return true;
+        }
+    }
+
+    private void diagKey(String what, KeyEvent e, InputDeviceContext c, int mapped) {
+        if (!diagWanted(e.getDeviceId(), true)) return;
+        LimeLog.info("MoonCast pad diag: " + what + " key " + KeyEvent.keyCodeToString(e.getKeyCode()) + " scan " + e.getScanCode()
+                + " dev " + e.getDeviceId() + " (" + (e.getDevice() != null ? e.getDevice().getName() : "no device") + ") src 0x"
+                + Integer.toHexString(e.getSource()) + " -> context " + (c == null ? "none" : c.name + (c.isNonStandardDualShock4 ? " [generic remap]" : ""))
+                + " -> " + (mapped == REMAP_CONSUME ? "consumed" : mapped < 0 ? "ignored" : KeyEvent.keyCodeToString(mapped)));
+    }
+
     private static final java.util.Set<String> SONY_GENERIC_LOGGED = java.util.Collections.synchronizedSet(new java.util.HashSet<>());
 
     /**
@@ -1851,6 +1929,15 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
 
     public boolean handleMotionEvent(MotionEvent event) {
         InputDeviceContext context = getContextForEvent(event);
+        if (diagWanted(event.getDeviceId(), false)) {
+            LimeLog.info("MoonCast pad diag: motion dev " + event.getDeviceId() + " src 0x" + Integer.toHexString(event.getSource())
+                    + " X " + event.getAxisValue(MotionEvent.AXIS_X) + " Y " + event.getAxisValue(MotionEvent.AXIS_Y)
+                    + " Z " + event.getAxisValue(MotionEvent.AXIS_Z) + " RZ " + event.getAxisValue(MotionEvent.AXIS_RZ)
+                    + " RX " + event.getAxisValue(MotionEvent.AXIS_RX) + " RY " + event.getAxisValue(MotionEvent.AXIS_RY)
+                    + " HAT " + event.getAxisValue(MotionEvent.AXIS_HAT_X) + "," + event.getAxisValue(MotionEvent.AXIS_HAT_Y)
+                    + " -> context " + (context == null ? "none" : context.name + (context == defaultContext ? " (default)" : "")
+                    + " LT " + axisName(context.leftTriggerAxis) + " RS " + axisName(context.rightStickXAxis)));
+        }
         if (context == null) {
             return true;
         }
@@ -2364,10 +2451,12 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
     public boolean handleButtonUp(KeyEvent event) {
         InputDeviceContext context = getContextForEvent(event);
         if (context == null) {
+            diagKey("up", event, null, -1);
             return true;
         }
 
         int keyCode = handleRemapping(context, event);
+        diagKey("up", event, context, keyCode);
         if (keyCode < 0) {
             return (keyCode == REMAP_CONSUME);
         }
@@ -2602,10 +2691,12 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
     public boolean handleButtonDown(KeyEvent event) {
         InputDeviceContext context = getContextForEvent(event);
         if (context == null) {
+            diagKey("down", event, null, -1);
             return true;
         }
 
         int keyCode = handleRemapping(context, event);
+        diagKey("down", event, context, keyCode);
         if (keyCode < 0) {
             return (keyCode == REMAP_CONSUME);
         }
