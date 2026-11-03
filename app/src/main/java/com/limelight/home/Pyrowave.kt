@@ -31,7 +31,7 @@ object Pyrowave {
 
     /** PyrowaveRenderer.DITHER_*: fine moving noise that hides banding, most visible in HDR gradients. */
     @JvmStatic
-    fun ditherMode(ctx: Context): Int = when (PreferenceManager.getDefaultSharedPreferences(ctx).getString(DITHER_PREF, "off")) {
+    fun ditherMode(ctx: Context): Int = when (PreferenceManager.getDefaultSharedPreferences(ctx).getString(DITHER_PREF, "low")) {
         "low" -> PyrowaveRenderer.DITHER_LOW
         "high" -> PyrowaveRenderer.DITHER_HIGH
         else -> PyrowaveRenderer.DITHER_OFF
@@ -41,9 +41,9 @@ object Pyrowave {
     @JvmStatic
     fun frontBuffer(ctx: Context): Boolean = PreferenceManager.getDefaultSharedPreferences(ctx).getBoolean(FRONT_BUFFER_PREF, false)
 
-    /** Light GPU work between frames so its clock stays up. Costs battery and heat. */
+    /** Light GPU work between frames so its clock stays up. Costs battery and heat. On unless turned off. */
     @JvmStatic
-    fun gpuBoost(ctx: Context): Boolean = PreferenceManager.getDefaultSharedPreferences(ctx).getBoolean(GPU_BOOST_PREF, false)
+    fun gpuBoost(ctx: Context): Boolean = PreferenceManager.getDefaultSharedPreferences(ctx).getBoolean(GPU_BOOST_PREF, true)
 
     @Volatile private var able: Boolean? = null
 

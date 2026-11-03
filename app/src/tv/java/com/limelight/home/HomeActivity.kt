@@ -1081,7 +1081,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                 if (stream.getBoolean("checkbox_usb_driver", true))
                     toggle(list, "checkbox_usb_bind_all", "Use it for every USB pad", "Even Xbox pads this TV already supports. Try it if one misbehaves", false)
                 toggle(list, "checkbox_multi_controller", "More than one player", "On a PC each pad is its own player. On the PS5, every pad is player 1", true)
-                intChoice(list, "seekbar_deadzone", "Stick deadzone", "Raise it if a character drifts on its own", listOf(3, 5, 7, 10, 15), 7) { "$it%" }
+                intChoice(list, "seekbar_deadzone", "Stick deadzone", "Raise it if a character drifts on its own", listOf(0, 3, 5, 7, 10, 15), 7) { if (it == 0) "Off" else "$it%" }
                 toggle(list, "checkbox_flip_face_buttons", "Swap A and B", "For Nintendo-style layouts", false)
                 toggle(list, "checkbox_gamepad_motion_sensors", "Motion", "Send the pad's gyro to games that use it", true)
                 toggle(list, "checkbox_mouse_emulation", "Use the pad as a mouse", "Hold Start to switch", true)
@@ -1179,7 +1179,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                 info(list, "Frame rate", "60 fps")
                 choice(list, "xbox_rumble", "Rumble", "How strongly the controller shakes", listOf("Off" to "off", "Weak" to "weak",
                         "Medium" to "medium", "Strong" to "strong"), "strong")
-                intChoice(list, "xbox_deadzone", "Stick deadzone", "Raise it if a character drifts on its own", listOf(3, 5, 8, 10, 15), 8) { "$it%" }
+                intChoice(list, "xbox_deadzone", "Stick deadzone", "Raise it if a character drifts on its own", listOf(0, 3, 5, 8, 10, 15), 8) { if (it == 0) "Off" else "$it%" }
                 toggle(list, "xbox_edge", "Full stick range", "Rescale after the deadzone so the stick still reaches 100% at its edge", false)
                 toggle(list, "xbox_swap_ab", "Swap A and B", "For Nintendo-style layouts", false)
                 toggle(list, "xbox_swap_xy", "Swap X and Y", "For Nintendo-style layouts", false)

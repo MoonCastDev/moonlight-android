@@ -20,7 +20,7 @@ object Yuv444 {
      */
     @JvmStatic
     fun wanted(ctx: Context): Boolean = PreferenceManager.getDefaultSharedPreferences(ctx).let { p ->
-        p.getBoolean(PREF, false) && p.getBoolean(Pyrowave.PREF, false)
+        p.getBoolean(PREF, true) && p.getBoolean(Pyrowave.PREF, false)
     }
 
     private var able: Boolean? = null

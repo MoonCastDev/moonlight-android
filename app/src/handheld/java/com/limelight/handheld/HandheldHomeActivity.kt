@@ -1665,7 +1665,7 @@ class HandheldHomeActivity : Activity() {
                         "How much of the game shows through the keys", listOf(50, 30, 15, 70, 85, 100),
                         com.limelight.binding.input.virtual_controller.PadSkin.DEFAULT_OPACITY) { "${100 - it}%" }
                 toggle(list, "checkbox_multi_controller", "More than one player", "On a PC each pad is its own player", true)
-                intChoice(list, "seekbar_deadzone", "Stick deadzone", "Raise it if a character drifts on its own", listOf(3, 5, 7, 10, 15), 7) { "$it%" }
+                intChoice(list, "seekbar_deadzone", "Stick deadzone", "Raise it if a character drifts on its own", listOf(0, 3, 5, 7, 10, 15), 7) { if (it == 0) "Off" else "$it%" }
                 toggle(list, "checkbox_flip_face_buttons", "Swap A and B", "For Nintendo-style layouts", false)
                 toggle(list, "checkbox_gamepad_motion_sensors", "Motion", "Send the pad's gyro to games that use it", true)
                 toggle(list, "checkbox_mouse_emulation", "Use the pad as a mouse", "Hold Start to switch", true)
@@ -1708,7 +1708,7 @@ class HandheldHomeActivity : Activity() {
                     render(force = true) }
                 choice(list, stream, "xbox_rumble", "Rumble", "How strongly the controller shakes",
                         listOf("Off" to "off", "Weak" to "weak", "Medium" to "medium", "Strong" to "strong"), "strong")
-                intChoice(list, "xbox_deadzone", "Stick deadzone", "Raise it if a character drifts on its own", listOf(3, 5, 8, 10, 15), 8) { "$it%" }
+                intChoice(list, "xbox_deadzone", "Stick deadzone", "Raise it if a character drifts on its own", listOf(0, 3, 5, 8, 10, 15), 8) { if (it == 0) "Off" else "$it%" }
                 toggle(list, "xbox_swap_ab", "Swap A and B", "For Nintendo-style layouts", false)
                 toggle(list, "xbox_coop", "Two players", "A second controller plays as player 2", false)
                 // its own picture settings; "Same as Picture" until set

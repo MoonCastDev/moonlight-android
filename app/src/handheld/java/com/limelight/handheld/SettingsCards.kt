@@ -503,10 +503,10 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
     private fun read(k: String, sample: Any): Any? = try {
         when (sample) {
             is Int -> stream.getInt(k, 0)
-            is Boolean -> stream.getBoolean(k, false)
+            is Boolean -> stream.getBoolean(k, k == Y444 || k == PW_BOOST)
             else -> stream.getString(k, when (k) {
                 "list_resolution" -> a.nativeResolution(); "list_fps" -> "60"; "video_format" -> "auto"; "frame_pacing" -> "latency"
-                "list_video_scale_mode" -> pcShapeDefault(); FSR -> "off"; PW_DITHER -> "off"
+                "list_video_scale_mode" -> pcShapeDefault(); FSR -> "off"; PW_DITHER -> "low"
                 "ps5_resolution" -> "1080"; "ps5_fps_home" -> "60"; "ps5_bitrate_home" -> "auto"; "ps5_codec" -> "h265"; "ps5_pacing" -> "same"
                 DECODER -> "low"; "xbox_resolution" -> "auto"; else -> null })
         }
@@ -747,7 +747,8 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
                         RES -> m[k] = if (bool(PreferenceConfiguration.NATIVE_RES_PREF_STRING, false)) NATIVE_V else str(RES, a.nativeResolution())
                         FPS -> m[k] = live.s(FPS, "60")
                         KBPS -> int(KBPS, 0).let { if (it > 0 || !st.pyro) m[k] = it }
-                        HDR, RANGE, ULL, Y444, PW_BOOST, PW_FRONT -> m[k] = bool(k, false)
+                        HDR, RANGE, ULL, PW_FRONT -> m[k] = bool(k, false)
+                        Y444, PW_BOOST -> m[k] = bool(k, true)
                         FSR_SHARP -> m[k] = int(k, com.limelight.binding.video.FsrRenderer.DEFAULT_SHARPNESS)
                         else -> m[k] = read(k, "") as? String ?: continue
                     }
@@ -1229,8 +1230,8 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
             val cur = v.s(key, def)
             vrow(list, key, title, opts.firstOrNull { it.second == cur }?.first ?: cur) { pick(title, body, opts, cur) { v.put(key, it) } }
         }
-        fun onOffRow(key: String, title: String, sub: String? = null) {
-            val on = v.b(key, false)
+        fun onOffRow(key: String, title: String, sub: String? = null, def: Boolean = false) {
+            val on = v.b(key, def)
             vrow(list, key, title, onOff(on), sub?.let { sw.text(it, 22, sw.sub, 600, 3) }) {
                 v.put(key, !on); FeelSounds.play(a, FeelSounds.Cue.TOGGLE); a.render(force = true)
             }
@@ -1259,10 +1260,10 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
         onOffRow(RANGE, "Full range", "Deeper blacks, if this screen shows them.")
         // GPU boost sits where the other styles have Ultra low latency, so the pages line up
         if (!st.pyro) { onOffRow(ULL, "Ultra low latency", "The decoder's lowest delay."); return }
-        onOffRow(PW_BOOST, "PyroWave: GPU boost", "Steadier decoding. Uses more battery.")
-        onOffRow(Y444, "YUV 4:4:4", "Sharper text and colour edges.")
+        onOffRow(PW_BOOST, "PyroWave: GPU boost", "Steadier decoding. Uses more battery.", true)
+        onOffRow(Y444, "YUV 4:4:4", "Sharper text and colour edges.", true)
         choose(PW_DITHER, "PyroWave: spatial dithering", "Hides colour banding.",
-                listOf("Off" to "off", "Low" to "low", "High" to "high"), "off")
+                listOf("Off" to "off", "Low" to "low", "High" to "high"), "low")
         onOffRow(PW_FRONT, "PyroWave: front buffer", "Lower delay. Turn off if it tears.")
     }
 
@@ -1351,8 +1352,8 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
         pickStr(list, "xbox_rumble", "Rumble", "How strongly the controller shakes",
                 listOf("Off" to "off", "Weak" to "weak", "Medium" to "medium", "Strong" to "strong"), "strong")
         val dz = int("xbox_deadzone", 8)
-        vrow(list, "xbox_deadzone", "Stick deadzone", "$dz%") {
-            pick("Stick deadzone", "Raise it if a character drifts on its own", listOf(3, 5, 8, 10, 15).map { "$it%" to it.toString() }, dz.toString()) {
+        vrow(list, "xbox_deadzone", "Stick deadzone", if (dz == 0) "Off" else "$dz%") {
+            pick("Stick deadzone", "Raise it if a character drifts on its own", listOf(0, 3, 5, 8, 10, 15).map { (if (it == 0) "Off" else "$it%") to it.toString() }, dz.toString()) {
                 stream.edit().putInt("xbox_deadzone", it.toInt()).apply()
             }
         }

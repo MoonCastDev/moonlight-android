@@ -285,7 +285,11 @@ object AutoBitrate {
 
     /** Never below this (about 5 Mbps at 720p60, 10 at 1080p60, 20 at 1440p and 4K): under it, a lower resolution. */
     @JvmStatic
-    fun floorKbps(w: Int, h: Int, fps: Int): Int = ((10_000 * load(w, h, fps)).toInt() / 1000 * 1000).coerceIn(3000, 20_000)
+    fun floorKbps(w: Int, h: Int, fps: Int): Int {
+        val l = load(w, h, fps)
+        // tiny streams (under ~0.3 of 1080p60: 720p30, 540p) may go to 3 Mbps; 720p60 and up never under 5 (design #139)
+        return if (l < 0.3) 3000 else ((10_000 * l).toInt() / 1000 * 1000).coerceIn(5000, 20_000)
+    }
 
     /** PyroWave under this (60 Mbps at 1080p60, scaled) looks better as HEVC/AV1. */
     @JvmStatic

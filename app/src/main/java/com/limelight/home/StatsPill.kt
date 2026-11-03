@@ -110,7 +110,7 @@ object StatsPill {
     @JvmStatic
     fun health(rttMs: Double, lossPct: Double): Int = when {
         rttMs > 60 || lossPct >= 5 -> 2
-        rttMs > 25 || lossPct >= 1 -> 1
+        rttMs > 30 || lossPct >= 1 -> 1
         else -> 0
     }
 
