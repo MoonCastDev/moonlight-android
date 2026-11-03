@@ -888,6 +888,28 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
             }
         }
 
+        // MoonCast: a DualSense (054c:0ce6), DualSense Edge (054c:0df2) or DualShock 4 (05c4/09cc) on a kernel without
+        // hid-playstation / hid-sony support for it (the JAL AQUOS on Android 11) uses Android's Generic.kl: every
+        // button shifted (Square = BUTTON_A, Cross = BUTTON_B, Circle = BUTTON_C, Triangle = BUTTON_X, L1 = BUTTON_Y,
+        // R1 = BUTTON_Z, ...), the analog L2/R2 on RX/RY and the right stick on Z/RZ. The check above only ran when
+        // the device had no other trigger-like axis, so this decides it from the key set alone: a Sony pad that
+        // reports BUTTON_C has no proper layout (hid-playstation's has no BUTTON_C or BUTTON_Z).
+        if (isSonyGenericLayout(dev)) {
+            if (SONY_GENERIC_LOGGED.add(dev.getDescriptor())) {
+                LimeLog.info(String.format("DualSense on the generic layout: remapping (%04x:%04x %s)",
+                        dev.getVendorId(), dev.getProductId(), devName));
+            }
+            context.isNonStandardDualShock4 = true;
+            context.usesLinuxGamepadStandardFaceButtons = false;
+            context.leftTriggerAxis = MotionEvent.AXIS_RX;
+            context.rightTriggerAxis = MotionEvent.AXIS_RY;
+            context.triggersIdleNegative = true;
+            context.rightStickXAxis = MotionEvent.AXIS_Z;
+            context.rightStickYAxis = MotionEvent.AXIS_RZ;
+            context.hasSelect = true;
+            context.hasMode = true;
+        }
+
         if (context.rightStickXAxis == -1 && context.rightStickYAxis == -1) {
             InputDevice.MotionRange zRange = getMotionRangeForJoystickAxis(dev, MotionEvent.AXIS_Z);
             InputDevice.MotionRange rzRange = getMotionRangeForJoystickAxis(dev, MotionEvent.AXIS_RZ);
@@ -1321,6 +1343,20 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
 
     // Return a valid keycode, -2 to consume, or -1 to not consume the event
     // Device MAY BE NULL
+    private static final java.util.Set<String> SONY_GENERIC_LOGGED = java.util.Collections.synchronizedSet(new java.util.HashSet<>());
+
+    /**
+     * MoonCast: a Sony pad on Android's generic key layout (no driver/key layout of its own): it reports BUTTON_C
+     * (Generic.kl's name for its third button, Circle) and has RX/RY (the analog triggers) and Z/RZ (the right
+     * stick). Shared with the PS5 and Xbox players.
+     */
+    public static boolean isSonyGenericLayout(InputDevice dev) {
+        if (dev == null || dev.getVendorId() != 0x054c) return false;
+        if (!dev.hasKeys(KeyEvent.KEYCODE_BUTTON_C)[0]) return false;
+        return getMotionRangeForJoystickAxis(dev, MotionEvent.AXIS_RX) != null && getMotionRangeForJoystickAxis(dev, MotionEvent.AXIS_RY) != null
+                && getMotionRangeForJoystickAxis(dev, MotionEvent.AXIS_Z) != null && getMotionRangeForJoystickAxis(dev, MotionEvent.AXIS_RZ) != null;
+    }
+
     private int handleRemapping(InputDeviceContext context, KeyEvent event) {
         // Don't capture the back button if configured
         if (context.ignoreBack) {
@@ -1435,6 +1471,9 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
                     return KeyEvent.KEYCODE_BUTTON_THUMBR;
                 case 316:
                     return KeyEvent.KEYCODE_BUTTON_MODE;
+                case 317:
+                    // MoonCast: the touchpad click (DualSense / DS4 button 14), as the touchpad button
+                    return KeyEvent.KEYCODE_BUTTON_1;
                 default:
                     return REMAP_CONSUME;
             }
@@ -3146,6 +3185,10 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
             }
             if (hasShare) {
                 supportedButtonFlags |= ControllerPacket.MISC_FLAG;
+            }
+            // MoonCast: a Sony pad on the generic layout has a touchpad click (remapped from BUTTON_THUMBL's scan code)
+            if (isSonyGenericLayout(inputDevice)) {
+                supportedButtonFlags |= ControllerPacket.TOUCHPAD_FLAG;
             }
 
             if (getMotionRangeForJoystickAxis(inputDevice, MotionEvent.AXIS_HAT_X) != null) {

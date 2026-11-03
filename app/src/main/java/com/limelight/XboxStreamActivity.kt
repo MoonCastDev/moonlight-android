@@ -311,7 +311,11 @@ class XboxStreamActivity : Activity(), com.limelight.home.MoveToTv.LocalSession 
     private val oddSony = HashMap<Int, Boolean>()
     private fun isOddSony(deviceId: Int): Boolean = oddSony.getOrPut(deviceId) {
         val d = InputDevice.getDevice(deviceId)
-        d != null && d.vendorId == 0x054c && d.hasKeys(KeyEvent.KEYCODE_BUTTON_C)[0]
+        // the same check as the PC stream's (ControllerHandler.isSonyGenericLayout): Sony + BUTTON_C + RX/RY + Z/RZ
+        com.limelight.binding.input.ControllerHandler.isSonyGenericLayout(d).also {
+            if (it && d != null) com.limelight.LimeLog.info(String.format("DualSense on the generic layout: remapping (%04x:%04x %s)",
+                    d.vendorId, d.productId, d.name))
+        }
     }
     private fun oddSonyKey(scan: Int): Int? = when (scan) {
         304 -> KeyEvent.KEYCODE_BUTTON_X        // Square -> X
