@@ -1671,6 +1671,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             items.add(new com.limelight.home.QuickMenu.Item("⌨", "Keyboard", "On-screen", false, this::toggleKeyboard).asToggle());
             items.add(new com.limelight.home.QuickMenu.Item("ⓘ", "Streaming status", com.limelight.home.StatsLevel.label(statsLevel), false, this::toggleStatus)
                     .asToggle().liveDetail(() -> com.limelight.home.StatsLevel.label(statsLevel)));
+            // Play style: the PC styles; picking one reconnects with it (the game keeps running)
+            items.add(com.limelight.home.PcStyles.item(quickMenu, Game.this, this::openQuickMenu, this::reconnectForStyle));
             items.add(com.limelight.home.QuickBitrate.item(quickMenu, Game.this, "pc", prefConfig.bitrate / 1000, this::openQuickMenu, this::reconnectForBitrate));
             items.add(new com.limelight.home.QuickMenu.Item("✚", "Controllers", com.limelight.home.QuickMenu.pads().size() + " connected", false, this::showControllers).staysOpen(null));
             items.add(new com.limelight.home.QuickMenu.Item("▤", "Task Manager", "Windows: Ctrl + Shift + Esc", false, this::openTaskManager).staysOpen("Opened on the PC"));
@@ -2001,6 +2003,11 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     /** Quick menu, Bitrate: the new one is saved; leave quietly and open the same game again with it (it keeps running). */
     private void reconnectForBitrate() {
         reconnectForBitrate(null);
+    }
+
+    /** Quick menu, Play style: its values are now the live settings; open the same game again with them. */
+    private void reconnectForStyle(String note) {
+        reconnectForBitrate(note);
     }
 
     /** [note]: Automatic bitrate's reason (toasted), or null for the Quick menu's change. */

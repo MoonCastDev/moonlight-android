@@ -1071,6 +1071,11 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
             stream.edit().putString(com.limelight.binding.video.FsrRenderer.PREF, if (fsr) "off" else "fsr1").apply()
             FeelSounds.play(a, FeelSounds.Cue.TOGGLE); a.render(force = true)
         }) { sharpening(com.limelight.binding.video.FsrRenderer.SHARPNESS_PREF, com.limelight.binding.video.FsrRenderer.DEFAULT_SHARPNESS, false) }
+        // Automatic bitrate: on/off; X shows what the PC supports, this network's limit and Forget
+        val auto = bool(com.limelight.home.AutoBitrate.PREF, true)
+        val autoMode = com.limelight.home.AutoBitrate.mode(a, pcOf()?.uuid)
+        t += Tile("auto", "Automatic bitrate", if (!auto) "Off" else if (autoMode != null) "On · ${autoMode.label}" else "On", auto, "wave", Sw.C_BLUE,
+                { flip(com.limelight.home.AutoBitrate.PREF, true) }) { autoBitrateDetails() }
         val range = bool("checkbox_full_range", false)
         t += Tile("range", "Full range", onOff(range), range, "target", Sw.C_GREEN, { flip("checkbox_full_range", false) })
         val pip = bool(com.limelight.home.Pip.PREF, false)
@@ -1087,6 +1092,18 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
             }
         })
         return t
+    }
+
+    /** X on the Automatic bitrate tile: what the PC supports, the limit learnt on this network, and Forget. */
+    private fun autoBitrateDetails() {
+        val uuid = pcOf()?.uuid
+        val limit = com.limelight.home.AutoBitrate.limitHere(a, uuid)
+        val opts = ArrayList<HandheldHomeActivity.Opt>()
+        if (limit != null) opts += HandheldHomeActivity.Opt(null, 0, "Forget this network's limit", "${limit.rate / 1000} Mbps, learnt here", null) {
+            com.limelight.home.AutoBitrate.forgetHere(a); a.toast("Forgot this network's limit"); a.render(force = true)
+        }
+        a.dialog("Automatic bitrate", com.limelight.home.AutoBitrate.SUBTITLE + "\n\n" + com.limelight.home.AutoBitrate.settingsLine(a, uuid) +
+                "\n\nThe Bitrate setting is the most it uses (its ceiling).", opts, listOf("Close" to {}))
     }
 
     private fun consoleFsrTile(kind: String): Tile {
@@ -1212,8 +1229,9 @@ internal class SettingsCards(private val a: HandheldHomeActivity) {
         }
         bitrateSlider(list, listOf(0) + HandheldHomeActivity.BITRATE_STEPS.map { it * 1000 }, kbps, autoLabel, { v.put(KBPS, it) }, exact,
                 if (bool(com.limelight.home.AutoBitrate.PREF, true)) "Bitrate (ceiling)" else "Bitrate")
-        // Automatic bitrate: a setting of the profile (not of a play style), so it reads and writes the live settings
-        run {
+        // Automatic bitrate: a setting of the profile (not of a play style), so it reads and writes the live settings.
+        // The PC's Fine-tune tab has it as a tile (pcTiles); a style's own page, which has no tiles, keeps this row.
+        if (st != null) run {
             val on = bool(com.limelight.home.AutoBitrate.PREF, true)
             val uuid = pcOf()?.uuid
             vrow(list, com.limelight.home.AutoBitrate.PREF, "Automatic bitrate", onOff(on),
