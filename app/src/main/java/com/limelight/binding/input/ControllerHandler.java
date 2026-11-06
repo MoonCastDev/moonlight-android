@@ -1035,7 +1035,8 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
         LimeLog.info("Analog stick deadzone: "+context.leftStickDeadzoneRadius+" "+context.rightStickDeadzoneRadius);
         LimeLog.info("Trigger deadzone: "+context.triggerDeadzone);
 
-        logContextDiag(dev, context);
+        // MoonCast pad diagnostics: debug builds only (javac drops the call in release)
+        if (com.limelight.BuildConfig.DEBUG) logContextDiag(dev, context);
         return context;
     }
 
@@ -1929,7 +1930,7 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
 
     public boolean handleMotionEvent(MotionEvent event) {
         InputDeviceContext context = getContextForEvent(event);
-        if (diagWanted(event.getDeviceId(), false)) {
+        if (com.limelight.BuildConfig.DEBUG && diagWanted(event.getDeviceId(), false)) {
             LimeLog.info("MoonCast pad diag: motion dev " + event.getDeviceId() + " src 0x" + Integer.toHexString(event.getSource())
                     + " X " + event.getAxisValue(MotionEvent.AXIS_X) + " Y " + event.getAxisValue(MotionEvent.AXIS_Y)
                     + " Z " + event.getAxisValue(MotionEvent.AXIS_Z) + " RZ " + event.getAxisValue(MotionEvent.AXIS_RZ)
@@ -2451,12 +2452,12 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
     public boolean handleButtonUp(KeyEvent event) {
         InputDeviceContext context = getContextForEvent(event);
         if (context == null) {
-            diagKey("up", event, null, -1);
+            if (com.limelight.BuildConfig.DEBUG) diagKey("up", event, null, -1);
             return true;
         }
 
         int keyCode = handleRemapping(context, event);
-        diagKey("up", event, context, keyCode);
+        if (com.limelight.BuildConfig.DEBUG) diagKey("up", event, context, keyCode);
         if (keyCode < 0) {
             return (keyCode == REMAP_CONSUME);
         }
@@ -2691,12 +2692,12 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
     public boolean handleButtonDown(KeyEvent event) {
         InputDeviceContext context = getContextForEvent(event);
         if (context == null) {
-            diagKey("down", event, null, -1);
+            if (com.limelight.BuildConfig.DEBUG) diagKey("down", event, null, -1);
             return true;
         }
 
         int keyCode = handleRemapping(context, event);
-        diagKey("down", event, context, keyCode);
+        if (com.limelight.BuildConfig.DEBUG) diagKey("down", event, context, keyCode);
         if (keyCode < 0) {
             return (keyCode == REMAP_CONSUME);
         }

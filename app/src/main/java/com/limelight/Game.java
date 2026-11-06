@@ -1502,7 +1502,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             // Otherwise, controller handler will eat keyboard d-pad events.
             handled = controllerHandler.handleButtonDown(event);
         }
-        if (padDiag < 40 && (event.getSource() & (InputDevice.SOURCE_GAMEPAD | InputDevice.SOURCE_JOYSTICK)) != 0) {
+        if (BuildConfig.DEBUG && padDiag < 40 && (event.getSource() & (InputDevice.SOURCE_GAMEPAD | InputDevice.SOURCE_JOYSTICK)) != 0) {
             padDiag++;
             LimeLog.info("MoonCast pad diag: Game key down " + KeyEvent.keyCodeToString(event.getKeyCode()) + " scan " + event.getScanCode()
                     + " dev " + event.getDeviceId() + ": game controller " + ControllerHandler.isGameControllerDevice(event.getDevice())
