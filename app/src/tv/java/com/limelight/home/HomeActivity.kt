@@ -1035,7 +1035,7 @@ class HomeActivity : Activity(), PhoneLink.Listener {
                 val customRate = kbps != 0 && (kbps / 1000 !in QuickBitrate.PC_STEPS || kbps % 1000 != 0)
                 action(list, "set:customrate", "Custom bitrate", "Any value between the steps above, in Mbps",
                         if (customRate) "${kbps / 1000} Mbps" else "Off") { customBitrate(kbps) }
-                toggle(list, AutoBitrate.PREF, "Automatic bitrate", AutoBitrate.SUBTITLE + " " + AutoBitrate.settingsLine(this, null), true)
+                toggle(list, AutoBitrate.PREF, "Automatic bitrate", AutoBitrate.SUBTITLE + " " + AutoBitrate.settingsLine(this, null), false)
                 AutoBitrate.limitHere(this, null)?.let { l ->
                     if (AutoBitrate.enabled(this)) action(list, "set:autobitrate_forget", "Forget this network's limit",
                             "Automatic bitrate learnt ${l.rate / 1000} Mbps here; forget it and start from the bitrate set", "${l.rate / 1000} Mbps") {

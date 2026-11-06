@@ -15,7 +15,8 @@ import org.json.JSONObject
 import java.net.Inet4Address
 
 /**
- * Automatic bitrate (Settings: on by default, per PC profile), for any host, network and device. Design:
+ * Automatic bitrate (a Settings option, off until the user turns it on; per PC profile), for any host, network and
+ * device. Off means the bitrate is exactly as set: no watcher, no learnt-limit cap at the start, no toasts. Design:
  * docs/auto-bitrate-design.md (MoonCastDev/moonlight-android#139). The same behaviour as the iOS app.
  *
  * The client measures and decides, from what every GameStream host sends (RTP sequence numbers, FEC, frames):
@@ -70,8 +71,33 @@ object AutoBitrate {
     const val RECONNECTS_PER_MIN = 2
     const val UP_RECONNECTS_PER_MIN = 1
 
+    /** Set once the move to "off unless turned on" has run (see [migrate]). */
+    private const val MIGRATED = "mc_auto_bitrate_default_off_v1"
+
+    /**
+     * Automatic bitrate was on by default in test286-291, so a stored true can't be told from a deliberate one (it took
+     * two taps to get: the first stored false). Once, every stored true (the live setting and the profiles' saved
+     * copies) becomes off; the learnt-limit memory is left alone. After this, only a choice made in Settings turns it on.
+     */
     @JvmStatic
-    fun enabled(ctx: Context): Boolean = PreferenceManager.getDefaultSharedPreferences(ctx).getBoolean(PREF, true)
+    fun migrate(ctx: Context) {
+        val p = PreferenceManager.getDefaultSharedPreferences(ctx)
+        if (p.getBoolean(MIGRATED, false)) return
+        val e = p.edit()
+        var changed = 0
+        for ((k, v) in p.all) {
+            if (k == PREF && v == true) { e.putBoolean(PREF, false); changed++ }
+            else if (k.startsWith("pcprof_") && k.endsWith("_$PREF") && v == "b:true") { e.putString(k, "b:false"); changed++ }
+        }
+        e.putBoolean(MIGRATED, true).apply()
+        LimeLog.info(TAG + "now off unless turned on in Settings" + if (changed > 0) " ($changed stored on value(s) switched off)" else "")
+    }
+
+    @JvmStatic
+    fun enabled(ctx: Context): Boolean {
+        migrate(ctx)
+        return PreferenceManager.getDefaultSharedPreferences(ctx).getBoolean(PREF, false)
+    }
 
     private fun prefs(ctx: Context) = PreferenceManager.getDefaultSharedPreferences(ctx)
 

@@ -1607,7 +1607,7 @@ class HandheldHomeActivity : Activity() {
                     }
                 }
                 toggle(list, com.limelight.home.AutoBitrate.PREF, "Automatic bitrate",
-                        com.limelight.home.AutoBitrate.SUBTITLE + " " + com.limelight.home.AutoBitrate.settingsLine(this, null), true)
+                        com.limelight.home.AutoBitrate.SUBTITLE + " " + com.limelight.home.AutoBitrate.settingsLine(this, null), false)
                 com.limelight.home.AutoBitrate.limitHere(this, null)?.let { l ->
                     if (com.limelight.home.AutoBitrate.enabled(this)) action(list, "mc_auto_bitrate_forget", "Forget this network's limit",
                             "Automatic bitrate learnt ${l.rate / 1000} Mbps here; forget it and start from the bitrate set", "${l.rate / 1000} Mbps") {
