@@ -9,6 +9,15 @@ MoonCast is two apps:
 
 MoonCast grew from [Moonlight for Android](https://github.com/moonlight-stream/moonlight-android) and keeps its streaming engine. The home screens, the console support and the TV link are MoonCast's own.
 
+## Screenshots
+
+| | |
+|---|---|
+| ![Streaming a PC game with PyroWave 4:4:4: 60 fps, 7 ms delay, 3.7 ms decode](docs/screenshots/6-in-game-stats.png) | ![Play styles: Battery, Balanced, Sharpest, Fastest](docs/screenshots/3-play-styles.png) |
+| ![The in-game Quick menu](docs/screenshots/7-in-game-menu.png) | ![Home: one tile per PC and console](docs/screenshots/1-home.png) |
+
+More in [docs/screenshots](docs/screenshots). Taken on an AYN Odin 2 Portal.
+
 ## What it plays
 
 | | How | What you need |
