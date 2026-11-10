@@ -51,6 +51,10 @@ Sem anúncios e sem conta própria. Existe uma verificação de uso anônima e *
 
 É um beta. Conte qual aparelho você usa e o que funcionou ou não, abrindo uma [issue](https://github.com/MoonCastDev/moonlight-android/issues) ou comentando no post do Reddit. Obrigado!
 
+## Como foi feito
+
+O MoonCast é feito com ajuda de IA. A maior parte do código é escrita com ferramentas de programação com IA (Claude Code), sob a direção do mantenedor, que testa em aparelhos de verdade (AYN Odin 2 Portal, handhelds Retroid, TVs Android e Google TV, iPhone e iPad) e publica as versões. Todo o código-fonte é público sob a GPL-3.0, então você pode ver exatamente o que ele faz, e os APKs das versões são assinados e vêm com checksums. Se encontrar algum problema, abra uma issue.
+
 ## Créditos e licença
 
 Moonlight, chiaki-ng, PyroWave (Themaister) e Moonlight X. MoonCast é software livre sob a licença GPL-3.0.
