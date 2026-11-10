@@ -1,5 +1,7 @@
 # MoonCast
 
+🇧🇷 [Português (Brasil)](README.pt-BR.md)
+
 Play your PC, PS5 and Xbox on Android, on a handheld or on a TV.
 
 MoonCast is two apps:
