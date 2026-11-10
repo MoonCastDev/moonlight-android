@@ -87,6 +87,10 @@ MoonCast has no ads and no accounts of its own. Your PlayStation Network and Xbo
 
 Official builds ask once whether you'll send an **anonymous usage check-in** (Settings, About). If you say yes, once a day it sends [TelemetryDeck](https://telemetrydeck.com) the app version, TV or handheld, the device model and Android version, and whether you played PC, PS5 or Xbox. The install is a random ID made on the device, sent hashed. It never sends names, addresses, games, accounts or anything you type. Say no, or turn it off later, and nothing is sent. Builds you make yourself never ask and never send. The code is in [`home/Usage.kt`](app/src/main/java/com/limelight/home/Usage.kt).
 
+## How this was made
+
+MoonCast is AI-assisted. Most of the code is written with AI coding tools (Claude Code), directed by the maintainer, who tests it on real devices (an AYN Odin 2 Portal, Retroid handhelds, Android and Google TVs, an iPhone and an iPad) and publishes the releases. The whole source is public under GPL-3.0, so you can read exactly what it does, and the release APKs are signed and come with checksums. If you find something wrong, please open an issue.
+
 ## Licence
 
 MoonCast is free software under the [GNU General Public License v3](LICENSE.txt). The parts that come from chiaki-ng (PS5) and follow XStreaming (Xbox) are under the GNU Affero General Public License v3. [NOTICE](NOTICE) lists every open-source project MoonCast includes, with its licence. The app shows the same list under Settings, About, Open-source licences.
